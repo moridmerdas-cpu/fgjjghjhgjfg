@@ -33,6 +33,12 @@ from database_supabase import (
     mark_scheduled_sent as supa_mark_scheduled_sent,
     log_deleted_message as supa_log_deleted_message,
     get_deleted_messages as supa_get_deleted_messages,
+    create_bet as supa_create_bet,
+    get_bet as supa_get_bet,
+    update_bet_message as supa_update_bet_message,
+    join_bet as supa_join_bet,
+    finish_bet as supa_finish_bet,
+    cancel_bet as supa_cancel_bet,
     SETTING_DEFAULTS,
     _hash_pw,
 )
@@ -197,6 +203,25 @@ def remove_forced_channel(username: str) -> bool:
 
 def check_user_membership(bot, user_id: int) -> tuple:
     return cache.check_user_membership(bot, user_id)
+
+# ─── ✅ توابع شرط‌بندی ──────────────────────────────────────────────────────────
+def create_bet(creator_id: int, creator_tg_id: int, amount: int, chat_id: int):
+    return supa_create_bet(creator_id, creator_tg_id, amount, chat_id)
+
+def get_bet(bet_id: int):
+    return supa_get_bet(bet_id)
+
+def update_bet_message(bet_id: int, message_id: int):
+    return supa_update_bet_message(bet_id, message_id)
+
+def join_bet(bet_id: int, opponent_id: int, opponent_tg_id: int):
+    return supa_join_bet(bet_id, opponent_id, opponent_tg_id)
+
+def finish_bet(bet_id: int):
+    return supa_finish_bet(bet_id)
+
+def cancel_bet(bet_id: int):
+    return supa_cancel_bet(bet_id)
 
 # ─── صادرات ────────────────────────────────────────────────────────────────────
 __all__ = [
