@@ -58,6 +58,8 @@ class SmartCache:
 cache = SmartCache()
 _owner_states = {}
 _lottery_players = {}
+# ─── شرط‌بندی‌های فعال: bet_id -> {creator_tg_id, opponent_tg_id or None} ────
+_active_bets = {}
 
 
 def get_bot():
@@ -237,6 +239,225 @@ def start_token_bot():
         except Exception as e:
             print(f"❌ خطا در cmd_lottery: {e}")
             _bot.reply_to(message, f"❌ خطا: {e}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🎯 دستور شرط بندی — فقط در گروه سلف
+    # ══════════════════════════════════════════════════════════════════════════
+    SELF_GROUP = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
+    BET_TAX = 0.17
+
+    def _is_self_group(chat):
+        """بررسی می‌کند آیا پیام از گروه سلف است"""
+        if chat.type not in ('group', 'supergroup'):
+            return False
+        username = getattr(chat, 'username', None)
+        if username and f"@{username.lower()}" == SELF_GROUP.lower():
+            return True
+        return False
+
+    @_bot.message_handler(
+        func=lambda m: m.text and m.text.strip().startswith("شرط بندی "),
+        chat_types=['group', 'supergroup']
+    )
+    def cmd_bet(message):
+        try:
+            if not _is_self_group(message.chat):
+                return
+
+            parts = message.text.strip().split()
+            if len(parts) < 3:
+                return _bot.reply_to(message, "❗ فرمت: شرط بندی [مقدار]\nمثال: شرط بندی 100")
+
+            try:
+                amount = int(parts[2])
+                if amount < 1:
+                    return _bot.reply_to(message, "❌ مقدار باید بیشتر از ۰ باشد.")
+            except ValueError:
+                return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
+
+            account = _get_account_cached(message.from_user.id)
+            if not account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+
+            balance = db.get_token_balance(account["id"])
+            if balance < amount:
+                return _bot.reply_to(
+                    message,
+                    f"❌ موجودی کافی ندارید!\nنیاز: {amount} الماس — موجودی: {balance} الماس"
+                )
+
+            bet_id = db.create_bet(account["id"], message.from_user.id, amount, message.chat.id)
+            if not bet_id:
+                return _bot.reply_to(message, "❌ خطا در ساخت شرط‌بندی. دوباره امتحان کنید.")
+
+            _active_bets[bet_id] = {
+                "creator_tg_id": message.from_user.id,
+                "opponent_tg_id": None,
+            }
+
+            creator_name = (
+                f"@{message.from_user.username}" if message.from_user.username
+                else message.from_user.first_name
+            )
+            payout = round(amount * 2 * (1 - BET_TAX))
+
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton(
+                    "⚔️ ورود به شرط‌بندی",
+                    callback_data=f"join_bet_{bet_id}"
+                )
+            )
+
+            msg = _bot.reply_to(
+                message,
+                f"🎲 <b>شرط‌بندی باز شد!</b>\n\n"
+                f"👤 سازنده: {creator_name}\n"
+                f"💎 مبلغ: <b>{amount} الماس</b>\n"
+                f"🏆 جایزه برنده: <b>{payout} الماس</b> (بعد از ۱۷٪ مالیات)\n\n"
+                f"⏳ منتظر حریف...\n"
+                f"(اولین نفری که دکمه بزند وارد می‌شود)",
+                reply_markup=markup
+            )
+            db.update_bet_message(bet_id, msg.message_id)
+
+            # تایمر ۵ دقیقه — اگر کسی وارد نشد، لغو و برگشت موجودی
+            threading.Timer(300, _auto_cancel_bet, args=[bet_id, message.chat.id, msg.message_id]).start()
+
+        except Exception as e:
+            print(f"❌ خطا در cmd_bet: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
+
+    # ── Callback: ورود به شرط‌بندی ─────────────────────────────────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("join_bet_"))
+    def callback_join_bet(call):
+        try:
+            bet_id = int(call.data.split("_")[2])
+
+            # بررسی حافظه محلی اول (سریع‌تر)
+            bet_mem = _active_bets.get(bet_id)
+            if bet_mem is None:
+                return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی یافت نشد یا منقضی شده.", show_alert=True)
+
+            if bet_mem["opponent_tg_id"] is not None:
+                return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی قبلاً تکمیل شده است.", show_alert=True)
+
+            if bet_mem["creator_tg_id"] == call.from_user.id:
+                return _bot.answer_callback_query(call.id, "❌ شما سازنده این شرط هستید! منتظر حریف باشید.", show_alert=True)
+
+            account = _get_account_cached(call.from_user.id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+
+            # ورود به دیتابیس (کسر موجودی نفر دوم + آپدیت وضعیت)
+            success, msg_txt = db.join_bet(bet_id, account["id"], call.from_user.id)
+            if not success:
+                return _bot.answer_callback_query(call.id, msg_txt, show_alert=True)
+
+            # علامت‌گذاری در حافظه
+            bet_mem["opponent_tg_id"] = call.from_user.id
+
+            opponent_name = (
+                f"@{call.from_user.username}" if call.from_user.username
+                else call.from_user.first_name
+            )
+            _bot.answer_callback_query(call.id, "✅ وارد شرط‌بندی شدید! بازی شروع می‌شود...", show_alert=True)
+
+            bet = db.get_bet(bet_id)
+            if not bet:
+                return
+
+            # اجرای شرط و انتخاب برنده
+            ok, winner, payout = db.finish_bet(bet_id)
+            if not ok:
+                return
+
+            # پیدا کردن نام برنده
+            winner_tg_id = winner["tg_id"]
+            try:
+                winner_chat = _bot.get_chat(winner_tg_id)
+                winner_name = (
+                    f"@{winner_chat.username}" if winner_chat.username
+                    else winner_chat.first_name
+                )
+            except Exception:
+                winner_name = str(winner_tg_id)
+
+            amount = bet["amount"]
+            total = amount * 2
+            tax = round(total * BET_TAX)
+
+            result_text = (
+                f"🎉 <b>شرط‌بندی به پایان رسید!</b>\n\n"
+                f"⚔️ حریف: {opponent_name}\n"
+                f"💎 مبلغ هر نفر: {amount} الماس\n"
+                f"💰 مجموع: {total} الماس\n"
+                f"🏛 مالیات (۱۷٪): {tax} الماس\n\n"
+                f"🏆 <b>برنده: {winner_name}</b>\n"
+                f"💎 <b>جایزه: {payout} الماس</b>"
+            )
+
+            # ویرایش پیام اصلی
+            try:
+                _bot.edit_message_text(
+                    result_text,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id
+                )
+            except Exception:
+                _bot.send_message(call.message.chat.id, result_text)
+
+            # اطلاع به برنده در پیوی
+            try:
+                _bot.send_message(
+                    winner_tg_id,
+                    f"🎉 <b>تبریک! شرط‌بندی را بردید!</b>\n💎 <b>{payout} الماس</b> به حسابتان واریز شد."
+                )
+            except Exception:
+                pass
+
+            # اطلاع به بازنده
+            loser_tg_id = (
+                bet["creator_tg_id"] if winner_tg_id == bet["opponent_tg_id"]
+                else bet["opponent_tg_id"]
+            )
+            try:
+                _bot.send_message(
+                    loser_tg_id,
+                    f"😔 متأسفانه این بار نبردید.\n💎 {amount} الماس از حسابتان کسر شد."
+                )
+            except Exception:
+                pass
+
+            _active_bets.pop(bet_id, None)
+
+        except Exception as e:
+            print(f"❌ خطا در callback_join_bet: {e}")
+            try:
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
+            except Exception:
+                pass
+
+    # ── لغو خودکار شرط (تایمر ۵ دقیقه) ────────────────────────────────────────
+    def _auto_cancel_bet(bet_id, chat_id, message_id):
+        try:
+            bet_mem = _active_bets.get(bet_id)
+            if bet_mem is None or bet_mem["opponent_tg_id"] is not None:
+                return  # شرط تکمیل شده
+
+            db.cancel_bet(bet_id)
+            _active_bets.pop(bet_id, None)
+
+            try:
+                _bot.edit_message_text(
+                    "⏰ <b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n💎 مبلغ به سازنده بازگشت داده شد.",
+                    chat_id=chat_id,
+                    message_id=message_id
+                )
+            except Exception:
+                _bot.send_message(chat_id, "⏰ یک شرط‌بندی به دلیل نبود حریف لغو شد.")
+        except Exception as e:
+            print(f"❌ خطا در _auto_cancel_bet: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 💰 دستور موجودی در گروه

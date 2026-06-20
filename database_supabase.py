@@ -490,9 +490,204 @@ def get_deleted_messages(owner_id: int, limit=50):
         print(f"❌ get_deleted_messages error: {e}")
         return []
 
+# ─── سیستم شرط‌بندی ───────────────────────────────────────────────────────────
+
+def init_bet_tables():
+    """ساخت جداول سیستم شرط‌بندی"""
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS amel_bets (
+            id SERIAL PRIMARY KEY,
+            creator_id INTEGER NOT NULL,
+            creator_tg_id INTEGER NOT NULL,
+            opponent_id INTEGER,
+            opponent_tg_id INTEGER,
+            amount INTEGER NOT NULL,
+            status TEXT DEFAULT 'waiting',
+            winner_id INTEGER,
+            winner_tg_id INTEGER,
+            chat_id BIGINT,
+            message_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            finished_at TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_bet_transactions (
+            id SERIAL PRIMARY KEY,
+            bet_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    ]
+    for query in queries:
+        try:
+            execute_query(query)
+        except Exception as e:
+            print(f"❌ Error creating bet table: {e}")
+    print("✅ جداول شرط‌بندی ایجاد/تأیید شدند!")
+
+
+def create_bet(creator_id: int, creator_tg_id: int, amount: int, chat_id: int) -> Optional[int]:
+    """ساخت شرط‌بندی جدید — موجودی سازنده کسر می‌شود"""
+    try:
+        query = """
+            INSERT INTO amel_bets (creator_id, creator_tg_id, amount, status, chat_id)
+            VALUES (%s, %s, %s, 'waiting', %s)
+            RETURNING id
+        """
+        result = execute_query(query, (creator_id, creator_tg_id, amount, chat_id), fetch_one=True)
+        if not result:
+            return None
+        bet_id = result["id"]
+        # کسر موجودی از سازنده
+        deduct_tokens(creator_id, amount)
+        # ثبت تراکنش
+        execute_query(
+            "INSERT INTO amel_bet_transactions (bet_id, user_id, type, amount) VALUES (%s, %s, 'entry', %s)",
+            (bet_id, creator_id, amount)
+        )
+        return bet_id
+    except Exception as e:
+        print(f"❌ create_bet error: {e}")
+        return None
+
+
+def get_bet(bet_id: int) -> Optional[Dict]:
+    """دریافت اطلاعات یک شرط"""
+    try:
+        result = execute_query(
+            "SELECT * FROM amel_bets WHERE id = %s",
+            (bet_id,), fetch_one=True
+        )
+        return dict(result) if result else None
+    except Exception as e:
+        print(f"❌ get_bet error: {e}")
+        return None
+
+
+def update_bet_message(bet_id: int, message_id: int):
+    """ذخیره message_id پیام شرط"""
+    try:
+        execute_query(
+            "UPDATE amel_bets SET message_id = %s WHERE id = %s",
+            (message_id, bet_id)
+        )
+    except Exception as e:
+        print(f"❌ update_bet_message error: {e}")
+
+
+def join_bet(bet_id: int, opponent_id: int, opponent_tg_id: int) -> tuple:
+    """ورود نفر دوم به شرط‌بندی"""
+    try:
+        bet = get_bet(bet_id)
+        if not bet:
+            return False, "❌ شرط‌بندی یافت نشد."
+        if bet["status"] != "waiting":
+            return False, "❌ این شرط‌بندی دیگر فعال نیست."
+        if bet["creator_tg_id"] == opponent_tg_id:
+            return False, "❌ شما سازنده این شرط هستید!"
+        if bet["opponent_tg_id"] is not None:
+            return False, "❌ این شرط قبلاً تکمیل شده است."
+
+        # بررسی موجودی نفر دوم
+        balance = get_token_balance(opponent_id)
+        if balance < bet["amount"]:
+            return False, f"❌ موجودی کافی ندارید!\nنیاز: {bet['amount']} الماس — موجودی: {balance}"
+
+        # کسر موجودی از نفر دوم
+        if not deduct_tokens(opponent_id, bet["amount"]):
+            return False, "❌ خطا در کسر موجودی."
+
+        # آپدیت وضعیت شرط
+        execute_query(
+            """UPDATE amel_bets
+               SET opponent_id=%s, opponent_tg_id=%s, status='active'
+               WHERE id=%s""",
+            (opponent_id, opponent_tg_id, bet_id)
+        )
+        # ثبت تراکنش ورود نفر دوم
+        execute_query(
+            "INSERT INTO amel_bet_transactions (bet_id, user_id, type, amount) VALUES (%s, %s, 'entry', %s)",
+            (bet_id, opponent_id, bet["amount"])
+        )
+        return True, "✅ ورود موفق"
+    except Exception as e:
+        print(f"❌ join_bet error: {e}")
+        return False, f"❌ خطا: {e}"
+
+
+def finish_bet(bet_id: int) -> tuple:
+    """اجرای شرط‌بندی، انتخاب برنده، واریز جایزه"""
+    import random as _random
+    TAX_RATE = 0.17
+    try:
+        bet = get_bet(bet_id)
+        if not bet or bet["status"] != "active":
+            return False, None, 0
+
+        total = bet["amount"] * 2
+        tax = round(total * TAX_RATE)
+        payout = total - tax
+
+        # انتخاب تصادفی برنده
+        candidates = [
+            {"owner_id": bet["creator_id"],  "tg_id": bet["creator_tg_id"]},
+            {"owner_id": bet["opponent_id"], "tg_id": bet["opponent_tg_id"]},
+        ]
+        winner = _random.choice(candidates)
+        loser  = [c for c in candidates if c["tg_id"] != winner["tg_id"]][0]
+
+        # واریز به برنده
+        add_tokens(winner["owner_id"], payout)
+
+        # آپدیت جدول
+        execute_query(
+            """UPDATE amel_bets
+               SET status='finished', winner_id=%s, winner_tg_id=%s, finished_at=CURRENT_TIMESTAMP
+               WHERE id=%s""",
+            (winner["owner_id"], winner["tg_id"], bet_id)
+        )
+
+        # ثبت تراکنش برنده
+        execute_query(
+            "INSERT INTO amel_bet_transactions (bet_id, user_id, type, amount) VALUES (%s, %s, 'win', %s)",
+            (bet_id, winner["owner_id"], payout)
+        )
+        # ثبت تراکنش بازنده
+        execute_query(
+            "INSERT INTO amel_bet_transactions (bet_id, user_id, type, amount) VALUES (%s, %s, 'loss', %s)",
+            (bet_id, loser["owner_id"], bet["amount"])
+        )
+
+        return True, winner, payout
+    except Exception as e:
+        print(f"❌ finish_bet error: {e}")
+        return False, None, 0
+
+
+def cancel_bet(bet_id: int):
+    """لغو شرط و بازگشت موجودی سازنده"""
+    try:
+        bet = get_bet(bet_id)
+        if not bet or bet["status"] != "waiting":
+            return
+        add_tokens(bet["creator_id"], bet["amount"])
+        execute_query(
+            "UPDATE amel_bets SET status='cancelled' WHERE id=%s",
+            (bet_id,)
+        )
+    except Exception as e:
+        print(f"❌ cancel_bet error: {e}")
+
+
 # ─── مقداردهی اولیه ──────────────────────────────────────────────────────────
 try:
     init_tables()
+    init_bet_tables()
 except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")
 

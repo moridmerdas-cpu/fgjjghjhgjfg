@@ -232,4 +232,7 @@ __all__ = [
     
     # چنل‌های اجباری
     'get_forced_channels', 'add_forced_channel', 'remove_forced_channel', 'check_user_membership',
+
+    # شرط‌بندی
+    'create_bet', 'get_bet', 'update_bet_message', 'join_bet', 'finish_bet', 'cancel_bet',
 ]
