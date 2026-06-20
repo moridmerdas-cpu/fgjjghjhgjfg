@@ -344,21 +344,37 @@ def deduct_tokens(owner_id: int, amount: int) -> bool:
 
 def claim_daily_token(owner_id: int):
     from config import DAILY_TOKEN_GIFT
+    import time as _time
+    COOLDOWN = 86400  # 24 ساعت
     try:
         _init_tokens(owner_id)
-        today = datetime.date.today().isoformat()
-        
-        query = "SELECT last_daily FROM amel_tokens WHERE owner_id = %s"
+        now_ts = int(_time.time())
+
+        # اطمینان از وجود ستون last_daily_ts
+        try:
+            execute_query("ALTER TABLE amel_tokens ADD COLUMN IF NOT EXISTS last_daily_ts BIGINT DEFAULT 0")
+        except Exception:
+            pass
+
+        query = "SELECT last_daily_ts FROM amel_tokens WHERE owner_id = %s"
         result = execute_query(query, (owner_id,), fetch_one=True)
-        if result and result['last_daily'] == today:
-            return False, "⏰ امروز قبلاً هدیه روزانه دریافت کردید."
-        
-        query = "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s, last_daily = %s WHERE owner_id = %s"
-        execute_query(query, (DAILY_TOKEN_GIFT, DAILY_TOKEN_GIFT, today, owner_id))
-        return True, f"🎁 {DAILY_TOKEN_GIFT} توکن دریافت کردید!"
+        last_ts = int(result["last_daily_ts"] or 0) if result else 0
+
+        elapsed = now_ts - last_ts
+        if elapsed < COOLDOWN:
+            remaining = COOLDOWN - elapsed
+            h = remaining // 3600
+            m = (remaining % 3600) // 60
+            return False, f"⏰ هدیه روزانه دریافت شد!\n\n🕐 تا هدیه بعدی: <b>{h} ساعت و {m} دقیقه</b> مانده."
+
+        execute_query(
+            "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s, last_daily_ts = %s WHERE owner_id = %s",
+            (DAILY_TOKEN_GIFT, DAILY_TOKEN_GIFT, now_ts, owner_id)
+        )
+        return True, f"🎁 <b>{DAILY_TOKEN_GIFT} الماس</b> دریافت کردید!"
     except Exception as e:
         print(f"❌ claim_daily_token error: {e}")
-        return False, "خطا در دریافت هدیه"
+        return False, "❌ خطا در دریافت هدیه"
 
 def get_token_stats(owner_id: int) -> dict:
     try:
@@ -490,6 +506,193 @@ def get_deleted_messages(owner_id: int, limit=50):
         print(f"❌ get_deleted_messages error: {e}")
         return []
 
+# ─── سیستم چالش جام جهانی ────────────────────────────────────────────────────
+
+def init_world_cup_tables():
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS world_cup_challenges (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            creator_id BIGINT,
+            team1 TEXT,
+            team2 TEXT,
+            match_time TEXT,
+            bet_amount INT DEFAULT 0,
+            status TEXT DEFAULT 'waiting',
+            winner_team TEXT,
+            chat_id BIGINT,
+            message_id BIGINT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS world_cup_bets (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            challenge_id BIGINT NOT NULL,
+            user_id INTEGER NOT NULL,
+            user_tg_id BIGINT NOT NULL,
+            chosen_team TEXT NOT NULL,
+            amount INT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_lottery (
+            id SERIAL PRIMARY KEY,
+            creator_id INTEGER,
+            creator_tg_id BIGINT,
+            prize INTEGER NOT NULL,
+            max_players INTEGER DEFAULT 2,
+            entry_fee INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'waiting',
+            winner_id INTEGER,
+            chat_id BIGINT,
+            message_id BIGINT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    ]
+    for q in queries:
+        try:
+            execute_query(q)
+        except Exception as e:
+            print(f"❌ init_world_cup_tables error: {e}")
+    print("✅ جداول جام جهانی و قرعه‌کشی ایجاد/تأیید شدند!")
+
+
+def create_world_cup_challenge(team1: str, team2: str, match_time: str, bet_amount: int) -> Optional[int]:
+    try:
+        result = execute_query(
+            """INSERT INTO world_cup_challenges (team1, team2, match_time, bet_amount, status)
+               VALUES (%s, %s, %s, %s, 'waiting') RETURNING id""",
+            (team1, team2, match_time, bet_amount), fetch_one=True
+        )
+        return result["id"] if result else None
+    except Exception as e:
+        print(f"❌ create_world_cup_challenge error: {e}")
+        return None
+
+
+def update_challenge_message(challenge_id: int, message_id: int, chat_id: int):
+    try:
+        execute_query(
+            "UPDATE world_cup_challenges SET message_id=%s, chat_id=%s WHERE id=%s",
+            (message_id, chat_id, challenge_id)
+        )
+    except Exception as e:
+        print(f"❌ update_challenge_message error: {e}")
+
+
+def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, chosen_team: str, amount: int) -> tuple:
+    try:
+        challenge = execute_query(
+            "SELECT * FROM world_cup_challenges WHERE id=%s", (challenge_id,), fetch_one=True
+        )
+        if not challenge:
+            return False, "❌ چالش یافت نشد."
+        if challenge["status"] != "waiting":
+            return False, "❌ این چالش دیگر فعال نیست."
+        balance = get_token_balance(user_id)
+        if balance < amount:
+            return False, f"❌ موجودی کافی ندارید! نیاز: {amount} — موجودی: {balance}"
+        if not deduct_tokens(user_id, amount):
+            return False, "❌ خطا در کسر موجودی."
+        execute_query(
+            "INSERT INTO world_cup_bets (challenge_id, user_id, user_tg_id, chosen_team, amount) VALUES (%s,%s,%s,%s,%s)",
+            (challenge_id, user_id, user_tg_id, chosen_team, amount)
+        )
+        return True, "✅ شرط ثبت شد."
+    except Exception as e:
+        print(f"❌ join_world_cup_challenge error: {e}")
+        return False, f"❌ خطا: {e}"
+
+
+def finish_world_cup_challenge(challenge_id: int, winner_team: str):
+    try:
+        execute_query(
+            "UPDATE world_cup_challenges SET status='finished', winner_team=%s WHERE id=%s",
+            (winner_team, challenge_id)
+        )
+        # واریز به برندگان
+        winners = execute_query(
+            "SELECT * FROM world_cup_bets WHERE challenge_id=%s AND chosen_team=%s",
+            (challenge_id, winner_team), fetch_all=True
+        )
+        losers_count = execute_query(
+            "SELECT COUNT(*) as c FROM world_cup_bets WHERE challenge_id=%s AND chosen_team!=%s",
+            (challenge_id, winner_team), fetch_one=True
+        )
+        total_loser_pool = 0
+        if losers_count:
+            loser_rows = execute_query(
+                "SELECT SUM(amount) as s FROM world_cup_bets WHERE challenge_id=%s AND chosen_team!=%s",
+                (challenge_id, winner_team), fetch_one=True
+            )
+            total_loser_pool = int(loser_rows["s"] or 0) if loser_rows else 0
+
+        if winners:
+            share = total_loser_pool // len(winners)
+            for w in winners:
+                payout = w["amount"] + share
+                add_tokens(w["user_id"], payout)
+    except Exception as e:
+        print(f"❌ finish_world_cup_challenge error: {e}")
+
+
+# ─── سیستم قرعه‌کشی ───────────────────────────────────────────────────────────
+
+def create_lottery(creator_id: int, creator_tg_id: int, prize: int, max_players: int = 2, entry_fee: int = 0) -> Optional[int]:
+    try:
+        result = execute_query(
+            """INSERT INTO amel_lottery (creator_id, creator_tg_id, prize, max_players, entry_fee, status)
+               VALUES (%s, %s, %s, %s, %s, 'waiting') RETURNING id""",
+            (creator_id, creator_tg_id, prize, max_players, entry_fee), fetch_one=True
+        )
+        return result["id"] if result else None
+    except Exception as e:
+        print(f"❌ create_lottery error: {e}")
+        return None
+
+
+def update_lottery_message(lottery_id: int, message_id: int, chat_id: int = None):
+    try:
+        if chat_id:
+            execute_query(
+                "UPDATE amel_lottery SET message_id=%s, chat_id=%s WHERE id=%s",
+                (message_id, chat_id, lottery_id)
+            )
+        else:
+            execute_query(
+                "UPDATE amel_lottery SET message_id=%s WHERE id=%s",
+                (message_id, lottery_id)
+            )
+    except Exception as e:
+        print(f"❌ update_lottery_message error: {e}")
+
+
+def get_lottery(lottery_id: int) -> Optional[Dict]:
+    try:
+        result = execute_query("SELECT * FROM amel_lottery WHERE id=%s", (lottery_id,), fetch_one=True)
+        return dict(result) if result else None
+    except Exception as e:
+        print(f"❌ get_lottery error: {e}")
+        return None
+
+
+def finish_lottery(lottery_id: int, winner_id: int):
+    try:
+        lottery = get_lottery(lottery_id)
+        if not lottery:
+            return
+        add_tokens(winner_id, lottery["prize"])
+        execute_query(
+            "UPDATE amel_lottery SET status='finished', winner_id=%s WHERE id=%s",
+            (winner_id, lottery_id)
+        )
+    except Exception as e:
+        print(f"❌ finish_lottery error: {e}")
+
+
 # ─── سیستم شرط‌بندی ───────────────────────────────────────────────────────────
 
 def init_bet_tables():
@@ -499,13 +702,13 @@ def init_bet_tables():
         CREATE TABLE IF NOT EXISTS amel_bets (
             id SERIAL PRIMARY KEY,
             creator_id INTEGER NOT NULL,
-            creator_tg_id INTEGER NOT NULL,
+            creator_tg_id BIGINT NOT NULL,
             opponent_id INTEGER,
-            opponent_tg_id INTEGER,
+            opponent_tg_id BIGINT,
             amount INTEGER NOT NULL,
             status TEXT DEFAULT 'waiting',
             winner_id INTEGER,
-            winner_tg_id INTEGER,
+            winner_tg_id BIGINT,
             chat_id BIGINT,
             message_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -687,6 +890,7 @@ def cancel_bet(bet_id: int):
 # ─── مقداردهی اولیه ──────────────────────────────────────────────────────────
 try:
     init_tables()
+    init_world_cup_tables()
     init_bet_tables()
 except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")

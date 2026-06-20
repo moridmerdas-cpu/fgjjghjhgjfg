@@ -33,6 +33,14 @@ from database_supabase import (
     mark_scheduled_sent as supa_mark_scheduled_sent,
     log_deleted_message as supa_log_deleted_message,
     get_deleted_messages as supa_get_deleted_messages,
+    create_world_cup_challenge as supa_create_world_cup_challenge,
+    update_challenge_message as supa_update_challenge_message,
+    join_world_cup_challenge as supa_join_world_cup_challenge,
+    finish_world_cup_challenge as supa_finish_world_cup_challenge,
+    create_lottery as supa_create_lottery,
+    update_lottery_message as supa_update_lottery_message,
+    get_lottery as supa_get_lottery,
+    finish_lottery as supa_finish_lottery,
     create_bet as supa_create_bet,
     get_bet as supa_get_bet,
     update_bet_message as supa_update_bet_message,
@@ -203,6 +211,32 @@ def remove_forced_channel(username: str) -> bool:
 
 def check_user_membership(bot, user_id: int) -> tuple:
     return cache.check_user_membership(bot, user_id)
+
+# ─── ✅ توابع چالش جام جهانی ───────────────────────────────────────────────────
+def create_world_cup_challenge(team1: str, team2: str, match_time: str, bet_amount: int):
+    return supa_create_world_cup_challenge(team1, team2, match_time, bet_amount)
+
+def update_challenge_message(challenge_id: int, message_id: int, chat_id: int):
+    return supa_update_challenge_message(challenge_id, message_id, chat_id)
+
+def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, chosen_team: str, amount: int):
+    return supa_join_world_cup_challenge(challenge_id, user_id, user_tg_id, chosen_team, amount)
+
+def finish_world_cup_challenge(challenge_id: int, winner_team: str):
+    return supa_finish_world_cup_challenge(challenge_id, winner_team)
+
+# ─── ✅ توابع قرعه‌کشی ──────────────────────────────────────────────────────────
+def create_lottery(creator_id: int, creator_tg_id: int, prize: int, max_players: int = 2, entry_fee: int = 0):
+    return supa_create_lottery(creator_id, creator_tg_id, prize, max_players, entry_fee)
+
+def update_lottery_message(lottery_id: int, message_id: int, chat_id: int = None):
+    return supa_update_lottery_message(lottery_id, message_id, chat_id)
+
+def get_lottery(lottery_id: int):
+    return supa_get_lottery(lottery_id)
+
+def finish_lottery(lottery_id: int, winner_id: int):
+    return supa_finish_lottery(lottery_id, winner_id)
 
 # ─── ✅ توابع شرط‌بندی ──────────────────────────────────────────────────────────
 def create_bet(creator_id: int, creator_tg_id: int, amount: int, chat_id: int):

@@ -243,7 +243,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 دستور شرط بندی — فقط در گروه سلف
     # ══════════════════════════════════════════════════════════════════════════
-    SELF_GROUP = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
+    SELF_GROUP = getattr(config, 'WORLD_CUP_GROUP', '@Gp_SelfNexo')
     BET_TAX = 0.17
 
     def _is_self_group(chat):
