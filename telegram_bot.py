@@ -1087,7 +1087,7 @@ def start_token_bot():
                     "🎲 <b>ایجاد قرعه‌کشی گروهی (مالک)</b>\n\n"
                     "💎 مبلغ جایزه را ارسال کنید (الماس):\n\n"
                     "مثال: <code>100</code>\n\n"
-                    "📌 قرعه‌کشی در گروه <code>@amelselfgap</code> ایجاد می‌شود",
+                    "📌 قرعه‌کشی در گروه <code>@Gp_SelfNexo</code> ایجاد می‌شود",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -1177,7 +1177,7 @@ def start_token_bot():
                 data = state_data["data"]
                 challenge_id = db.create_world_cup_challenge(data["team1"], data["team2"], data["time"], bet_amount)
                 
-                group = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
+                group = getattr(config, 'WORLD_CUP_GROUP', '@Gp_SelfNexo')
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
                     types.InlineKeyboardButton(f"🔵 {data['team1']}", callback_data=f"bet_wc_{challenge_id}_{data['team1']}"),
@@ -1210,7 +1210,7 @@ def start_token_bot():
                 except:
                     return _bot.reply_to(message, "❌ مبلغ باید عدد باشد:")
                 
-                group = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
+                group = getattr(config, 'WORLD_CUP_GROUP', '@Gp_SelfNexo')
                 lottery_id = db.create_lottery(0, OWNER_TG_ID, prize, 2, prize)
                 
                 markup = types.InlineKeyboardMarkup()
