@@ -34,8 +34,8 @@ LINK_PATTERN = re.compile(
 # ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
 _last_secretary_reply = {}  # {chat_id: timestamp}
 _last_friend_reply = {}     # {sender_id: timestamp}
-SECRETARY_COOLDOWN = 1000  # 24 ساعت (86400 ثانیه)
-FRIEND_COOLDOWN = 10     # 1 ساعت (3600 ثانیه)
+SECRETARY_COOLDOWN = 86400  # 24 ساعت
+FRIEND_COOLDOWN = 3600      # 1 ساعت
 
 
 def _convert_font(text, chars):
@@ -162,11 +162,14 @@ class BotManager:
 
                 db.save_telegram_user_id(owner_id, me.id)
 
+                # ✅ تشخیص مالک - اصلاح شده با ۳ روش
                 me_phone = (me.phone or "").lstrip("+")
                 owner_phone = getattr(config, "OWNER_PHONE", "").lstrip("+")
+                
                 is_now_owner = (
-                    me.id == config.OWNER_TG_ID
-                    or (bool(owner_phone) and me_phone == owner_phone)
+                    me.id == config.OWNER_TG_ID or
+                    (bool(owner_phone) and me_phone == owner_phone) or
+                    me.username == getattr(config, "OWNER_USERNAME", "")
                 )
 
                 if is_now_owner:
@@ -175,9 +178,10 @@ class BotManager:
                     if not entry.get("owner_refunded") and entry.get("tokens_deducted", 0) > 0:
                         db.add_tokens(owner_id, entry["tokens_deducted"])
                         entry["owner_refunded"] = True
-                        print(f"👑 [{owner_id}] مالک — {entry['tokens_deducted']} توکن برگشت داده شد")
-                    print(f"👑 [{owner_id}] مالک تشخیص (phone={me_phone}) — تایمر لغو — رایگان ♾️")
+                        print(f"👑 [{owner_id}] مالک تشخیص داده شد - {entry['tokens_deducted']} توکن برگشت داده شد")
+                    print(f"👑 [{owner_id}] مالک: @{me.username} (ID: {me.id}) — تایمر لغو — رایگان ♾️")
 
+                # ✅ استارت ساعت با دقت بالا
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
 
@@ -221,23 +225,19 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         is_tagged = False
         if not event.is_private:
             me = await cl.get_me()
-            # بررسی منشن
             if msg.entities:
                 for entity in msg.entities:
                     if hasattr(entity, 'user_id') and entity.user_id == me.id:
                         is_tagged = True
                         break
-            # بررسی ریپلای به ربات
             replied_msg = await event.get_reply_message()
             if replied_msg and replied_msg.sender_id == me.id:
                 is_tagged = True
-            # بررسی یوزرنیم ربات در متن
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
 
-        # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده (بدون پاسخ)
+        # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
-            # فقط سین خودکار و ذخیره مدیا در گروه‌ها
             if db.get_setting(owner_id, "auto_seen_active") == "1":
                 try:
                     await cl.send_read_acknowledge(chat_id, msg)
@@ -251,7 +251,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     await cl.download_media(msg, file=media_dir + "/")
                 except Exception:
                     pass
-            return  # بقیه کارها را انجام نده
+            return
 
         if db.is_silent_chat(owner_id, chat_id) or db.is_silent_user(owner_id, sender_id):
             return
@@ -301,7 +301,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     pass
             return
 
-        # ✅ ری‌اکشن خودکار (اصلاح شده)
+        # ✅ ری‌اکشن خودکار
         if db.get_setting(owner_id, "auto_reaction_active") == "1":
             emoji = db.get_setting(owner_id, "auto_reaction_emoji", "❤️")
             try:
@@ -873,29 +873,50 @@ def _help_text():
 """
 
 
-# ─── حلقه‌های پس‌زمینه ──────────────────────────────────────────────────────────# ─── حلقه‌های پس‌زمینه ──────────────────────────────────────────────────────────
+# ─── حلقه‌های پس‌زمینه ──────────────────────────────────────────────────────────
 async def _clock_loop(cl, owner_id):
+    """به‌روزرسانی ساعت نام/بیو با دقت بالا - بدون تاخیر"""
+    last_minute = -1
+    
     while True:
         try:
-            # ✅ محاسبه دقیق زمان باقی‌مانده تا شروع دقیقه بعدی (برای حذف تاخیر)
-            now = datetime.datetime.now()
-            seconds_to_next_minute = 60 - now.second
-            await asyncio.sleep(seconds_to_next_minute)
-
-            # به‌روزرسانی بلافاصله پس از تغییر دقیقه
-            time_str = persian_time()
-            font_id = db.get_setting(owner_id, "selected_font", "0")
-            fn = FONTS.get(font_id, FONTS["0"])
-            styled_time = fn(time_str)
+            # ✅ زمان ایران
+            iran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
+            now = datetime.datetime.now(iran_tz)
+            current_minute = now.minute
             
-            if db.get_setting(owner_id, "clock_name_active") == "1":
-                await cl(UpdateProfileRequest(last_name=styled_time[:64]))
-            if db.get_setting(owner_id, "clock_bio_active") == "1":
-                await cl(UpdateProfileRequest(about=f"⏰ {styled_time}"[:70]))
+            # ✅ فقط در دقیقه‌های جدید به‌روزرسانی کن
+            if current_minute != last_minute:
+                last_minute = current_minute
+                time_str = f"{now.hour:02d}:{now.minute:02d}"
                 
-        except Exception:
-            pass
-        await asyncio.sleep(60)
+                # اعمال فونت
+                font_id = db.get_setting(owner_id, "selected_font", "0")
+                fn = FONTS.get(font_id, FONTS["0"])
+                styled_time = fn(time_str)
+                
+                # به‌روزرسانی نام
+                if db.get_setting(owner_id, "clock_name_active") == "1":
+                    try:
+                        await cl(UpdateProfileRequest(last_name=styled_time[:64]))
+                        print(f"⏰ [{owner_id}] ساعت نام به‌روز شد: {styled_time}")
+                    except Exception as e:
+                        print(f"❌ خطا در به‌روزرسانی نام: {e}")
+                
+                # به‌روزرسانی بیو
+                if db.get_setting(owner_id, "clock_bio_active") == "1":
+                    try:
+                        await cl(UpdateProfileRequest(about=f"⏰ {styled_time}"[:70]))
+                        print(f"⏰ [{owner_id}] ساعت بیو به‌روز شد: {styled_time}")
+                    except Exception as e:
+                        print(f"❌ خطا در به‌روزرسانی بیو: {e}")
+            
+            # ✅ چک کردن هر 5 ثانیه برای دقت بالا
+            await asyncio.sleep(5)
+            
+        except Exception as e:
+            print(f"❌ خطا در _clock_loop: {e}")
+            await asyncio.sleep(10)
 
 
 async def _scheduler_loop(cl, owner_id):
