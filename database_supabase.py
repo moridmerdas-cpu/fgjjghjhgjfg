@@ -506,34 +506,33 @@ def get_deleted_messages(owner_id: int, limit=50):
         print(f"❌ get_deleted_messages error: {e}")
         return []
 
-# ─── سیستم چالش جام جهانی ────────────────────────────────────────────────────
+# ─── سیستم چالش جام جهانی (ارتقا‌یافته با football-data.org) ──────────────────
 
 def init_world_cup_tables():
     queries = [
         """
-        CREATE TABLE IF NOT EXISTS world_cup_challenges (
-            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            creator_id BIGINT,
-            team1 TEXT,
-            team2 TEXT,
-            match_time TEXT,
-            bet_amount INT DEFAULT 0,
-            status TEXT DEFAULT 'waiting',
-            winner_team TEXT,
-            chat_id BIGINT,
-            message_id BIGINT,
+        CREATE TABLE IF NOT EXISTS worldcup_challenges (
+            id SERIAL PRIMARY KEY,
+            match_id TEXT UNIQUE,
+            team1 TEXT NOT NULL,
+            team2 TEXT NOT NULL,
+            match_time TIMESTAMP NOT NULL,
+            status TEXT DEFAULT 'pending',
+            winner_option TEXT,
+            channel_msg_id BIGINT,
             created_at TIMESTAMP DEFAULT NOW()
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS world_cup_bets (
-            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            challenge_id BIGINT NOT NULL,
+        CREATE TABLE IF NOT EXISTS challenge_participants (
+            id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
             user_tg_id BIGINT NOT NULL,
-            chosen_team TEXT NOT NULL,
-            amount INT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
+            challenge_id INTEGER NOT NULL,
+            selected_option TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(user_id, challenge_id)
         )
         """,
         """
@@ -560,83 +559,118 @@ def init_world_cup_tables():
     print("✅ جداول جام جهانی و قرعه‌کشی ایجاد/تأیید شدند!")
 
 
-def create_world_cup_challenge(team1: str, team2: str, match_time: str, bet_amount: int) -> Optional[int]:
+def wc_challenge_exists(match_id: str) -> bool:
     try:
-        result = execute_query(
-            """INSERT INTO world_cup_challenges (team1, team2, match_time, bet_amount, status)
-               VALUES (%s, %s, %s, %s, 'waiting') RETURNING id""",
-            (team1, team2, match_time, bet_amount), fetch_one=True
+        r = execute_query("SELECT id FROM worldcup_challenges WHERE match_id=%s", (match_id,), fetch_one=True)
+        return r is not None
+    except Exception:
+        return False
+
+
+def create_wc_challenge(match_id: str, team1: str, team2: str, match_time) -> Optional[int]:
+    try:
+        r = execute_query(
+            """INSERT INTO worldcup_challenges (match_id, team1, team2, match_time, status)
+               VALUES (%s, %s, %s, %s, 'pending') RETURNING id""",
+            (match_id, team1, team2, match_time), fetch_one=True
         )
-        return result["id"] if result else None
+        return r["id"] if r else None
     except Exception as e:
-        print(f"❌ create_world_cup_challenge error: {e}")
+        print(f"❌ create_wc_challenge error: {e}")
         return None
 
 
-def update_challenge_message(challenge_id: int, message_id: int, chat_id: int):
+def set_wc_channel_msg(challenge_id: int, msg_id: int):
     try:
-        execute_query(
-            "UPDATE world_cup_challenges SET message_id=%s, chat_id=%s WHERE id=%s",
-            (message_id, chat_id, challenge_id)
-        )
+        execute_query("UPDATE worldcup_challenges SET channel_msg_id=%s WHERE id=%s", (msg_id, challenge_id))
     except Exception as e:
-        print(f"❌ update_challenge_message error: {e}")
+        print(f"❌ set_wc_channel_msg error: {e}")
 
 
-def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, chosen_team: str, amount: int) -> tuple:
+def get_wc_challenge(challenge_id: int) -> Optional[Dict]:
     try:
-        challenge = execute_query(
-            "SELECT * FROM world_cup_challenges WHERE id=%s", (challenge_id,), fetch_one=True
-        )
-        if not challenge:
+        r = execute_query("SELECT * FROM worldcup_challenges WHERE id=%s", (challenge_id,), fetch_one=True)
+        return dict(r) if r else None
+    except Exception as e:
+        print(f"❌ get_wc_challenge error: {e}")
+        return None
+
+
+def get_pending_wc_challenges() -> list:
+    try:
+        rows = execute_query("SELECT * FROM worldcup_challenges WHERE status='pending'", fetch_all=True)
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_pending_wc_challenges error: {e}")
+        return []
+
+
+def join_wc_challenge(challenge_id: int, user_id: int, user_tg_id: int,
+                      selected_option: str, amount: int) -> tuple:
+    try:
+        ch = get_wc_challenge(challenge_id)
+        if not ch:
             return False, "❌ چالش یافت نشد."
-        if challenge["status"] != "waiting":
+        if ch["status"] != "pending":
             return False, "❌ این چالش دیگر فعال نیست."
+        dup = execute_query(
+            "SELECT id FROM challenge_participants WHERE user_id=%s AND challenge_id=%s",
+            (user_id, challenge_id), fetch_one=True
+        )
+        if dup:
+            return False, "❌ شما قبلاً در این چالش شرکت کرده‌اید."
         balance = get_token_balance(user_id)
         if balance < amount:
-            return False, f"❌ موجودی کافی ندارید! نیاز: {amount} — موجودی: {balance}"
+            return False, f"❌ موجودی کافی ندارید!\nنیاز: {amount} — موجودی: {balance} الماس"
         if not deduct_tokens(user_id, amount):
             return False, "❌ خطا در کسر موجودی."
         execute_query(
-            "INSERT INTO world_cup_bets (challenge_id, user_id, user_tg_id, chosen_team, amount) VALUES (%s,%s,%s,%s,%s)",
-            (challenge_id, user_id, user_tg_id, chosen_team, amount)
+            """INSERT INTO challenge_participants
+               (user_id, user_tg_id, challenge_id, selected_option, amount)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (user_id, user_tg_id, challenge_id, selected_option, amount)
         )
-        return True, "✅ شرط ثبت شد."
+        return True, "✅ شرط شما ثبت شد."
     except Exception as e:
-        print(f"❌ join_world_cup_challenge error: {e}")
+        print(f"❌ join_wc_challenge error: {e}")
         return False, f"❌ خطا: {e}"
 
 
-def finish_world_cup_challenge(challenge_id: int, winner_team: str):
+def finish_wc_challenge(challenge_id: int, winner_option: str) -> list:
+    paid = []
     try:
         execute_query(
-            "UPDATE world_cup_challenges SET status='finished', winner_team=%s WHERE id=%s",
-            (winner_team, challenge_id)
+            "UPDATE worldcup_challenges SET status='finished', winner_option=%s WHERE id=%s",
+            (winner_option, challenge_id)
         )
-        # واریز به برندگان
         winners = execute_query(
-            "SELECT * FROM world_cup_bets WHERE challenge_id=%s AND chosen_team=%s",
-            (challenge_id, winner_team), fetch_all=True
+            "SELECT * FROM challenge_participants WHERE challenge_id=%s AND selected_option=%s",
+            (challenge_id, winner_option), fetch_all=True
         )
-        losers_count = execute_query(
-            "SELECT COUNT(*) as c FROM world_cup_bets WHERE challenge_id=%s AND chosen_team!=%s",
-            (challenge_id, winner_team), fetch_one=True
-        )
-        total_loser_pool = 0
-        if losers_count:
-            loser_rows = execute_query(
-                "SELECT SUM(amount) as s FROM world_cup_bets WHERE challenge_id=%s AND chosen_team!=%s",
-                (challenge_id, winner_team), fetch_one=True
-            )
-            total_loser_pool = int(loser_rows["s"] or 0) if loser_rows else 0
-
         if winners:
-            share = total_loser_pool // len(winners)
             for w in winners:
-                payout = w["amount"] + share
+                payout = w["amount"] * 2
                 add_tokens(w["user_id"], payout)
+                paid.append({"user_tg_id": w["user_tg_id"], "payout": payout})
     except Exception as e:
-        print(f"❌ finish_world_cup_challenge error: {e}")
+        print(f"❌ finish_wc_challenge error: {e}")
+    return paid
+
+
+# ── سازگاری با کد قدیمی ─────────────────────────────────────────────────────
+def create_world_cup_challenge(team1: str, team2: str, match_time: str, bet_amount: int) -> Optional[int]:
+    import hashlib
+    fake_id = hashlib.md5(f"{team1}{team2}{match_time}".encode()).hexdigest()[:12]
+    return create_wc_challenge(fake_id, team1, team2, match_time)
+
+def update_challenge_message(challenge_id: int, message_id: int, chat_id: int):
+    set_wc_channel_msg(challenge_id, message_id)
+
+def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, chosen_team: str, amount: int):
+    return join_wc_challenge(challenge_id, user_id, user_tg_id, chosen_team, amount)
+
+def finish_world_cup_challenge(challenge_id: int, winner_team: str):
+    finish_wc_challenge(challenge_id, winner_team)
 
 
 # ─── سیستم قرعه‌کشی ───────────────────────────────────────────────────────────

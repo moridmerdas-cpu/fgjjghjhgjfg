@@ -599,31 +599,297 @@ def start_token_bot():
             _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 🏆 Callback: شرط‌بندی جام جهانی
+    # ⚽ سیستم جام جهانی — football-data.org
     # ══════════════════════════════════════════════════════════════════════════
+
+    # کش محلی نتایج API (برای کاهش مصرف)
+    _wc_api_cache = {"matches": [], "results": {}, "last_fetch": 0, "last_result_fetch": 0}
+    # وضعیت انتخاب تیم کاربران: tg_id -> {challenge_id, selected_option}
+    _wc_pending_bet = {}
+
+    def _wc_api_get(endpoint: str) -> dict:
+        """فراخوانی API football-data.org"""
+        import urllib.request, json as _json
+        api_key = getattr(config, "FOOTBALL_API_KEY", "")
+        if not api_key:
+            return {}
+        url = f"https://api.football-data.org/v4/{endpoint}"
+        req = urllib.request.Request(url, headers={"X-Auth-Token": api_key})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return _json.loads(resp.read().decode())
+        except Exception as e:
+            print(f"❌ Football API error [{endpoint}]: {e}")
+            return {}
+
+    def _wc_get_matches() -> list:
+        """دریافت بازی‌های آینده از API (با کش ۱۰ دقیقه)"""
+        now = time.time()
+        if now - _wc_api_cache["last_fetch"] < 600 and _wc_api_cache["matches"]:
+            return _wc_api_cache["matches"]
+        comp = getattr(config, "WC_COMPETITION", "WC")
+        data = _wc_api_get(f"competitions/{comp}/matches?status=SCHEDULED")
+        matches = data.get("matches", [])
+        _wc_api_cache["matches"] = matches
+        _wc_api_cache["last_fetch"] = now
+        return matches
+
+    def _wc_get_finished_matches() -> list:
+        """دریافت بازی‌های تمام‌شده (با کش ۵ دقیقه)"""
+        now = time.time()
+        if now - _wc_api_cache["last_result_fetch"] < 300:
+            return _wc_api_cache.get("finished", [])
+        comp = getattr(config, "WC_COMPETITION", "WC")
+        data = _wc_api_get(f"competitions/{comp}/matches?status=FINISHED")
+        finished = data.get("matches", [])
+        _wc_api_cache["finished"] = finished
+        _wc_api_cache["last_result_fetch"] = now
+        return finished
+
+    def _wc_determine_winner(match: dict) -> str:
+        """تعیین برنده از نتیجه بازی"""
+        score = match.get("score", {})
+        winner = score.get("winner")  # HOME_TEAM / AWAY_TEAM / DRAW
+        if winner == "HOME_TEAM":
+            return "team1"
+        elif winner == "AWAY_TEAM":
+            return "team2"
+        elif winner == "DRAW":
+            return "draw"
+        return ""
+
+    def _wc_send_challenge_to_channel(challenge_id: int, team1: str, team2: str, match_time_str: str):
+        """ارسال چالش به کانال"""
+        channel = getattr(config, "WC_CHANNEL_ID", "")
+        if not channel:
+            print("⚠️ WC_CHANNEL_ID تنظیم نشده!")
+            return
+        min_bet = getattr(config, "WC_MIN_BET", 10)
+        max_bet = getattr(config, "WC_MAX_BET", 5000)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton(f"🔵 {team1}", callback_data=f"wc_pick_{challenge_id}_team1"),
+            types.InlineKeyboardButton("🤝 مساوی",    callback_data=f"wc_pick_{challenge_id}_draw"),
+            types.InlineKeyboardButton(f"🔴 {team2}", callback_data=f"wc_pick_{challenge_id}_team2"),
+        )
+        text = (
+            f"⚽️ <b>چالش جام جهانی!</b>\n\n"
+            f"🆚 <b>{team1}</b>  vs  <b>{team2}</b>\n"
+            f"⏰ زمان بازی: <b>{match_time_str}</b>\n\n"
+            f"💎 محدوده شرط: {min_bet} – {max_bet} الماس\n\n"
+            f"روی تیم مورد نظرت بزن، سپس مبلغ شرط رو بنویس!"
+        )
+        try:
+            msg = _bot.send_message(channel, text, reply_markup=markup)
+            db.set_wc_channel_msg(challenge_id, msg.message_id)
+        except Exception as e:
+            print(f"❌ ارسال چالش به کانال: {e}")
+
+    def _wc_auto_fetch_and_create():
+        """بررسی بازی‌های جدید و ساخت چالش خودکار"""
+        try:
+            matches = _wc_get_matches()
+            for m in matches:
+                match_id = str(m.get("id", ""))
+                if not match_id or db.wc_challenge_exists(match_id):
+                    continue
+                home = m.get("homeTeam", {}).get("shortName") or m.get("homeTeam", {}).get("name", "؟")
+                away = m.get("awayTeam", {}).get("shortName") or m.get("awayTeam", {}).get("name", "؟")
+                utc_date = m.get("utcDate", "")
+                try:
+                    dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
+                    # فقط بازی‌هایی که حداقل ۳۰ دقیقه دیگر شروع می‌شوند
+                    if dt < datetime.datetime.utcnow() + datetime.timedelta(minutes=30):
+                        continue
+                    match_time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+                except Exception:
+                    match_time_str = utc_date
+                    dt = utc_date
+
+                challenge_id = db.create_wc_challenge(match_id, home, away, dt)
+                if challenge_id:
+                    _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
+                    print(f"✅ چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
+        except Exception as e:
+            print(f"❌ _wc_auto_fetch_and_create: {e}")
+
+    def _wc_auto_check_results():
+        """بررسی نتایج بازی‌های تمام‌شده و اعلام برنده"""
+        try:
+            pending = db.get_pending_wc_challenges()
+            if not pending:
+                return
+            finished = _wc_get_finished_matches()
+            finished_ids = {str(m["id"]): m for m in finished}
+            channel = getattr(config, "WC_CHANNEL_ID", "")
+
+            for ch in pending:
+                match_id = str(ch.get("match_id", ""))
+                if match_id not in finished_ids:
+                    continue
+                match = finished_ids[match_id]
+                winner_option = _wc_determine_winner(match)
+                if not winner_option:
+                    continue
+
+                paid = db.finish_wc_challenge(ch["id"], winner_option)
+
+                option_fa = {"team1": ch["team1"], "team2": ch["team2"], "draw": "مساوی"}.get(winner_option, winner_option)
+                result_text = (
+                    f"🏁 <b>پایان چالش!</b>\n\n"
+                    f"⚽️ {ch['team1']} vs {ch['team2']}\n"
+                    f"🏆 نتیجه: <b>{option_fa}</b>\n\n"
+                    f"✅ برندگان ۲ برابر مبلغ شرطشان دریافت کردند!"
+                )
+                if channel and ch.get("channel_msg_id"):
+                    try:
+                        _bot.edit_message_text(result_text, chat_id=channel, message_id=ch["channel_msg_id"])
+                    except Exception:
+                        try:
+                            _bot.send_message(channel, result_text)
+                        except Exception:
+                            pass
+
+                # اطلاع رسانی به برندگان در پیوی
+                for winner in paid:
+                    try:
+                        _bot.send_message(
+                            winner["user_tg_id"],
+                            f"🎉 <b>تبریک!</b> شرط‌بندی {ch['team1']} vs {ch['team2']} را بردید!\n"
+                            f"💎 <b>{winner['payout']} الماس</b> به حسابتان واریز شد."
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"❌ _wc_auto_check_results: {e}")
+
+    def _wc_scheduler():
+        """حلقه زمانی — هر WC_POLL_INTERVAL ثانیه"""
+        interval = getattr(config, "WC_POLL_INTERVAL", 600)
+        while True:
+            _wc_auto_fetch_and_create()
+            _wc_auto_check_results()
+            time.sleep(interval)
+
+    # اجرای scheduler در Thread جداگانه
+    _wc_thread = threading.Thread(target=_wc_scheduler, daemon=True)
+    _wc_thread.start()
+
+    # ── Callback: کاربر روی تیم کلیک کرد ────────────────────────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("wc_pick_"))
+    def callback_wc_pick(call):
+        try:
+            _, _, cid, option = call.data.split("_", 3)
+            challenge_id = int(cid)
+            challenge = db.get_wc_challenge(challenge_id)
+            if not challenge or challenge["status"] != "pending":
+                return _bot.answer_callback_query(call.id, "❌ این چالش دیگر فعال نیست.", show_alert=True)
+
+            account = _get_account_cached(call.from_user.id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+
+            min_bet = getattr(config, "WC_MIN_BET", 10)
+            max_bet = getattr(config, "WC_MAX_BET", 5000)
+            option_fa = {"team1": challenge["team1"], "team2": challenge["team2"], "draw": "مساوی"}.get(option, option)
+
+            # ذخیره انتخاب موقت
+            _wc_pending_bet[call.from_user.id] = {
+                "challenge_id": challenge_id,
+                "selected_option": option,
+                "account_id": account["id"],
+            }
+
+            _bot.answer_callback_query(call.id, f"✅ انتخاب: {option_fa}", show_alert=False)
+            try:
+                _bot.send_message(
+                    call.from_user.id,
+                    f"⚽️ انتخاب شما: <b>{option_fa}</b>\n\n"
+                    f"💎 مبلغ شرط را وارد کنید ({min_bet} تا {max_bet} الماس):\n"
+                    f"مثال: <code>شرکت 200</code>"
+                )
+            except Exception:
+                # اگر چت خصوصی باز نیست
+                _bot.answer_callback_query(
+                    call.id,
+                    f"✅ انتخاب: {option_fa}\n\n"
+                    f"برای ثبت شرط، به ربات پیام بده:\nشرکت [مبلغ]\nمثال: شرکت 200",
+                    show_alert=True
+                )
+        except Exception as e:
+            print(f"❌ callback_wc_pick: {e}")
+
+    # ── Handler: کاربر مبلغ شرط را وارد کرد ────────────────────────────────
+    @_bot.message_handler(func=lambda m: m.text and m.text.strip().startswith("شرکت ") and m.chat.type == "private")
+    def cmd_wc_join(message):
+        try:
+            tg_id = message.from_user.id
+            pending = _wc_pending_bet.get(tg_id)
+            if not pending:
+                return _bot.reply_to(message, "❌ ابتدا روی تیم مورد نظر در کانال کلیک کنید.")
+
+            parts = message.text.strip().split()
+            if len(parts) < 2:
+                return _bot.reply_to(message, "❌ فرمت: شرکت [مبلغ]\nمثال: شرکت 200")
+            try:
+                amount = int(parts[1])
+            except ValueError:
+                return _bot.reply_to(message, "❌ مبلغ باید عدد باشد.")
+
+            min_bet = getattr(config, "WC_MIN_BET", 10)
+            max_bet = getattr(config, "WC_MAX_BET", 5000)
+            if amount < min_bet or amount > max_bet:
+                return _bot.reply_to(message, f"❌ مبلغ باید بین {min_bet} و {max_bet} الماس باشد.")
+
+            challenge_id = pending["challenge_id"]
+            selected_option = pending["selected_option"]
+            account_id = pending["account_id"]
+
+            challenge = db.get_wc_challenge(challenge_id)
+            if not challenge:
+                _wc_pending_bet.pop(tg_id, None)
+                return _bot.reply_to(message, "❌ چالش یافت نشد.")
+
+            option_fa = {"team1": challenge["team1"], "team2": challenge["team2"], "draw": "مساوی"}.get(selected_option, selected_option)
+            success, msg_txt = db.join_wc_challenge(challenge_id, account_id, tg_id, selected_option, amount)
+            _wc_pending_bet.pop(tg_id, None)
+
+            if success:
+                balance = db.get_token_balance(account_id)
+                _bot.reply_to(
+                    message,
+                    f"✅ <b>شرط ثبت شد!</b>\n\n"
+                    f"⚽️ {challenge['team1']} vs {challenge['team2']}\n"
+                    f"🎯 انتخاب: <b>{option_fa}</b>\n"
+                    f"💎 مبلغ: <b>{amount} الماس</b>\n"
+                    f"💰 موجودی باقی‌مانده: {balance} الماس\n\n"
+                    f"🏆 در صورت برد، <b>{amount * 2} الماس</b> دریافت می‌کنید!"
+                )
+            else:
+                _bot.reply_to(message, msg_txt)
+        except Exception as e:
+            print(f"❌ cmd_wc_join: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
+
+    # ── Callback قدیمی bet_wc_ (سازگاری) ────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("bet_wc_"))
     def callback_bet_wc(call):
         try:
             parts = call.data.split("_", 3)
             challenge_id = int(parts[2])
             team_choice = parts[3]
-            
-            cache_key = f"challenge_{challenge_id}"
-            challenge = cache.get(cache_key)
-            if challenge is None:
-                challenge = db.get_challenge(challenge_id)
-                if challenge:
-                    cache.set(cache_key, challenge)
-            
-            if not challenge or challenge["status"] != "active":
+            challenge = db.get_wc_challenge(challenge_id)
+            if not challenge or challenge["status"] != "pending":
                 return _bot.answer_callback_query(call.id, "❌ این چالش فعال نیست.", show_alert=True)
-            
             account = _get_account_cached(call.from_user.id)
             if not account:
                 return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
-            
-            success, msg = db.place_bet(challenge_id, call.from_user.id, account["id"], team_choice, challenge["bet_amount"])
-            _bot.answer_callback_query(call.id, msg, show_alert=True)
+            _wc_pending_bet[call.from_user.id] = {
+                "challenge_id": challenge_id,
+                "selected_option": team_choice,
+                "account_id": account["id"],
+            }
+            _bot.answer_callback_query(call.id, f"✅ انتخاب ثبت شد! حالا مبلغ رو بنویس:\nشرکت [مبلغ]", show_alert=True)
         except Exception as e:
             print(f"❌ خطا در callback_bet_wc: {e}")
 
@@ -1087,7 +1353,7 @@ def start_token_bot():
                     "🎲 <b>ایجاد قرعه‌کشی گروهی (مالک)</b>\n\n"
                     "💎 مبلغ جایزه را ارسال کنید (الماس):\n\n"
                     "مثال: <code>100</code>\n\n"
-                    "📌 قرعه‌کشی در گروه <code>@Gp_SelfNexo</code> ایجاد می‌شود",
+                    "📌 قرعه‌کشی در گروه <code>@amelselfgap</code> ایجاد می‌شود",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -1177,7 +1443,7 @@ def start_token_bot():
                 data = state_data["data"]
                 challenge_id = db.create_world_cup_challenge(data["team1"], data["team2"], data["time"], bet_amount)
                 
-                group = getattr(config, 'WORLD_CUP_GROUP', '@Gp_SelfNexo')
+                group = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
                     types.InlineKeyboardButton(f"🔵 {data['team1']}", callback_data=f"bet_wc_{challenge_id}_{data['team1']}"),
@@ -1210,7 +1476,7 @@ def start_token_bot():
                 except:
                     return _bot.reply_to(message, "❌ مبلغ باید عدد باشد:")
                 
-                group = getattr(config, 'WORLD_CUP_GROUP', '@Gp_SelfNexo')
+                group = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
                 lottery_id = db.create_lottery(0, OWNER_TG_ID, prize, 2, prize)
                 
                 markup = types.InlineKeyboardMarkup()

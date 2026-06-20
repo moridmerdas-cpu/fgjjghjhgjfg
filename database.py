@@ -37,6 +37,13 @@ from database_supabase import (
     update_challenge_message as supa_update_challenge_message,
     join_world_cup_challenge as supa_join_world_cup_challenge,
     finish_world_cup_challenge as supa_finish_world_cup_challenge,
+    create_wc_challenge as supa_create_wc_challenge,
+    wc_challenge_exists as supa_wc_challenge_exists,
+    set_wc_channel_msg as supa_set_wc_channel_msg,
+    get_wc_challenge as supa_get_wc_challenge,
+    get_pending_wc_challenges as supa_get_pending_wc_challenges,
+    join_wc_challenge as supa_join_wc_challenge,
+    finish_wc_challenge as supa_finish_wc_challenge,
     create_lottery as supa_create_lottery,
     update_lottery_message as supa_update_lottery_message,
     get_lottery as supa_get_lottery,
@@ -213,17 +220,28 @@ def check_user_membership(bot, user_id: int) -> tuple:
     return cache.check_user_membership(bot, user_id)
 
 # ─── ✅ توابع چالش جام جهانی ───────────────────────────────────────────────────
-def create_world_cup_challenge(team1: str, team2: str, match_time: str, bet_amount: int):
+def create_world_cup_challenge(team1, team2, match_time, bet_amount):
     return supa_create_world_cup_challenge(team1, team2, match_time, bet_amount)
-
-def update_challenge_message(challenge_id: int, message_id: int, chat_id: int):
+def update_challenge_message(challenge_id, message_id, chat_id):
     return supa_update_challenge_message(challenge_id, message_id, chat_id)
-
-def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, chosen_team: str, amount: int):
+def join_world_cup_challenge(challenge_id, user_id, user_tg_id, chosen_team, amount):
     return supa_join_world_cup_challenge(challenge_id, user_id, user_tg_id, chosen_team, amount)
-
-def finish_world_cup_challenge(challenge_id: int, winner_team: str):
+def finish_world_cup_challenge(challenge_id, winner_team):
     return supa_finish_world_cup_challenge(challenge_id, winner_team)
+def create_wc_challenge(match_id, team1, team2, match_time):
+    return supa_create_wc_challenge(match_id, team1, team2, match_time)
+def wc_challenge_exists(match_id):
+    return supa_wc_challenge_exists(match_id)
+def set_wc_channel_msg(challenge_id, msg_id):
+    return supa_set_wc_channel_msg(challenge_id, msg_id)
+def get_wc_challenge(challenge_id):
+    return supa_get_wc_challenge(challenge_id)
+def get_pending_wc_challenges():
+    return supa_get_pending_wc_challenges()
+def join_wc_challenge(challenge_id, user_id, user_tg_id, selected_option, amount):
+    return supa_join_wc_challenge(challenge_id, user_id, user_tg_id, selected_option, amount)
+def finish_wc_challenge(challenge_id, winner_option):
+    return supa_finish_wc_challenge(challenge_id, winner_option)
 
 # ─── ✅ توابع قرعه‌کشی ──────────────────────────────────────────────────────────
 def create_lottery(creator_id: int, creator_tg_id: int, prize: int, max_players: int = 2, entry_fee: int = 0):
