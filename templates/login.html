@@ -1,105 +1,105 @@
-{% extends "base.html" %}
-
-{% block title %}ورود | NexoSelf{% endblock %}
-
-{% block content %}
-<div class="auth-page">
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود - Self Nexo</title>
+    <style>
+        body {
+            font-family: Tahoma, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 90%;
+            max-width: 400px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 2rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .link {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        .link a {
+            color: #667eea;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
     <div class="container">
-        <div class="auth-box">
-            <div class="auth-header">
-                <span class="auth-icon">🔐</span>
-                <h2>ورود به NexoSelf</h2>
-                <p>برای دسترسی به پنل مدیریت وارد شوید</p>
+        <h1>🔐 ورود به Self Nexo</h1>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        
+        <form method="POST" action="/login">
+            <div class="form-group">
+                <label for="username">نام کاربری:</label>
+                <input type="text" id="username" name="username" required>
             </div>
             
-            <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
-                <div class="form-group">
-                    <label>👤 یوزرنیم</label>
-                    <input type="text" id="loginUsername" placeholder="یوزرنیم خود را وارد کنید" required autofocus>
-                </div>
-                
-                <div class="form-group">
-                    <label>🔑 رمز عبور</label>
-                    <div class="password-input-wrapper">
-                        <input type="password" id="loginPassword" placeholder="رمز عبور را وارد کنید" required>
-                        <button type="button" class="password-toggle" onclick="togglePassword('loginPassword')">
-                            👁️
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="loginError" class="auth-error" style="display:none;"></div>
-                
-                <button type="submit" class="btn-primary full-width" id="loginBtn">
-                    <span class="btn-text">🚀 ورود</span>
-                    <span class="btn-loader" style="display:none;">⏳</span>
-                </button>
-            </form>
-            
-            <div class="auth-footer">
-                <p>حساب کاربری ندارید؟ <a href="{{ url_for('register_page') }}">ثبت‌نام کنید</a></p>
-                <p class="auth-note">💡 نسخه ۲.۰ — سلف‌بات نسل جدید</p>
+            <div class="form-group">
+                <label for="password">رمز عبور:</label>
+                <input type="password" id="password" name="password" required>
             </div>
+            
+            <button type="submit">ورود</button>
+        </form>
+        
+        <div class="link">
+            <p>حساب ندارید؟ <a href="/register">ثبت‌نام کنید</a></p>
         </div>
     </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-async function handleLogin(e) {
-    e.preventDefault();
-    const username = document.getElementById('loginUsername').value.trim();
-    const password = document.getElementById('loginPassword').value.trim();
-    const errorEl = document.getElementById('loginError');
-    const btn = document.getElementById('loginBtn');
-
-    if (!username || !password) {
-        errorEl.textContent = '❌ لطفاً همه فیلدها را پر کنید';
-        errorEl.style.display = 'block';
-        return;
-    }
-
-    btn.querySelector('.btn-text').textContent = 'در حال ورود...';
-    btn.querySelector('.btn-loader').style.display = 'inline';
-    btn.disabled = true;
-    errorEl.style.display = 'none';
-
-    try {
-        const res = await fetch('/api/panel-login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-        const data = await res.json();
-
-        if (data.ok) {
-            window.location.href = '/';
-        } else {
-            errorEl.textContent = '❌ ' + data.error;
-            errorEl.style.display = 'block';
-        }
-    } catch (err) {
-        errorEl.textContent = '❌ خطا در ارتباط با سرور';
-        errorEl.style.display = 'block';
-    }
-
-    btn.querySelector('.btn-text').textContent = '🚀 ورود';
-    btn.querySelector('.btn-loader').style.display = 'none';
-    btn.disabled = false;
-}
-
-function togglePassword(id) {
-    const input = document.getElementById(id);
-    input.type = input.type === 'password' ? 'text' : 'password';
-}
-
-// Enter key handler
-document.getElementById('loginForm').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        this.querySelector('button[type="submit"]').click();
-    }
-});
-</script>
-{% endblock %}
+</body>
+</html>

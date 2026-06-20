@@ -1,223 +1,70 @@
-{% extends "base.html" %}
-
-{% block title %}اتصال تلگرام | NexoSelf{% endblock %}
-
-{% block content %}
-<div class="auth-page">
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود تلگرام - Self Nexo</title>
+    <style>
+        body {
+            font-family: Tahoma, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        .info {
+            background: #eef;
+            padding: 1rem;
+            border-radius: 5px;
+            margin: 1rem 0;
+        }
+        button {
+            padding: 0.75rem 2rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 0.5rem;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+    </style>
+</head>
+<body>
     <div class="container">
-        <div class="auth-box">
-            <div class="auth-header">
-                <span class="auth-icon">📱</span>
-                <h2>اتصال حساب تلگرام</h2>
-                <p>برای استفاده از سلف‌بات، حساب تلگرام خود را وصل کنید</p>
-                <div class="auth-user">👤 {{ username }}</div>
-            </div>
-            
-            <form id="tgLoginForm" class="auth-form" onsubmit="sendCode(event)">
-                <div class="form-group">
-                    <label>📞 شماره تلفن</label>
-                    <input type="tel" id="phoneInput" placeholder="مثال: 09123456789" required>
-                    <small class="form-hint">شماره تلفن همراه خود را با کد ایران وارد کنید</small>
-                </div>
-                
-                <div id="tgError" class="auth-error" style="display:none;"></div>
-                
-                <button type="submit" class="btn-primary full-width" id="sendCodeBtn">
-                    <span class="btn-text">📩 ارسال کد</span>
-                    <span class="btn-loader" style="display:none;">⏳</span>
-                </button>
-            </form>
-            
-            <!-- بخش تأیید کد (پنهان) -->
-            <div id="verifySection" style="display:none;" class="auth-verify">
-                <hr class="auth-divider">
-                <p class="verify-hint">کد تأیید به شماره شما ارسال شد</p>
-                <form onsubmit="verifyCode(event)">
-                    <div class="form-group">
-                        <label>📨 کد تأیید</label>
-                        <input type="text" id="codeInput" placeholder="کد ۵ رقمی را وارد کنید" maxlength="5" required>
-                    </div>
-                    <div id="verifyError" class="auth-error" style="display:none;"></div>
-                    <button type="submit" class="btn-primary full-width" id="verifyBtn">
-                        <span class="btn-text">✅ تأیید کد</span>
-                        <span class="btn-loader" style="display:none;">⏳</span>
-                    </button>
-                </form>
-            </div>
-            
-            <!-- بخش رمز ۲ مرحله‌ای (پنهان) -->
-            <div id="twofaSection" style="display:none;" class="auth-verify">
-                <hr class="auth-divider">
-                <p class="verify-hint">🔐 رمز دو مرحله‌ای را وارد کنید</p>
-                <form onsubmit="verify2FA(event)">
-                    <div class="form-group">
-                        <label>🔑 رمز دو مرحله‌ای</label>
-                        <div class="password-input-wrapper">
-                            <input type="password" id="twofaInput" placeholder="رمز دو مرحله‌ای را وارد کنید" required>
-                            <button type="button" class="password-toggle" onclick="togglePassword('twofaInput')">
-                                👁️
-                            </button>
-                        </div>
-                    </div>
-                    <div id="twofaError" class="auth-error" style="display:none;"></div>
-                    <button type="submit" class="btn-primary full-width" id="twofaBtn">
-                        <span class="btn-text">🔓 تأیید</span>
-                        <span class="btn-loader" style="display:none;">⏳</span>
-                    </button>
-                </form>
-            </div>
-            
-            <div class="auth-footer">
-                <p><a href="{{ url_for('index') }}">← بازگشت به پنل</a></p>
-                <p class="auth-note">🔒 اطلاعات شما با امنیت بالا ذخیره می‌شود</p>
-            </div>
+        <h1>📱 ورود با تلگرام</h1>
+        <div class="info">
+            <p>سلام <b>{{ username }}</b>!</p>
+            <p>برای ادامه، باید با حساب تلگرام خود وارد شوید.</p>
         </div>
+        <button onclick="startLogin()">🔐 شروع ورود</button>
+        <br>
+        <button onclick="window.location.href='/'">🔙 بازگشت</button>
     </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-let phoneNumber = '';
-
-async function sendCode(e) {
-    e.preventDefault();
-    const phone = document.getElementById('phoneInput').value.trim();
-    const errorEl = document.getElementById('tgError');
-    const btn = document.getElementById('sendCodeBtn');
-
-    if (!phone || phone.length < 10) {
-        errorEl.textContent = '❌ شماره تلفن معتبر وارد کنید';
-        errorEl.style.display = 'block';
-        return;
-    }
-
-    btn.querySelector('.btn-text').textContent = 'در حال ارسال...';
-    btn.querySelector('.btn-loader').style.display = 'inline';
-    btn.disabled = true;
-    errorEl.style.display = 'none';
-
-    try {
-        const res = await fetch('/api/login/send_code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone })
-        });
-        const data = await res.json();
-
-        if (data.ok) {
-            phoneNumber = phone;
-            document.getElementById('verifySection').style.display = 'block';
-            document.getElementById('sendCodeBtn').style.display = 'none';
-            document.getElementById('phoneInput').disabled = true;
-            document.getElementById('codeInput').focus();
-            showToast('✅ کد تأیید ارسال شد');
-        } else {
-            errorEl.textContent = '❌ ' + data.error;
-            errorEl.style.display = 'block';
+    
+    <script>
+        function startLogin() {
+            alert('در حال انتقال به فرآیند ورود تلگرام...');
+            // اینجا باید API call به backend زده شود
         }
-    } catch (err) {
-        errorEl.textContent = '❌ خطا در ارتباط با سرور';
-        errorEl.style.display = 'block';
-    }
-
-    btn.querySelector('.btn-text').textContent = '📩 ارسال کد';
-    btn.querySelector('.btn-loader').style.display = 'none';
-    btn.disabled = false;
-}
-
-async function verifyCode(e) {
-    e.preventDefault();
-    const code = document.getElementById('codeInput').value.trim();
-    const errorEl = document.getElementById('verifyError');
-    const btn = document.getElementById('verifyBtn');
-
-    if (!code || code.length < 5) {
-        errorEl.textContent = '❌ کد تأیید را وارد کنید';
-        errorEl.style.display = 'block';
-        return;
-    }
-
-    btn.querySelector('.btn-text').textContent = 'در حال تأیید...';
-    btn.querySelector('.btn-loader').style.display = 'inline';
-    btn.disabled = true;
-    errorEl.style.display = 'none';
-
-    try {
-        const res = await fetch('/api/login/verify_code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code })
-        });
-        const data = await res.json();
-
-        if (data.ok) {
-            showToast('✅ حساب تلگرام با موفقیت متصل شد');
-            window.location.href = '/';
-        } else if (data.need_2fa) {
-            document.getElementById('twofaSection').style.display = 'block';
-            document.getElementById('verifySection').style.display = 'none';
-            document.getElementById('twofaInput').focus();
-            showToast('🔐 رمز دو مرحله‌ای را وارد کنید');
-        } else {
-            errorEl.textContent = '❌ ' + data.error;
-            errorEl.style.display = 'block';
-        }
-    } catch (err) {
-        errorEl.textContent = '❌ خطا در ارتباط با سرور';
-        errorEl.style.display = 'block';
-    }
-
-    btn.querySelector('.btn-text').textContent = '✅ تأیید کد';
-    btn.querySelector('.btn-loader').style.display = 'none';
-    btn.disabled = false;
-}
-
-async function verify2FA(e) {
-    e.preventDefault();
-    const password = document.getElementById('twofaInput').value.trim();
-    const errorEl = document.getElementById('twofaError');
-    const btn = document.getElementById('twofaBtn');
-
-    if (!password) {
-        errorEl.textContent = '❌ رمز دو مرحله‌ای را وارد کنید';
-        errorEl.style.display = 'block';
-        return;
-    }
-
-    btn.querySelector('.btn-text').textContent = 'در حال تأیید...';
-    btn.querySelector('.btn-loader').style.display = 'inline';
-    btn.disabled = true;
-    errorEl.style.display = 'none';
-
-    try {
-        const res = await fetch('/api/login/verify_2fa', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password })
-        });
-        const data = await res.json();
-
-        if (data.ok) {
-            showToast('✅ حساب تلگرام با موفقیت متصل شد');
-            window.location.href = '/';
-        } else {
-            errorEl.textContent = '❌ ' + data.error;
-            errorEl.style.display = 'block';
-        }
-    } catch (err) {
-        errorEl.textContent = '❌ خطا در ارتباط با سرور';
-        errorEl.style.display = 'block';
-    }
-
-    btn.querySelector('.btn-text').textContent = '🔓 تأیید';
-    btn.querySelector('.btn-loader').style.display = 'none';
-    btn.disabled = false;
-}
-
-function togglePassword(id) {
-    const input = document.getElementById(id);
-    input.type = input.type === 'password' ? 'text' : 'password';
-}
-</script>
-{% endblock %}
+    </script>
+</body>
+</html>
