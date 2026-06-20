@@ -709,7 +709,7 @@ def start_token_bot():
                 try:
                     dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
                     # فقط بازی‌هایی که حداقل ۳۰ دقیقه دیگر شروع می‌شوند
-                    if dt < datetime.datetime.utcnow() + datetime.timedelta(minutes=90):
+                    if dt < datetime.datetime.utcnow() + datetime.timedelta(minutes=20):
                         continue
                     match_time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
                 except Exception:
