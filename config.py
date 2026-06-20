@@ -8,6 +8,7 @@ load_dotenv()
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+WORLD_CUP_GROUP = "@Gp_SelfNexo"
 
 # ─── سرور ──────────────────────────────────────────────────────────────────
 SECRET_KEY = os.environ.get("SECRET_KEY", "amel_self55_secret_key_change_me")
