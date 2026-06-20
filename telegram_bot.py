@@ -693,8 +693,18 @@ def start_token_bot():
                 match_id = str(m.get("id", ""))
                 if not match_id or db.wc_challenge_exists(match_id):
                     continue
-                home = m.get("homeTeam", {}).get("shortName") or m.get("homeTeam", {}).get("name", "؟")
-                away = m.get("awayTeam", {}).get("shortName") or m.get("awayTeam", {}).get("name", "؟")
+
+                home_team = m.get("homeTeam", {})
+                away_team = m.get("awayTeam", {})
+
+                # نام تیم را از چند فیلد مختلف امتحان می‌کنیم
+                home = (home_team.get("shortName") or home_team.get("name") or "").strip()
+                away = (away_team.get("shortName") or away_team.get("name") or "").strip()
+
+                # اگر هنوز تیم‌ها مشخص نشده‌اند (مرحله حذفی) رد می‌کنیم
+                if not home or not away:
+                    continue
+
                 utc_date = m.get("utcDate", "")
                 try:
                     dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
@@ -710,6 +720,7 @@ def start_token_bot():
                 if challenge_id:
                     _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
                     print(f"✅ چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
+                    time.sleep(0.3)  # جلوگیری از flood در ارسال به کانال
         except Exception as e:
             print(f"❌ _wc_auto_fetch_and_create: {e}")
 
