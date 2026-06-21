@@ -662,8 +662,22 @@ async def _handle_command(cl, event, text, owner_id, entry):
         await edit(await _get_weather(text[len("هوا "):].strip()))
 
     # ─── قیمت ارز ────────────────────────────────────────────────────────────
-    elif text in ("قیمت دلار", "ارز"):
-        await edit(await _get_currency())
+    elif text == "ارز" or text == "قیمت دلار" or text.startswith("ارز "):
+        sub = text[len("ارز"):].strip() if text != "قیمت دلار" else "دلار"
+        sub = sub.replace("‌", " ").replace("‏", "")  # حذف نیم‌فاصله/کاراکترهای نامرئی
+        if any(k in sub for k in ("بیت کوین", "بیتکوین", "bitcoin", "btc")):
+            target = "btc"
+        elif any(k in sub for k in ("تتر", "tether", "usdt")):
+            target = "usdt"
+        elif any(k in sub for k in ("یورو", "eur")):
+            target = "eur"
+        elif any(k in sub for k in ("پوند", "gbp")):
+            target = "gbp"
+        elif any(k in sub for k in ("دلار", "usd")):
+            target = "usd"
+        else:
+            target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
+        await edit(await _get_currency_text(target))
 
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
@@ -842,18 +856,97 @@ async def _get_weather(city):
         return "⚠️ خطا در دریافت اطلاعات هوا"
 
 
-async def _get_currency():
+_CURRENCY_LABELS = {
+    "usd": "دلار",
+    "eur": "یورو",
+    "gbp": "پوند",
+    "usdt": "Tether",
+    "btc": "Bitcoin",
+}
+_CURRENCY_DEFAULT_LIST = ("usd", "usdt", "eur", "gbp")  # خروجی پیش‌فرض «ارز»
+
+_currency_cache = {"data": {}, "ts": 0.0}
+_CURRENCY_CACHE_TTL = 30  # ثانیه — جلوگیری از اسپم به API
+
+
+def _fetch_json_sync(url, json_body=None, timeout=6):
+    """درخواست HTTP همگام (در executor اجرا می‌شود تا event loop بلاک نشود)"""
+    import urllib.request, json as _json
+    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    req = urllib.request.Request(url, headers=headers)
+    if json_body is not None:
+        req.data = _json.dumps(json_body).encode()
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return _json.loads(resp.read().decode())
+
+
+async def _fetch_currency_prices() -> dict:
+    """
+    دریافت قیمت لحظه‌ای ارزها به تومان (با کش ۳۰ ثانیه‌ای).
+    دلار/یورو/پوند → نرخ بازار آزاد (Bonbast)
+    تتر/بیت‌کوین   → بازار رمزارز ایران (Nobitex)، تبدیل ریال به تومان
+    """
+    now = time.time()
+    if now - _currency_cache["ts"] < _CURRENCY_CACHE_TTL and _currency_cache["data"]:
+        return _currency_cache["data"]
+
+    loop = asyncio.get_event_loop()
+    result = {}
+
+    # ─── دلار / یورو / پوند (Bonbast) ──────────────────────────────────────
     try:
-        import urllib.request, json
-        with urllib.request.urlopen("https://api.exchangerate-api.com/v4/latest/USD", timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-            r = data["rates"]
-            return (f"💵 نرخ ارز:\n"
-                    f"دلار/یورو: {round(1/r['EUR'],4)}\n"
-                    f"دلار/پوند: {round(1/r['GBP'],4)}\n"
-                    f"دلار/روبل: {round(r['RUB'],2)}")
-    except Exception:
-        return "⚠️ خطا در دریافت قیمت ارز"
+        bonbast = await loop.run_in_executor(
+            None, lambda: _fetch_json_sync("https://bonbast.amirhn.com/latest")
+        )
+        for code in ("usd", "eur", "gbp"):
+            if code in bonbast and bonbast[code].get("sell"):
+                result[code] = int(bonbast[code]["sell"])
+    except Exception as e:
+        print(f"⚠️ خطا در دریافت نرخ ارز از Bonbast: {e}")
+
+    # ─── تتر / بیت‌کوین (Nobitex، ریال → تومان) ─────────────────────────────
+    for src in ("usdt", "btc"):
+        try:
+            nb = await loop.run_in_executor(
+                None,
+                lambda s=src: _fetch_json_sync(
+                    "https://api.nobitex.ir/market/stats",
+                    json_body={"srcCurrency": s, "dstCurrency": "rls"},
+                ),
+            )
+            rial = float(nb["stats"][f"{src}-rls"]["latest"])
+            result[src] = int(rial / 10)
+        except Exception as e:
+            print(f"⚠️ خطا در دریافت قیمت {src} از نوبیتکس: {e}")
+
+    if not result:
+        return None
+
+    _currency_cache["data"] = result
+    _currency_cache["ts"] = now
+    return result
+
+
+async def _get_currency_text(target: str = None) -> str:
+    """
+    target=None → نمایش لیست ارزهای مهم (دلار، تتر، یورو، پوند)
+    target='usd'/'eur'/'gbp'/'usdt'/'btc' → فقط همان یک ارز
+    """
+    prices = await _fetch_currency_prices()
+    if not prices:
+        return "❌ دریافت قیمت ممکن نیست"
+
+    if target:
+        if target not in prices:
+            return "❌ دریافت قیمت ممکن نیست"
+        return f"- {_CURRENCY_LABELS[target]}: {prices[target]:,} تومان"
+
+    lines = [
+        f"- {_CURRENCY_LABELS[c]}: {prices[c]:,} تومان"
+        for c in _CURRENCY_DEFAULT_LIST if c in prices
+    ]
+    return "\n".join(lines) if lines else "❌ دریافت قیمت ممکن نیست"
 
 
 def _help_text():
@@ -890,7 +983,8 @@ def _help_text():
 🔹 ابزار:
 • ترجمه [متن]
 • هوا [شهر]
-• ارز
+• ارز — نمایش دلار، تتر، یورو، پوند
+• ارز دلار / ارز تتر / ارز یورو / ارز پوند / ارز بیت کوین — قیمت یک ارز خاص
 
 🔹 اسپم:
 • اسپم [تعداد] [متن]
