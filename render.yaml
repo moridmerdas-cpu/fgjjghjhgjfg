@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: nexoself
+    name: amel-self55
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
@@ -27,18 +27,3 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
-        sync: false
-      # ─── جام جهانی (football-data.org) ──────────────────────────────────────
-      - key: FOOTBALL_API_KEY
-        sync: false
-      - key: WC_CHANNEL_ID
-        sync: false
-      - key: WC_MIN_BET
-        value: "10"
-      - key: WC_MAX_BET
-        value: "5000"
-      - key: WC_POLL_INTERVAL
-        value: "600"
-      - key: WC_COMPETITION
-        value: "WC"
-

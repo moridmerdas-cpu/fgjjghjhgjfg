@@ -869,23 +869,34 @@ _currency_cache = {"data": {}, "ts": 0.0}
 _CURRENCY_CACHE_TTL = 30  # ثانیه — جلوگیری از اسپم به API
 
 
-def _fetch_json_sync(url, json_body=None, timeout=6):
+def _fetch_json_sync(url, json_body=None, timeout=6, retries=3):
     """درخواست HTTP همگام (در executor اجرا می‌شود تا event loop بلاک نشود)"""
-    import urllib.request, json as _json
+    import urllib.request, json as _json, time as _time
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
     req = urllib.request.Request(url, headers=headers)
     if json_body is not None:
         req.data = _json.dumps(json_body).encode()
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return _json.loads(resp.read().decode())
+    last_err = None
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return _json.loads(resp.read().decode())
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                _time.sleep(2 ** attempt)  # 1s, 2s
+    raise last_err
 
 
 async def _fetch_currency_prices() -> dict:
     """
-    دریافت قیمت لحظه‌ای ارزها به تومان (با کش ۳۰ ثانیه‌ای).
-    دلار/یورو/پوند → نرخ بازار آزاد (Bonbast)
-    تتر/بیت‌کوین   → بازار رمزارز ایران (Nobitex)، تبدیل ریال به تومان
+    دریافت قیمت لحظه‌ای ارزها به تومان — فقط از Nobitex (ریال → تومان).
+    دلار  → usdt-rls
+    یورو  → تخمین از نرخ EUR/USD جهانی × قیمت تتر
+    پوند  → تخمین از نرخ GBP/USD جهانی × قیمت تتر
+    تتر   → usdt-rls
+    بیت‌کوین → btc-rls
     """
     now = time.time()
     if now - _currency_cache["ts"] < _CURRENCY_CACHE_TTL and _currency_cache["data"]:
@@ -894,31 +905,50 @@ async def _fetch_currency_prices() -> dict:
     loop = asyncio.get_event_loop()
     result = {}
 
-    # ─── دلار / یورو / پوند (Bonbast) ──────────────────────────────────────
+    # ─── دریافت همه قیمت‌ها از Nobitex ──────────────────────────────────────
+    PAIRS = {
+        "usdt": "usdt-rls",
+        "btc":  "btc-rls",
+        "eth":  "eth-rls",
+    }
     try:
-        bonbast = await loop.run_in_executor(
-            None, lambda: _fetch_json_sync("https://bonbast.amirhn.com/latest")
+        nb = await loop.run_in_executor(
+            None,
+            lambda: _fetch_json_sync("https://api.nobitex.ir/v3/orderbook/all")
         )
-        for code in ("usd", "eur", "gbp"):
-            if code in bonbast and bonbast[code].get("sell"):
-                result[code] = int(bonbast[code]["sell"])
+        for key, pair in PAIRS.items():
+            try:
+                asks = nb.get(pair.upper().replace("-", ""), {}).get("asks", [])
+                if asks:
+                    rial = float(asks[0][0])
+                    result[key] = int(rial / 10)
+            except Exception:
+                pass
     except Exception as e:
-        print(f"⚠️ خطا در دریافت نرخ ارز از Bonbast: {e}")
+        print(f"⚠️ خطا در دریافت قیمت از نوبیتکس (orderbook): {e}")
 
-    # ─── تتر / بیت‌کوین (Nobitex، ریال → تومان) ─────────────────────────────
-    for src in ("usdt", "btc"):
-        try:
-            nb = await loop.run_in_executor(
-                None,
-                lambda s=src: _fetch_json_sync(
-                    "https://api.nobitex.ir/market/stats",
-                    json_body={"srcCurrency": s, "dstCurrency": "rls"},
-                ),
-            )
-            rial = float(nb["stats"][f"{src}-rls"]["latest"])
-            result[src] = int(rial / 10)
-        except Exception as e:
-            print(f"⚠️ خطا در دریافت قیمت {src} از نوبیتکس: {e}")
+    # fallback: اگه orderbook کار نکرد از market/stats استفاده کن
+    if not result:
+        for src in ("usdt", "btc", "eth"):
+            try:
+                nb = await loop.run_in_executor(
+                    None,
+                    lambda s=src: _fetch_json_sync(
+                        "https://api.nobitex.ir/market/stats",
+                        json_body={"srcCurrency": s, "dstCurrency": "rls"},
+                    ),
+                )
+                rial = float(nb["stats"][f"{src}-rls"]["latest"])
+                result[src] = int(rial / 10)
+            except Exception as e:
+                print(f"⚠️ خطا در دریافت قیمت {src} از نوبیتکس: {e}")
+
+    # ─── تخمین دلار از قیمت تتر ──────────────────────────────────────────────
+    if "usdt" in result:
+        result["usd"] = result["usdt"]  # تتر ≈ دلار
+        # تخمین یورو و پوند از نرخ‌های ثابت تقریبی (بدون API خارجی)
+        result.setdefault("eur", int(result["usdt"] * 1.08))
+        result.setdefault("gbp", int(result["usdt"] * 1.27))
 
     if not result:
         return None

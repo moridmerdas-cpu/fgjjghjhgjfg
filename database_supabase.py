@@ -342,24 +342,6 @@ def deduct_tokens(owner_id: int, amount: int) -> bool:
         print(f"❌ deduct_tokens error: {e}")
         return False
 
-def transfer_diamonds(from_owner_id: int, to_owner_id: int, amount: int) -> tuple:
-    """انتقال الماس بین دو حساب. خروجی: (success: bool, message: str)"""
-    try:
-        if amount < 1:
-            return False, "❌ مقدار باید بیشتر از 0 باشد."
-        if from_owner_id == to_owner_id:
-            return False, "❌ نمی‌توانید به خودتان الماس انتقال دهید."
-        balance = get_token_balance(from_owner_id)
-        if balance < amount:
-            return False, f"❌ موجودی کافی ندارید! موجودی فعلی: {balance} الماس"
-        if not deduct_tokens(from_owner_id, amount):
-            return False, "❌ خطا در کسر الماس!"
-        add_tokens(to_owner_id, amount)
-        return True, f"✅ {amount} الماس با موفقیت منتقل شد."
-    except Exception as e:
-        print(f"❌ transfer_diamonds error: {e}")
-        return False, f"❌ خطا: {e}"
-
 def claim_daily_token(owner_id: int):
     from config import DAILY_TOKEN_GIFT
     import time as _time
@@ -552,6 +534,21 @@ def init_world_cup_tables():
             created_at TIMESTAMP DEFAULT NOW(),
             UNIQUE(user_id, challenge_id)
         )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_lottery (
+            id SERIAL PRIMARY KEY,
+            creator_id INTEGER,
+            creator_tg_id BIGINT,
+            prize INTEGER NOT NULL,
+            max_players INTEGER DEFAULT 2,
+            entry_fee INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'waiting',
+            winner_id INTEGER,
+            chat_id BIGINT,
+            message_id BIGINT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
         """
     ]
     for q in queries:
@@ -559,7 +556,7 @@ def init_world_cup_tables():
             execute_query(q)
         except Exception as e:
             print(f"❌ init_world_cup_tables error: {e}")
-    print("✅ جداول جام جهانی ایجاد/تأیید شدند!")
+    print("✅ جداول جام جهانی و قرعه‌کشی ایجاد/تأیید شدند!")
 
 
 def wc_challenge_exists(match_id: str) -> bool:
@@ -674,6 +671,60 @@ def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, c
 
 def finish_world_cup_challenge(challenge_id: int, winner_team: str):
     finish_wc_challenge(challenge_id, winner_team)
+
+
+# ─── سیستم قرعه‌کشی ───────────────────────────────────────────────────────────
+
+def create_lottery(creator_id: int, creator_tg_id: int, prize: int, max_players: int = 2, entry_fee: int = 0) -> Optional[int]:
+    try:
+        result = execute_query(
+            """INSERT INTO amel_lottery (creator_id, creator_tg_id, prize, max_players, entry_fee, status)
+               VALUES (%s, %s, %s, %s, %s, 'waiting') RETURNING id""",
+            (creator_id, creator_tg_id, prize, max_players, entry_fee), fetch_one=True
+        )
+        return result["id"] if result else None
+    except Exception as e:
+        print(f"❌ create_lottery error: {e}")
+        return None
+
+
+def update_lottery_message(lottery_id: int, message_id: int, chat_id: int = None):
+    try:
+        if chat_id:
+            execute_query(
+                "UPDATE amel_lottery SET message_id=%s, chat_id=%s WHERE id=%s",
+                (message_id, chat_id, lottery_id)
+            )
+        else:
+            execute_query(
+                "UPDATE amel_lottery SET message_id=%s WHERE id=%s",
+                (message_id, lottery_id)
+            )
+    except Exception as e:
+        print(f"❌ update_lottery_message error: {e}")
+
+
+def get_lottery(lottery_id: int) -> Optional[Dict]:
+    try:
+        result = execute_query("SELECT * FROM amel_lottery WHERE id=%s", (lottery_id,), fetch_one=True)
+        return dict(result) if result else None
+    except Exception as e:
+        print(f"❌ get_lottery error: {e}")
+        return None
+
+
+def finish_lottery(lottery_id: int, winner_id: int):
+    try:
+        lottery = get_lottery(lottery_id)
+        if not lottery:
+            return
+        add_tokens(winner_id, lottery["prize"])
+        execute_query(
+            "UPDATE amel_lottery SET status='finished', winner_id=%s WHERE id=%s",
+            (winner_id, lottery_id)
+        )
+    except Exception as e:
+        print(f"❌ finish_lottery error: {e}")
 
 
 # ─── سیستم شرط‌بندی ───────────────────────────────────────────────────────────
