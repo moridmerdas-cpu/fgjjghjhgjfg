@@ -31,6 +31,11 @@ LINK_PATTERN = re.compile(
     r"(https?://\S+|t\.me/\S+|telegram\.me/\S+|www\.\S+)", re.IGNORECASE
 )
 
+# لینک یک پست خاص، مثل: https://t.me/channelname/123 یا t.me/channelname/123
+_POST_LINK_RE = re.compile(
+    r"^(?:https?://)?t\.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
+)
+
 # ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
 _last_secretary_reply = {}  # {chat_id: timestamp}
 _last_friend_reply = {}     # {sender_id: timestamp}
@@ -384,7 +389,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "ترجمه ", "هوا ", "قیمت دلار", "ارز",
             "وضعیت", "راهنما", "help",
             "حذف بعد ",
-            "توقف سیو",
+            "سیو کانال", "توقف سیو",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -521,13 +526,22 @@ async def _handle_command(cl, event, text, owner_id, entry):
         ss("auto_save_media", "0"); await edit("💾 ذخیره خودکار مدیا خاموش شد.")
 
     # ─── سیو کانال ───────────────────────────────────────────────────────────
-    elif text.startswith("سیو کانال "):
+    elif text == "سیو کانال" or text.startswith("سیو کانال "):
         parts = text.split()
         channel_input = parts[2] if len(parts) >= 3 else None
-        limit = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 100
         if not channel_input:
-            await edit("❗ فرمت: سیو کانال [لینک یا آیدی] [تعداد اختیاری]")
+            await edit(
+                "❗ فرمت درست یکی از این دو حالت:\n"
+                "• سیو کانال [لینک یک پست خاص]\n"
+                "  مثال: سیو کانال https://t.me/channel/123\n"
+                "• سیو کانال [@یوزرنیم یا لینک کانال] [تعداد]\n"
+                "  مثال: سیو کانال @channel 50"
+            )
+        elif _POST_LINK_RE.match(channel_input):
+            await edit("⏳ در حال ذخیره این پست...")
+            asyncio.ensure_future(_save_channel_media(cl, channel_input, None, owner_id))
         else:
+            limit = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 100
             await edit(f"⏳ در حال پردازش کانال، تا {limit} مدیا ذخیره می‌شود...")
             asyncio.ensure_future(_save_channel_media(cl, channel_input, limit, owner_id))
 
@@ -733,6 +747,35 @@ async def _save_channel_media(cl, channel_input, limit, owner_id):
     os.makedirs(media_dir, exist_ok=True)
     try:
         me = await cl.get_me()
+
+        # ─── حالت ۱: لینک یک پست خاص ────────────────────────────────────
+        post_match = _POST_LINK_RE.match(channel_input)
+        if post_match:
+            channel_username, post_id = post_match.group(1), int(post_match.group(2))
+            try:
+                target_msg = await cl.get_messages(channel_username, ids=post_id)
+            except Exception as e:
+                await cl.send_message(me.id, f"❌ پست پیدا نشد: {e}")
+                db.set_setting(owner_id, "channel_save_active", "0")
+                return
+
+            if not target_msg or not target_msg.media:
+                await cl.send_message(me.id, "❗ این پست مدیا ندارد یا پیدا نشد.")
+            else:
+                try:
+                    path = await cl.download_media(target_msg, file=media_dir + "/")
+                    caption = f"📥 سیو پست\n📌 پیام #{target_msg.id}"
+                    if target_msg.text:
+                        caption += f"\n📝 {target_msg.text[:100]}"
+                    await cl.send_file(me.id, path, caption=caption)
+                    await cl.send_message(me.id, "✅ پست با موفقیت ذخیره شد.")
+                except Exception as e:
+                    await cl.send_message(me.id, f"❌ خطا در ذخیره پست: {e}")
+            db.set_setting(owner_id, "channel_save_active", "0")
+            return
+
+        # ─── حالت ۲: کانال + تعداد ──────────────────────────────────────
+        limit = limit or 100
         if channel_input.startswith("https://t.me/"):
             channel_input = channel_input.replace("https://t.me/", "")
         if channel_input.startswith("@"):
@@ -814,7 +857,7 @@ async def _get_currency():
 
 
 def _help_text():
-    return """📖 راهنمای AMEL SELF55
+    return """📖 راهنمای NexoSelf
 
 🔹 اصلی:
 • سلف روشن / سلف خاموش
@@ -860,7 +903,8 @@ def _help_text():
 • ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن
 
 🔹 سیو مدیا:
-• سیو کانال [@یوزرنیم یا لینک] [تعداد]
+• سیو کانال [لینک یک پست] — ذخیره همون یک پست
+• سیو کانال [@یوزرنیم یا لینک کانال] [تعداد] — ذخیره چند پست
 • توقف سیو
 
 🔹 فونت:
