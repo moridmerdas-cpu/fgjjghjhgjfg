@@ -814,7 +814,7 @@ async def _get_currency():
 
 
 def _help_text():
-    return """📖 راهنمای AMEL SELF55
+    return """📖 راهنمای NexoSelf
 
 🔹 اصلی:
 • سلف روشن / سلف خاموش

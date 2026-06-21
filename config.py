@@ -10,7 +10,7 @@ API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
 # ─── سرور ──────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("SECRET_KEY", "amel_self55_secret_key_change_me")
+SECRET_KEY = os.environ.get("SECRET_KEY", "nexoself_secret_key_change_me")
 PORT = int(os.environ.get("PORT", 5000))
 SITE_URL = os.environ.get("SITE_URL", "")
 
@@ -46,7 +46,7 @@ SUPABASE_TABLE_PREFIX = os.environ.get("SUPABASE_TABLE_PREFIX", "amel_")
 CACHE_DB_PATH = os.environ.get("CACHE_DB_PATH", "cache.db")
 
 # ─── سیستم ──────────────────────────────────────────────────────────────────
-BOT_NAME = "AMEL SELF55"
+BOT_NAME = "NexoSelf"
 BOT_VERSION = "1.2.0"
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
 
