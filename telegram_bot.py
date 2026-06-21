@@ -131,6 +131,19 @@ def start_token_bot():
             reply_markup=markup
         )
 
+    def _safe_edit_message(text, chat_id, message_id, reply_markup=None, **kwargs):
+        """ادیت پیام تلگرام؛ اگر محتوای جدید با محتوای فعلی پیام یکسان باشد
+        (خطای «message is not modified» تلگرام) را نادیده می‌گیرد به‌جای کرش کردن."""
+        try:
+            return _bot.edit_message_text(
+                text, chat_id=chat_id, message_id=message_id,
+                reply_markup=reply_markup, **kwargs
+            )
+        except telebot.apihelper.ApiTelegramException as e:
+            if "message is not modified" in str(e).lower():
+                return None
+            raise
+
     def require_membership(message):
         if message.chat.type != 'private':
             return True
@@ -333,7 +346,7 @@ def start_token_bot():
 
             # ویرایش پیام اصلی
             try:
-                _bot.edit_message_text(
+                _safe_edit_message(
                     result_text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id
@@ -383,7 +396,7 @@ def start_token_bot():
             _active_bets.pop(bet_id, None)
 
             try:
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "⏰ <b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n💎 مبلغ به سازنده بازگشت داده شد.",
                     chat_id=chat_id,
                     message_id=message_id
@@ -692,7 +705,7 @@ def start_token_bot():
                 )
                 if channel and ch.get("channel_msg_id"):
                     try:
-                        _bot.edit_message_text(result_text, chat_id=channel, message_id=ch["channel_msg_id"])
+                        _safe_edit_message(result_text, chat_id=channel, message_id=ch["channel_msg_id"])
                     except Exception:
                         try:
                             _bot.send_message(channel, result_text)
@@ -1098,7 +1111,7 @@ def start_token_bot():
             if data == "pur_back":
                 balance = db.get_token_balance(account["id"])
                 _purchase_states.pop(tg_id, None)
-                return _bot.edit_message_text(
+                return _safe_edit_message(
                     f"🛒 <b>منوی خرید</b>\n\n💎 موجودی: <b>{balance} الماس</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_purchase_main_keyboard()
@@ -1112,7 +1125,7 @@ def start_token_bot():
                     f"موجودی شما: <b>{balance} الماس</b>\n\n"
                     f"یک پلن را انتخاب کنید:"
                 )
-                _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                _safe_edit_message(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=_plans_keyboard("pur_sdiam"))
                 _bot.answer_callback_query(call.id)
@@ -1126,7 +1139,7 @@ def start_token_bot():
                 cost = plan["diamonds"]
                 if balance < cost:
                     need = cost - balance
-                    return _bot.edit_message_text(
+                    return _safe_edit_message(
                         f"❌ <b>موجودی کافی نیست!</b>\n\n"
                         f"💎 موجودی: {balance} الماس\n"
                         f"💎 نیاز: {cost} الماس\n"
@@ -1145,7 +1158,7 @@ def start_token_bot():
                 db.deduct_tokens(account["id"], cost)
                 expires = db.set_subscription(account["id"], plan_key, plan["days"])
                 exp_str = expires.strftime("%Y-%m-%d") if expires else "نامشخص"
-                _bot.edit_message_text(
+                _safe_edit_message(
                     f"✅ <b>اشتراک {plan['fa']} فعال شد!</b>\n\n"
                     f"💎 {cost} الماس کسر شد\n"
                     f"📅 انقضا: <b>{exp_str}</b>",
@@ -1155,7 +1168,7 @@ def start_token_bot():
 
             # ── اشتراک با کارت ──────────────────────────────────────────────
             elif data == "pur_sub_card":
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "💳 <b>خرید اشتراک با کارت</b>\n\nیک پلن را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_plans_keyboard("pur_scard")
@@ -1173,7 +1186,7 @@ def start_token_bot():
                     plan=plan_key, toman_amount=plan["toman"]
                 )
                 _purchase_states[tg_id] = {"step": "waiting_receipt_sub", "payment_id": payment_id}
-                _bot.edit_message_text(
+                _safe_edit_message(
                     f"💳 <b>پرداخت اشتراک {plan['fa']}</b>\n\n"
                     f"💰 مبلغ: <b>{plan['toman']:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
@@ -1190,7 +1203,7 @@ def start_token_bot():
             elif data == "pur_buy_diamond":
                 card = _get_card_number()
                 _purchase_states[tg_id] = {"step": "waiting_diamond_amount"}
-                _bot.edit_message_text(
+                _safe_edit_message(
                     f"🛍 <b>خرید الماس</b>\n\n"
                     f"💎 نرخ: هر ۱۰۰ الماس = <b>{100 * DIAMOND_RATE:,} تومان</b>\n"
                     f"📌 حداقل خرید: <b>{DIAMOND_MIN_BUY} الماس</b>\n\n"
@@ -1400,7 +1413,7 @@ def start_token_bot():
             data = call.data
             
             if data == "admin_panel" or data == "admin_back":
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1423,7 +1436,7 @@ def start_token_bot():
                 text += "\nبرای افزودن چنل جدید از دکمه زیر استفاده کنید:"
                 markup.add(types.InlineKeyboardButton("➕ افزودن چنل جدید", callback_data="addch_prompt"))
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1449,7 +1462,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "waiting_channel"}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "📝 آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1470,7 +1483,7 @@ def start_token_bot():
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1484,7 +1497,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("➕ ایجاد چالش جدید", callback_data="wc_new"))
                 markup.add(types.InlineKeyboardButton("📋 چالش‌های فعال", callback_data="wc_list"))
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "🏆 <b>مدیریت چالش‌های جام جهانی</b>\n\nیک گزینه را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1497,7 +1510,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "wc_team1", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "🏆 <b>ایجاد چالش جدید</b>\n\n"
                     "📝 مرحله ۱ از ۴:\nنام <b>تیم اول</b> را ارسال کنید:\n\nمثال: <code>ایران</code>",
                     chat_id=call.message.chat.id,
@@ -1524,7 +1537,7 @@ def start_token_bot():
                             types.InlineKeyboardButton(f"✅ {c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}")
                         )
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1592,7 +1605,7 @@ def start_token_bot():
                     text = "\n".join(lines)
 
                 try:
-                    _bot.edit_message_text(
+                    _safe_edit_message(
                         text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup
                     )
@@ -1604,7 +1617,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "transfer_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "💎 <b>انتقال الماس (از طرف سیستم)</b>\n\n"
                     "📝 یوزرنیم کاربر مقصد را ارسال کنید:\n\nمثال: <code>ali</code>",
                     chat_id=call.message.chat.id,
@@ -1618,7 +1631,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "give_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     "💰 <b>دادن الماس به کاربر</b>\n\n"
                     "📝 یوزرنیم کاربر را ارسال کنید:\n\nمثال: <code>ali</code>",
                     chat_id=call.message.chat.id,
@@ -1633,7 +1646,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "set_card"}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _bot.edit_message_text(
+                _safe_edit_message(
                     f"💳 <b>تنظیم شماره کارت</b>\n\n"
                     f"کارت فعلی: <code>{cur_card}</code>\n\n"
                     f"شماره کارت جدید را ارسال کنید:",
