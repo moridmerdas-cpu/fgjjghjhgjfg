@@ -342,6 +342,24 @@ def deduct_tokens(owner_id: int, amount: int) -> bool:
         print(f"❌ deduct_tokens error: {e}")
         return False
 
+def transfer_diamonds(from_owner_id: int, to_owner_id: int, amount: int) -> tuple:
+    """انتقال الماس بین دو حساب. خروجی: (success: bool, message: str)"""
+    try:
+        if amount < 1:
+            return False, "❌ مقدار باید بیشتر از 0 باشد."
+        if from_owner_id == to_owner_id:
+            return False, "❌ نمی‌توانید به خودتان الماس انتقال دهید."
+        balance = get_token_balance(from_owner_id)
+        if balance < amount:
+            return False, f"❌ موجودی کافی ندارید! موجودی فعلی: {balance} الماس"
+        if not deduct_tokens(from_owner_id, amount):
+            return False, "❌ خطا در کسر الماس!"
+        add_tokens(to_owner_id, amount)
+        return True, f"✅ {amount} الماس با موفقیت منتقل شد."
+    except Exception as e:
+        print(f"❌ transfer_diamonds error: {e}")
+        return False, f"❌ خطا: {e}"
+
 def claim_daily_token(owner_id: int):
     from config import DAILY_TOKEN_GIFT
     import time as _time
@@ -534,21 +552,6 @@ def init_world_cup_tables():
             created_at TIMESTAMP DEFAULT NOW(),
             UNIQUE(user_id, challenge_id)
         )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS amel_lottery (
-            id SERIAL PRIMARY KEY,
-            creator_id INTEGER,
-            creator_tg_id BIGINT,
-            prize INTEGER NOT NULL,
-            max_players INTEGER DEFAULT 2,
-            entry_fee INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'waiting',
-            winner_id INTEGER,
-            chat_id BIGINT,
-            message_id BIGINT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
         """
     ]
     for q in queries:
@@ -556,7 +559,7 @@ def init_world_cup_tables():
             execute_query(q)
         except Exception as e:
             print(f"❌ init_world_cup_tables error: {e}")
-    print("✅ جداول جام جهانی و قرعه‌کشی ایجاد/تأیید شدند!")
+    print("✅ جداول جام جهانی ایجاد/تأیید شدند!")
 
 
 def wc_challenge_exists(match_id: str) -> bool:
@@ -671,60 +674,6 @@ def join_world_cup_challenge(challenge_id: int, user_id: int, user_tg_id: int, c
 
 def finish_world_cup_challenge(challenge_id: int, winner_team: str):
     finish_wc_challenge(challenge_id, winner_team)
-
-
-# ─── سیستم قرعه‌کشی ───────────────────────────────────────────────────────────
-
-def create_lottery(creator_id: int, creator_tg_id: int, prize: int, max_players: int = 2, entry_fee: int = 0) -> Optional[int]:
-    try:
-        result = execute_query(
-            """INSERT INTO amel_lottery (creator_id, creator_tg_id, prize, max_players, entry_fee, status)
-               VALUES (%s, %s, %s, %s, %s, 'waiting') RETURNING id""",
-            (creator_id, creator_tg_id, prize, max_players, entry_fee), fetch_one=True
-        )
-        return result["id"] if result else None
-    except Exception as e:
-        print(f"❌ create_lottery error: {e}")
-        return None
-
-
-def update_lottery_message(lottery_id: int, message_id: int, chat_id: int = None):
-    try:
-        if chat_id:
-            execute_query(
-                "UPDATE amel_lottery SET message_id=%s, chat_id=%s WHERE id=%s",
-                (message_id, chat_id, lottery_id)
-            )
-        else:
-            execute_query(
-                "UPDATE amel_lottery SET message_id=%s WHERE id=%s",
-                (message_id, lottery_id)
-            )
-    except Exception as e:
-        print(f"❌ update_lottery_message error: {e}")
-
-
-def get_lottery(lottery_id: int) -> Optional[Dict]:
-    try:
-        result = execute_query("SELECT * FROM amel_lottery WHERE id=%s", (lottery_id,), fetch_one=True)
-        return dict(result) if result else None
-    except Exception as e:
-        print(f"❌ get_lottery error: {e}")
-        return None
-
-
-def finish_lottery(lottery_id: int, winner_id: int):
-    try:
-        lottery = get_lottery(lottery_id)
-        if not lottery:
-            return
-        add_tokens(winner_id, lottery["prize"])
-        execute_query(
-            "UPDATE amel_lottery SET status='finished', winner_id=%s WHERE id=%s",
-            (winner_id, lottery_id)
-        )
-    except Exception as e:
-        print(f"❌ finish_lottery error: {e}")
 
 
 # ─── سیستم شرط‌بندی ───────────────────────────────────────────────────────────
@@ -921,11 +870,169 @@ def cancel_bet(bet_id: int):
         print(f"❌ cancel_bet error: {e}")
 
 
+# ─── سیستم خرید و اشتراک ─────────────────────────────────────────────────────
+
+def init_purchase_tables():
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS amel_subscriptions (
+            id SERIAL PRIMARY KEY,
+            owner_id INTEGER NOT NULL UNIQUE,
+            plan TEXT NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_payments (
+            id SERIAL PRIMARY KEY,
+            owner_id INTEGER NOT NULL,
+            tg_id BIGINT NOT NULL,
+            type TEXT NOT NULL,
+            plan TEXT,
+            diamond_amount INTEGER,
+            toman_amount INTEGER,
+            status TEXT DEFAULT 'pending',
+            receipt_file_id TEXT,
+            admin_msg_id BIGINT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_global_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    ]
+    for q in queries:
+        try:
+            execute_query(q)
+        except Exception as e:
+            print(f"❌ init_purchase_tables error: {e}")
+    print("✅ جداول خرید و اشتراک ایجاد/تأیید شدند!")
+
+
+def get_global_setting(key: str, default: str = "") -> str:
+    try:
+        r = execute_query("SELECT value FROM amel_global_settings WHERE key=%s", (key,), fetch_one=True)
+        return r["value"] if r else default
+    except Exception:
+        return default
+
+
+def set_global_setting(key: str, value: str):
+    try:
+        execute_query(
+            "INSERT INTO amel_global_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value=%s",
+            (key, value, value)
+        )
+    except Exception as e:
+        print(f"❌ set_global_setting error: {e}")
+
+
+def get_subscription(owner_id: int) -> Optional[Dict]:
+    try:
+        r = execute_query("SELECT * FROM amel_subscriptions WHERE owner_id=%s", (owner_id,), fetch_one=True)
+        return dict(r) if r else None
+    except Exception as e:
+        print(f"❌ get_subscription error: {e}")
+        return None
+
+
+def set_subscription(owner_id: int, plan: str, days: int):
+    import datetime as _dt
+    try:
+        existing = get_subscription(owner_id)
+        if existing and existing["expires_at"]:
+            try:
+                exp = existing["expires_at"]
+                if isinstance(exp, str):
+                    exp = _dt.datetime.fromisoformat(exp)
+                base = max(exp, _dt.datetime.utcnow())
+            except Exception:
+                base = _dt.datetime.utcnow()
+        else:
+            base = _dt.datetime.utcnow()
+        expires = base + _dt.timedelta(days=days)
+        execute_query(
+            """INSERT INTO amel_subscriptions (owner_id, plan, expires_at)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (owner_id) DO UPDATE SET plan=%s, expires_at=%s""",
+            (owner_id, plan, expires, plan, expires)
+        )
+        return expires
+    except Exception as e:
+        print(f"❌ set_subscription error: {e}")
+        return None
+
+
+def is_subscribed(owner_id: int) -> bool:
+    import datetime as _dt
+    sub = get_subscription(owner_id)
+    if not sub:
+        return False
+    try:
+        exp = sub["expires_at"]
+        if isinstance(exp, str):
+            exp = _dt.datetime.fromisoformat(exp)
+        return exp > _dt.datetime.utcnow()
+    except Exception:
+        return False
+
+
+def create_payment(owner_id: int, tg_id: int, ptype: str,
+                   plan: str = None, diamond_amount: int = None,
+                   toman_amount: int = None) -> Optional[int]:
+    try:
+        r = execute_query(
+            """INSERT INTO amel_payments
+               (owner_id, tg_id, type, plan, diamond_amount, toman_amount, status)
+               VALUES (%s, %s, %s, %s, %s, %s, 'pending') RETURNING id""",
+            (owner_id, tg_id, ptype, plan, diamond_amount, toman_amount), fetch_one=True
+        )
+        return r["id"] if r else None
+    except Exception as e:
+        print(f"❌ create_payment error: {e}")
+        return None
+
+
+def update_payment(payment_id: int, **kwargs):
+    try:
+        sets = ", ".join(f"{k}=%s" for k in kwargs)
+        vals = list(kwargs.values()) + [payment_id]
+        execute_query(f"UPDATE amel_payments SET {sets} WHERE id=%s", vals)
+    except Exception as e:
+        print(f"❌ update_payment error: {e}")
+
+
+def get_payment(payment_id: int) -> Optional[Dict]:
+    try:
+        r = execute_query("SELECT * FROM amel_payments WHERE id=%s", (payment_id,), fetch_one=True)
+        return dict(r) if r else None
+    except Exception as e:
+        print(f"❌ get_payment error: {e}")
+        return None
+
+
+def get_pending_payments() -> list:
+    try:
+        rows = execute_query(
+            "SELECT * FROM amel_payments WHERE status='pending' ORDER BY created_at DESC",
+            fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_pending_payments error: {e}")
+        return []
+
+
 # ─── مقداردهی اولیه ──────────────────────────────────────────────────────────
 try:
     init_tables()
     init_world_cup_tables()
     init_bet_tables()
+    init_purchase_tables()
 except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")
 

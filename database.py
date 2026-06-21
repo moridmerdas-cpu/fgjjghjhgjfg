@@ -22,6 +22,7 @@ from database_supabase import (
     get_token_balance as supa_get_token_balance,
     add_tokens as supa_add_tokens,
     deduct_tokens as supa_deduct_tokens,
+    transfer_diamonds as supa_transfer_diamonds,
     claim_daily_token as supa_claim_daily_token,
     get_token_stats as supa_get_token_stats,
     process_referral as supa_process_referral,
@@ -44,16 +45,21 @@ from database_supabase import (
     get_pending_wc_challenges as supa_get_pending_wc_challenges,
     join_wc_challenge as supa_join_wc_challenge,
     finish_wc_challenge as supa_finish_wc_challenge,
-    create_lottery as supa_create_lottery,
-    update_lottery_message as supa_update_lottery_message,
-    get_lottery as supa_get_lottery,
-    finish_lottery as supa_finish_lottery,
+    cancel_bet as supa_cancel_bet,
     create_bet as supa_create_bet,
     get_bet as supa_get_bet,
     update_bet_message as supa_update_bet_message,
     join_bet as supa_join_bet,
     finish_bet as supa_finish_bet,
-    cancel_bet as supa_cancel_bet,
+    get_global_setting as supa_get_global_setting,
+    set_global_setting as supa_set_global_setting,
+    get_subscription as supa_get_subscription,
+    set_subscription as supa_set_subscription,
+    is_subscribed as supa_is_subscribed,
+    create_payment as supa_create_payment,
+    update_payment as supa_update_payment,
+    get_payment as supa_get_payment,
+    get_pending_payments as supa_get_pending_payments,
     SETTING_DEFAULTS,
     _hash_pw,
 )
@@ -114,6 +120,9 @@ def add_tokens(owner_id: int, amount: int):
 
 def deduct_tokens(owner_id: int, amount: int) -> bool:
     return supa_deduct_tokens(owner_id, amount)
+
+def transfer_diamonds(from_owner_id: int, to_owner_id: int, amount: int) -> tuple:
+    return supa_transfer_diamonds(from_owner_id, to_owner_id, amount)
 
 def claim_daily_token(owner_id: int):
     return supa_claim_daily_token(owner_id)
@@ -243,19 +252,6 @@ def join_wc_challenge(challenge_id, user_id, user_tg_id, selected_option, amount
 def finish_wc_challenge(challenge_id, winner_option):
     return supa_finish_wc_challenge(challenge_id, winner_option)
 
-# ─── ✅ توابع قرعه‌کشی ──────────────────────────────────────────────────────────
-def create_lottery(creator_id: int, creator_tg_id: int, prize: int, max_players: int = 2, entry_fee: int = 0):
-    return supa_create_lottery(creator_id, creator_tg_id, prize, max_players, entry_fee)
-
-def update_lottery_message(lottery_id: int, message_id: int, chat_id: int = None):
-    return supa_update_lottery_message(lottery_id, message_id, chat_id)
-
-def get_lottery(lottery_id: int):
-    return supa_get_lottery(lottery_id)
-
-def finish_lottery(lottery_id: int, winner_id: int):
-    return supa_finish_lottery(lottery_id, winner_id)
-
 # ─── ✅ توابع شرط‌بندی ──────────────────────────────────────────────────────────
 def create_bet(creator_id: int, creator_tg_id: int, amount: int, chat_id: int):
     return supa_create_bet(creator_id, creator_tg_id, amount, chat_id)
@@ -275,6 +271,26 @@ def finish_bet(bet_id: int):
 def cancel_bet(bet_id: int):
     return supa_cancel_bet(bet_id)
 
+# ─── ✅ توابع خرید و اشتراک ────────────────────────────────────────────────────
+def get_global_setting(key, default=""):
+    return supa_get_global_setting(key, default)
+def set_global_setting(key, value):
+    return supa_set_global_setting(key, value)
+def get_subscription(owner_id):
+    return supa_get_subscription(owner_id)
+def set_subscription(owner_id, plan, days):
+    return supa_set_subscription(owner_id, plan, days)
+def is_subscribed(owner_id):
+    return supa_is_subscribed(owner_id)
+def create_payment(owner_id, tg_id, ptype, plan=None, diamond_amount=None, toman_amount=None):
+    return supa_create_payment(owner_id, tg_id, ptype, plan, diamond_amount, toman_amount)
+def update_payment(payment_id, **kwargs):
+    return supa_update_payment(payment_id, **kwargs)
+def get_payment(payment_id):
+    return supa_get_payment(payment_id)
+def get_pending_payments():
+    return supa_get_pending_payments()
+
 # ─── صادرات ────────────────────────────────────────────────────────────────────
 __all__ = [
     # حساب‌ها
@@ -288,7 +304,7 @@ __all__ = [
     'get_all_logged_in_users', 'init_user_settings',
     
     # توکن
-    'get_token_balance', 'add_tokens', 'deduct_tokens',
+    'get_token_balance', 'add_tokens', 'deduct_tokens', 'transfer_diamonds',
     'claim_daily_token', 'get_token_stats',
     'process_referral', 'get_referral_count',
     
