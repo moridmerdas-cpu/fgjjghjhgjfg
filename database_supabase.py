@@ -361,21 +361,20 @@ def transfer_diamonds(from_owner_id: int, to_owner_id: int, amount: int) -> tupl
         return False, f"❌ خطا: {e}"
 
 def claim_daily_token(owner_id: int):
-    from config import DAILY_TOKEN_GIFT
     import time as _time
+    import config as _cfg
     COOLDOWN = 86400  # 24 ساعت
+    DAILY_AMOUNT = 10  # ثابت: ۱۰ الماس در روز
     try:
         _init_tokens(owner_id)
         now_ts = int(_time.time())
 
-        # اطمینان از وجود ستون last_daily_ts
         try:
             execute_query("ALTER TABLE amel_tokens ADD COLUMN IF NOT EXISTS last_daily_ts BIGINT DEFAULT 0")
         except Exception:
             pass
 
-        query = "SELECT last_daily_ts FROM amel_tokens WHERE owner_id = %s"
-        result = execute_query(query, (owner_id,), fetch_one=True)
+        result = execute_query("SELECT last_daily_ts FROM amel_tokens WHERE owner_id = %s", (owner_id,), fetch_one=True)
         last_ts = int(result["last_daily_ts"] or 0) if result else 0
 
         elapsed = now_ts - last_ts
@@ -387,9 +386,9 @@ def claim_daily_token(owner_id: int):
 
         execute_query(
             "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s, last_daily_ts = %s WHERE owner_id = %s",
-            (DAILY_TOKEN_GIFT, DAILY_TOKEN_GIFT, now_ts, owner_id)
+            (DAILY_AMOUNT, DAILY_AMOUNT, now_ts, owner_id)
         )
-        return True, f"🎁 <b>{DAILY_TOKEN_GIFT} الماس</b> دریافت کردید!"
+        return True, f"🎁 <b>{DAILY_AMOUNT} الماس</b> دریافت کردید!\n💎 فردا دوباره بیا!"
     except Exception as e:
         print(f"❌ claim_daily_token error: {e}")
         return False, "❌ خطا در دریافت هدیه"
@@ -931,6 +930,12 @@ def set_global_setting(key: str, value: str):
         print(f"❌ set_global_setting error: {e}")
 
 
+def _tehran_now():
+    """زمان فعلی به وقت تهران"""
+    IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
+    return datetime.datetime.now(IRAN_TZ).replace(tzinfo=None)
+
+
 def get_subscription(owner_id: int) -> Optional[Dict]:
     try:
         r = execute_query("SELECT * FROM amel_subscriptions WHERE owner_id=%s", (owner_id,), fetch_one=True)
@@ -941,20 +946,22 @@ def get_subscription(owner_id: int) -> Optional[Dict]:
 
 
 def set_subscription(owner_id: int, plan: str, days: int):
-    import datetime as _dt
     try:
+        now_teh = _tehran_now()
         existing = get_subscription(owner_id)
         if existing and existing["expires_at"]:
             try:
                 exp = existing["expires_at"]
                 if isinstance(exp, str):
-                    exp = _dt.datetime.fromisoformat(exp)
-                base = max(exp, _dt.datetime.utcnow())
+                    exp = datetime.datetime.fromisoformat(exp)
+                if hasattr(exp, 'tzinfo') and exp.tzinfo:
+                    exp = exp.replace(tzinfo=None)
+                base = max(exp, now_teh)
             except Exception:
-                base = _dt.datetime.utcnow()
+                base = now_teh
         else:
-            base = _dt.datetime.utcnow()
-        expires = base + _dt.timedelta(days=days)
+            base = now_teh
+        expires = base + datetime.timedelta(days=days)
         execute_query(
             """INSERT INTO amel_subscriptions (owner_id, plan, expires_at)
                VALUES (%s, %s, %s)
@@ -968,17 +975,75 @@ def set_subscription(owner_id: int, plan: str, days: int):
 
 
 def is_subscribed(owner_id: int) -> bool:
-    import datetime as _dt
     sub = get_subscription(owner_id)
     if not sub:
         return False
     try:
         exp = sub["expires_at"]
         if isinstance(exp, str):
-            exp = _dt.datetime.fromisoformat(exp)
-        return exp > _dt.datetime.utcnow()
+            exp = datetime.datetime.fromisoformat(exp)
+        if hasattr(exp, 'tzinfo') and exp.tzinfo:
+            exp = exp.replace(tzinfo=None)
+        return exp > _tehran_now()
     except Exception:
         return False
+
+
+def give_free_trial(owner_id: int) -> bool:
+    """یک روز سلف رایگان برای کاربر تازه‌وارد"""
+    try:
+        existing = get_subscription(owner_id)
+        if existing:
+            return False  # قبلاً اشتراک داشته
+        set_subscription(owner_id, "trial", 1)
+        return True
+    except Exception as e:
+        print(f"❌ give_free_trial error: {e}")
+        return False
+
+
+def get_expiring_soon_subscriptions(hours: int = 2) -> list:
+    """اشتراک‌هایی که در X ساعت آینده منقضی می‌شوند (برای اطلاع‌رسانی)"""
+    try:
+        now = _tehran_now()
+        limit = now + datetime.timedelta(hours=hours)
+        rows = execute_query(
+            """SELECT s.*, a.id as acc_id
+               FROM amel_subscriptions s
+               JOIN amel_accounts a ON a.id = s.owner_id
+               WHERE s.expires_at BETWEEN %s AND %s
+               AND s.status_notified IS DISTINCT FROM 'expiring'""",
+            (now, limit), fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception:
+        return []
+
+
+def get_expired_subscriptions() -> list:
+    """اشتراک‌هایی که تازه منقضی شده‌اند"""
+    try:
+        now = _tehran_now()
+        past = now - datetime.timedelta(hours=1)
+        rows = execute_query(
+            """SELECT * FROM amel_subscriptions
+               WHERE expires_at BETWEEN %s AND %s
+               AND status_notified IS DISTINCT FROM 'expired'""",
+            (past, now), fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception:
+        return []
+
+
+def mark_subscription_notified(owner_id: int, status: str):
+    try:
+        execute_query(
+            "UPDATE amel_subscriptions SET status_notified=%s WHERE owner_id=%s",
+            (status, owner_id)
+        )
+    except Exception as e:
+        print(f"❌ mark_subscription_notified error: {e}")
 
 
 def create_payment(owner_id: int, tg_id: int, ptype: str,

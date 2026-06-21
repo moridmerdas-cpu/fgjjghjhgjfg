@@ -8,6 +8,51 @@ import datetime
 import random
 import re
 
+# ─── وقت تهران ───────────────────────────────────────────────────────────────
+_TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
+
+def _now_tehran() -> datetime.datetime:
+    return datetime.datetime.now(_TEHRAN_OFFSET)
+
+def _fmt_tehran(dt) -> str:
+    """تبدیل datetime به رشته فارسی با وقت تهران"""
+    if dt is None:
+        return "نامشخص"
+    if isinstance(dt, str):
+        try:
+            dt = datetime.datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return dt
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    tehran = dt.astimezone(_TEHRAN_OFFSET)
+    return tehran.strftime("%Y/%m/%d — %H:%M")
+
+def _remaining_str(dt) -> str:
+    """باقی‌مانده زمان تا انقضا به فارسی"""
+    if dt is None:
+        return "نامشخص"
+    if isinstance(dt, str):
+        try:
+            dt = datetime.datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return "نامشخص"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    diff = dt - now
+    if diff.total_seconds() <= 0:
+        return "منقضی شده"
+    days = diff.days
+    hours = diff.seconds // 3600
+    minutes = (diff.seconds % 3600) // 60
+    if days > 0:
+        return f"{days} روز و {hours} ساعت"
+    elif hours > 0:
+        return f"{hours} ساعت و {minutes} دقیقه"
+    else:
+        return f"{minutes} دقیقه"
+
 _bot = None
 BOT_USERNAME = None
 OWNER_TG_ID = 8296865861
@@ -130,19 +175,6 @@ def start_token_bot():
             "👇 روی هر کانال کلیک کنید و Join بزنید، سپس دکمه «بررسی عضویت من» را بزنید:",
             reply_markup=markup
         )
-
-    def _safe_edit_message(text, chat_id, message_id, reply_markup=None, **kwargs):
-        """ادیت پیام تلگرام؛ اگر محتوای جدید با محتوای فعلی پیام یکسان باشد
-        (خطای «message is not modified» تلگرام) را نادیده می‌گیرد به‌جای کرش کردن."""
-        try:
-            return _bot.edit_message_text(
-                text, chat_id=chat_id, message_id=message_id,
-                reply_markup=reply_markup, **kwargs
-            )
-        except telebot.apihelper.ApiTelegramException as e:
-            if "message is not modified" in str(e).lower():
-                return None
-            raise
 
     def require_membership(message):
         if message.chat.type != 'private':
@@ -346,7 +378,7 @@ def start_token_bot():
 
             # ویرایش پیام اصلی
             try:
-                _safe_edit_message(
+                _bot.edit_message_text(
                     result_text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id
@@ -396,7 +428,7 @@ def start_token_bot():
             _active_bets.pop(bet_id, None)
 
             try:
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "⏰ <b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n💎 مبلغ به سازنده بازگشت داده شد.",
                     chat_id=chat_id,
                     message_id=message_id
@@ -620,12 +652,15 @@ def start_token_bot():
             types.InlineKeyboardButton("🤝 مساوی",    callback_data=f"wc_pick_{challenge_id}_draw"),
             types.InlineKeyboardButton(f"🔴 {team2}", callback_data=f"wc_pick_{challenge_id}_team2"),
         )
+        now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
         text = (
-            f"⚽️ <b>چالش جام جهانی!</b>\n\n"
+            f"⚽️ <b>چالش جام جهانی ۲۰۲۶</b>\n\n"
             f"🆚 <b>{team1}</b>  vs  <b>{team2}</b>\n"
-            f"⏰ زمان بازی: <b>{match_time_str}</b>\n\n"
-            f"💎 محدوده شرط: {min_bet} – {max_bet} الماس\n\n"
-            f"روی تیم مورد نظرت بزن، سپس مبلغ شرط رو بنویس!"
+            f"⏰ زمان بازی: <b>{match_time_str}</b>\n"
+            f"🕐 ارسال در: {now_tehran} (تهران)\n\n"
+            f"💎 محدوده شرط: {min_bet:,} – {max_bet:,} الماس\n"
+            f"🏆 برندگان ۲ برابر مبلغ شرط دریافت می‌کنند!\n\n"
+            f"👇 روی تیم مورد نظرت کلیک کن:"
         )
         try:
             msg = _bot.send_message(chat_target, text, reply_markup=markup)
@@ -705,7 +740,7 @@ def start_token_bot():
                 )
                 if channel and ch.get("channel_msg_id"):
                     try:
-                        _safe_edit_message(result_text, chat_id=channel, message_id=ch["channel_msg_id"])
+                        _bot.edit_message_text(result_text, chat_id=channel, message_id=ch["channel_msg_id"])
                     except Exception:
                         try:
                             _bot.send_message(channel, result_text)
@@ -726,12 +761,69 @@ def start_token_bot():
             print(f"❌ _wc_auto_check_results: {e}")
 
     def _wc_scheduler():
-        """حلقه زمانی — هر WC_POLL_INTERVAL ثانیه"""
-        interval = getattr(config, "WC_POLL_INTERVAL", 600)
+        """
+        حلقه زمانی:
+        - هر ۱۵ دقیقه بازی‌های آینده چک می‌شوند
+        - اگه بازی ۱ ساعت دیگه شروع بشه و چالشش ارسال نشده → همون لحظه می‌فرسته
+        - نتایج بازی‌های تموم‌شده هم چک می‌شه
+        """
+        POLL = 900  # 15 دقیقه
+        SEND_BEFORE_SECONDS = 3600  # 1 ساعت قبل از شروع
+
         while True:
-            _wc_auto_fetch_and_create()
-            _wc_auto_check_results()
-            time.sleep(interval)
+            try:
+                # ─── چک بازی‌های آینده برای ارسال ۱ ساعت قبل ─────────────
+                comp = getattr(config, "WC_COMPETITION", "WC")
+                data = _wc_api_get(f"competitions/{comp}/matches?status=SCHEDULED,TIMED")
+                matches = data.get("matches", [])
+                now_utc = datetime.datetime.utcnow()
+
+                for m in matches:
+                    match_id = str(m.get("id", ""))
+                    if not match_id:
+                        continue
+
+                    utc_date = m.get("utcDate", "")
+                    try:
+                        dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
+                    except Exception:
+                        continue
+
+                    seconds_until = (dt - now_utc).total_seconds()
+
+                    # فقط بازی‌هایی که ۱ ساعت مانده تا شروعشون (با تلرانس ۱۵ دقیقه)
+                    if not (0 < seconds_until <= SEND_BEFORE_SECONDS + POLL):
+                        continue
+
+                    if db.wc_challenge_exists(match_id):
+                        continue  # قبلاً ارسال شده
+
+                    home = (m.get("homeTeam", {}).get("shortName") or
+                            m.get("homeTeam", {}).get("name") or "").strip()
+                    away = (m.get("awayTeam", {}).get("shortName") or
+                            m.get("awayTeam", {}).get("name") or "").strip()
+
+                    if not home or not away:
+                        continue  # تیم مشخص نشده
+
+                    try:
+                        dt_tehran = _wc_utc_to_iran(dt)
+                        match_time_str = dt_tehran.strftime("%Y/%m/%d — %H:%M") + " (تهران)"
+                    except Exception:
+                        match_time_str = utc_date
+
+                    challenge_id = db.create_wc_challenge(match_id, home, away, dt)
+                    if challenge_id:
+                        _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
+                        print(f"✅ چالش ۱ ساعت قبل ارسال شد: {home} vs {away}")
+                    time.sleep(0.5)
+
+                # ─── چک نتایج بازی‌های تموم‌شده ─────────────────────────────
+                _wc_auto_check_results()
+
+            except Exception as e:
+                print(f"❌ _wc_scheduler: {e}")
+            time.sleep(POLL)
 
     # اجرای scheduler در Thread جداگانه
     _wc_thread = threading.Thread(target=_wc_scheduler, daemon=True)
@@ -878,17 +970,119 @@ def start_token_bot():
     # /start
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(commands=["start"])
+    def _grant_free_trial(account_id: int, tg_id: int):
+        """یک روز سلف رایگان برای کاربران جدید"""
+        try:
+            existing = db.get_subscription(account_id)
+            if existing:
+                return  # قبلاً اشتراک داشته
+            expires = db.set_subscription(account_id, "free_trial", 1)
+            if expires:
+                exp_str = _fmt_tehran(expires)
+                try:
+                    _bot.send_message(
+                        tg_id,
+                        f"🎁 <b>یک روز سلف رایگان هدیه گرفتید!</b>\n\n"
+                        f"⏰ انقضا: <b>{exp_str}</b> (وقت تهران)\n\n"
+                        f"برای تمدید، از منوی 🛒 خرید استفاده کنید."
+                    )
+                except Exception:
+                    pass
+                # تایمر اطلاع‌رسانی انقضا
+                threading.Timer(86400, _notify_subscription_expired, args=[account_id, tg_id]).start()
+        except Exception as e:
+            print(f"❌ _grant_free_trial: {e}")
+
+    def _notify_subscription_expired(account_id: int, tg_id: int):
+        """اطلاع‌رسانی پایان اشتراک"""
+        try:
+            sub = db.get_subscription(account_id)
+            if not sub:
+                return
+            exp = sub.get("expires_at")
+            if isinstance(exp, str):
+                exp = datetime.datetime.fromisoformat(exp.replace("Z", "+00:00"))
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=datetime.timezone.utc)
+            if exp > datetime.datetime.now(datetime.timezone.utc):
+                return  # هنوز فعاله
+            site_url = getattr(config, "SITE_URL", "")
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond"))
+            if site_url:
+                markup.add(types.InlineKeyboardButton("🌐 پنل وب", url=site_url))
+            try:
+                _bot.send_message(
+                    tg_id,
+                    "⏰ <b>اشتراک سلف شما به پایان رسید!</b>\n\n"
+                    "برای ادامه استفاده از سلف‌بات، اشتراک خود را تمدید کنید. 👇",
+                    reply_markup=markup
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"❌ _notify_subscription_expired: {e}")
+
+    def _start_subscription_checker():
+        """هر ۳۰ دقیقه اشتراک‌های نزدیک به انقضا رو چک می‌کنه"""
+        def _checker():
+            while True:
+                try:
+                    time.sleep(1800)  # 30 دقیقه
+                    _check_expiring_subscriptions()
+                except Exception as e:
+                    print(f"❌ subscription checker: {e}")
+        threading.Thread(target=_checker, daemon=True).start()
+
+    def _check_expiring_subscriptions():
+        try:
+            import psycopg2
+            from database_supabase import execute_query
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            soon = now_utc + datetime.timedelta(hours=2)
+            rows = execute_query(
+                "SELECT owner_id, expires_at FROM amel_subscriptions WHERE status IS DISTINCT FROM 'notified' AND expires_at BETWEEN %s AND %s",
+                (now_utc, soon), fetch_all=True
+            )
+            for row in (rows or []):
+                owner_id_val = row["owner_id"]
+                tg_id = db.get_telegram_id_by_owner(owner_id_val)
+                if not tg_id:
+                    continue
+                exp = row["expires_at"]
+                remaining = _remaining_str(exp)
+                try:
+                    _bot.send_message(
+                        tg_id,
+                        f"⚠️ <b>اشتراک شما در حال انقضاست!</b>\n\n"
+                        f"⏰ باقی‌مانده: <b>{remaining}</b>\n\n"
+                        f"برای تمدید همین الان اقدام کنید 👇",
+                        reply_markup=types.InlineKeyboardMarkup().add(
+                            types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond")
+                        )
+                    )
+                    execute_query(
+                        "UPDATE amel_subscriptions SET status='notified' WHERE owner_id=%s",
+                        (owner_id_val,)
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"❌ _check_expiring_subscriptions: {e}")
+
+    _start_subscription_checker()
+
     def cmd_start(message):
         try:
             tg_id = message.from_user.id
             parts = message.text.strip().split()
             ref_code = parts[1] if len(parts) > 1 else None
-            
+
             if ref_code and ref_code.startswith("ref_"):
                 try:
                     referrer_id = int(ref_code[4:])
                     threading.Thread(target=_process_referral_async, args=(referrer_id, tg_id), daemon=True).start()
-                except: 
+                except Exception:
                     pass
 
             is_member, missing = _check_membership_cached(tg_id)
@@ -903,31 +1097,54 @@ def start_token_bot():
                 markup = types.InlineKeyboardMarkup()
                 if site_url:
                     markup.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
-                _bot.reply_to(message, 
+                _bot.reply_to(message,
                     "👋 <b>سلام!</b>\n\n"
                     "برای استفاده از ربات:\n"
                     "1️⃣ در پنل وب ثبت‌نام کنید\n"
                     "2️⃣ حساب تلگرام را وصل کنید\n"
-                    "3️⃣ دوباره /start بزنید", 
+                    "3️⃣ دوباره /start بزنید",
                     reply_markup=markup if site_url else None)
                 return
 
+            # سلف رایگان برای کاربر جدید
+            threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
+
             stats = db.get_token_stats(account["id"])
-            
+            sub = db.get_subscription(account["id"])
+
+            now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
+
+            # وضعیت اشتراک
+            if sub:
+                sub_exp = sub.get("expires_at")
+                plan_fa = {"weekly": "هفتگی", "monthly": "ماهانه", "bimonthly": "دو ماهه", "free_trial": "رایگان"}.get(sub.get("plan", ""), sub.get("plan", ""))
+                import datetime as _dt
+                exp_dt = sub_exp
+                if isinstance(exp_dt, str):
+                    exp_dt = _dt.datetime.fromisoformat(exp_dt.replace("Z", "+00:00"))
+                if exp_dt and exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
+                is_active = exp_dt and exp_dt > _dt.datetime.now(_dt.timezone.utc)
+                sub_status = (
+                    f"✅ فعال — پلن {plan_fa}\n"
+                    f"   📅 انقضا: {_fmt_tehran(sub_exp)}\n"
+                    f"   ⏳ باقی‌مانده: {_remaining_str(sub_exp)}"
+                ) if is_active else "❌ اشتراک ندارید"
+            else:
+                sub_status = "❌ اشتراک ندارید"
+
             if message.chat.type == 'private':
                 markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
             else:
                 markup = None
 
-            token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
-            
             _bot.reply_to(
                 message,
                 f"👋 سلام <b>{account['username']}</b>!\n\n"
-                f"💎 موجودی: <b>{stats['balance']}</b>\n"
+                f"🕐 وقت تهران: <b>{now_tehran}</b>\n\n"
+                f"💎 موجودی الماس: <b>{stats['balance']}</b>\n"
                 f"📊 کل دریافتی: <b>{stats['total_earned']}</b>\n\n"
-                f"⚡ هر <b>{config.TOKENS_PER_SESSION} الماس</b> = <b>{config.SESSION_HOURS} ساعت</b> سلف‌بات\n"
-                f"💰 قیمت هر الماس: <b>{token_price} تومان</b>",
+                f"📦 اشتراک سلف:\n{sub_status}",
                 reply_markup=markup
             )
 
@@ -1111,7 +1328,7 @@ def start_token_bot():
             if data == "pur_back":
                 balance = db.get_token_balance(account["id"])
                 _purchase_states.pop(tg_id, None)
-                return _safe_edit_message(
+                return _bot.edit_message_text(
                     f"🛒 <b>منوی خرید</b>\n\n💎 موجودی: <b>{balance} الماس</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_purchase_main_keyboard()
@@ -1125,7 +1342,7 @@ def start_token_bot():
                     f"موجودی شما: <b>{balance} الماس</b>\n\n"
                     f"یک پلن را انتخاب کنید:"
                 )
-                _safe_edit_message(text, chat_id=call.message.chat.id,
+                _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=_plans_keyboard("pur_sdiam"))
                 _bot.answer_callback_query(call.id)
@@ -1139,7 +1356,7 @@ def start_token_bot():
                 cost = plan["diamonds"]
                 if balance < cost:
                     need = cost - balance
-                    return _safe_edit_message(
+                    return _bot.edit_message_text(
                         f"❌ <b>موجودی کافی نیست!</b>\n\n"
                         f"💎 موجودی: {balance} الماس\n"
                         f"💎 نیاز: {cost} الماس\n"
@@ -1158,7 +1375,7 @@ def start_token_bot():
                 db.deduct_tokens(account["id"], cost)
                 expires = db.set_subscription(account["id"], plan_key, plan["days"])
                 exp_str = expires.strftime("%Y-%m-%d") if expires else "نامشخص"
-                _safe_edit_message(
+                _bot.edit_message_text(
                     f"✅ <b>اشتراک {plan['fa']} فعال شد!</b>\n\n"
                     f"💎 {cost} الماس کسر شد\n"
                     f"📅 انقضا: <b>{exp_str}</b>",
@@ -1168,7 +1385,7 @@ def start_token_bot():
 
             # ── اشتراک با کارت ──────────────────────────────────────────────
             elif data == "pur_sub_card":
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "💳 <b>خرید اشتراک با کارت</b>\n\nیک پلن را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_plans_keyboard("pur_scard")
@@ -1186,7 +1403,7 @@ def start_token_bot():
                     plan=plan_key, toman_amount=plan["toman"]
                 )
                 _purchase_states[tg_id] = {"step": "waiting_receipt_sub", "payment_id": payment_id}
-                _safe_edit_message(
+                _bot.edit_message_text(
                     f"💳 <b>پرداخت اشتراک {plan['fa']}</b>\n\n"
                     f"💰 مبلغ: <b>{plan['toman']:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
@@ -1203,7 +1420,7 @@ def start_token_bot():
             elif data == "pur_buy_diamond":
                 card = _get_card_number()
                 _purchase_states[tg_id] = {"step": "waiting_diamond_amount"}
-                _safe_edit_message(
+                _bot.edit_message_text(
                     f"🛍 <b>خرید الماس</b>\n\n"
                     f"💎 نرخ: هر ۱۰۰ الماس = <b>{100 * DIAMOND_RATE:,} تومان</b>\n"
                     f"📌 حداقل خرید: <b>{DIAMOND_MIN_BUY} الماس</b>\n\n"
@@ -1413,7 +1630,7 @@ def start_token_bot():
             data = call.data
             
             if data == "admin_panel" or data == "admin_back":
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1436,7 +1653,7 @@ def start_token_bot():
                 text += "\nبرای افزودن چنل جدید از دکمه زیر استفاده کنید:"
                 markup.add(types.InlineKeyboardButton("➕ افزودن چنل جدید", callback_data="addch_prompt"))
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1462,7 +1679,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "waiting_channel"}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "📝 آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1483,7 +1700,7 @@ def start_token_bot():
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1497,7 +1714,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("➕ ایجاد چالش جدید", callback_data="wc_new"))
                 markup.add(types.InlineKeyboardButton("📋 چالش‌های فعال", callback_data="wc_list"))
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "🏆 <b>مدیریت چالش‌های جام جهانی</b>\n\nیک گزینه را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1510,7 +1727,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "wc_team1", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "🏆 <b>ایجاد چالش جدید</b>\n\n"
                     "📝 مرحله ۱ از ۴:\nنام <b>تیم اول</b> را ارسال کنید:\n\nمثال: <code>ایران</code>",
                     chat_id=call.message.chat.id,
@@ -1537,7 +1754,7 @@ def start_token_bot():
                             types.InlineKeyboardButton(f"✅ {c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}")
                         )
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -1574,50 +1791,135 @@ def start_token_bot():
                     today_matches = None
                     print(f"❌ خطا در دریافت بازی‌های امروز: {e}")
 
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
-
                 if today_matches is None:
-                    text = "❌ خطا در ارتباط با Football API.\nلاگ سرور را برای جزئیات بررسی کنید."
-                elif not getattr(config, "FOOTBALL_API_KEY", ""):
+                    text = "❌ خطا در ارتباط با Football API.\nلاگ سرور را بررسی کنید."
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                    try:
+                        _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                            message_id=call.message.message_id, reply_markup=markup)
+                    except Exception:
+                        _bot.send_message(call.message.chat.id, text, reply_markup=markup)
+                    return
+
+                if not getattr(config, "FOOTBALL_API_KEY", ""):
                     text = "⚠️ FOOTBALL_API_KEY تنظیم نشده است."
-                elif not today_matches:
-                    text = "📭 امروز بازی‌ای در رقابت تنظیم‌شده (WC_COMPETITION) ثبت نشده."
-                else:
-                    lines = ["📅 <b>بازی‌های امروز</b>\n"]
-                    status_fa = {
-                        "SCHEDULED": "⏳ زمان‌بندی‌شده", "TIMED": "⏳ زمان‌بندی‌شده",
-                        "LIVE": "🔴 درحال پخش", "IN_PLAY": "🔴 درحال پخش", "PAUSED": "⏸️ نیمه",
-                        "FINISHED": "✅ پایان‌یافته", "POSTPONED": "⏸️ به تعویق افتاده",
-                        "SUSPENDED": "⛔️ معلق", "CANCELLED": "❌ لغو‌شده",
-                    }
-                    for m in today_matches:
-                        home = (m.get("homeTeam", {}).get("shortName") or m.get("homeTeam", {}).get("name") or "؟")
-                        away = (m.get("awayTeam", {}).get("shortName") or m.get("awayTeam", {}).get("name") or "؟")
-                        status = status_fa.get(m.get("status", ""), m.get("status", ""))
-                        time_str = m.get("utcDate", "")
-                        try:
-                            dt = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%SZ")
-                            time_str = _wc_utc_to_iran(dt).strftime("%H:%M")
-                        except Exception:
-                            pass
-                        lines.append(f"⚽️ {home} vs {away}\n🕐 {time_str} | {status}\n")
-                    text = "\n".join(lines)
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                    _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=markup)
+                    return
+
+                if not today_matches:
+                    text = "📭 امروز بازی‌ای ثبت نشده."
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                    _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=markup)
+                    return
+
+                # ساخت لیست بازی‌ها با دکمه ارسال برای هر کدام
+                status_fa = {
+                    "SCHEDULED": "⏳", "TIMED": "⏳",
+                    "LIVE": "🔴", "IN_PLAY": "🔴", "PAUSED": "⏸️",
+                    "FINISHED": "✅", "POSTPONED": "📌",
+                    "SUSPENDED": "⛔️", "CANCELLED": "❌",
+                }
+                lines = ["📅 <b>بازی‌های امروز — جام جهانی</b>\n"]
+                markup = types.InlineKeyboardMarkup(row_width=1)
+
+                for m in today_matches:
+                    match_id = str(m.get("id", ""))
+                    home = (m.get("homeTeam", {}).get("shortName") or
+                            m.get("homeTeam", {}).get("name") or "؟")
+                    away = (m.get("awayTeam", {}).get("shortName") or
+                            m.get("awayTeam", {}).get("name") or "؟")
+                    st = status_fa.get(m.get("status", ""), "❓")
+                    utc_date = m.get("utcDate", "")
+                    time_str = utc_date
+                    try:
+                        dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
+                        time_str = _wc_utc_to_iran(dt).strftime("%H:%M")
+                    except Exception:
+                        pass
+
+                    # نشون می‌ده چالش قبلاً ساخته شده یا نه
+                    already = db.wc_challenge_exists(match_id)
+                    sent_icon = "📤" if already else "📨"
+
+                    lines.append(f"{st} <b>{home}</b> vs <b>{away}</b> — ⏰{time_str}")
+                    markup.add(
+                        types.InlineKeyboardButton(
+                            f"{sent_icon} ارسال چالش: {home} vs {away}",
+                            callback_data=f"wc_sendnow_{match_id}"
+                        )
+                    )
+
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                text = "\n".join(lines)
 
                 try:
-                    _safe_edit_message(
-                        text, chat_id=call.message.chat.id,
-                        message_id=call.message.message_id, reply_markup=markup
-                    )
+                    _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=markup)
                 except Exception:
                     _bot.send_message(call.message.chat.id, text, reply_markup=markup)
+                return
+
+            elif data.startswith("wc_sendnow_"):
+                # ادمین دستی روی دکمه ارسال چالش زد
+                match_id = data[len("wc_sendnow_"):]
+                _bot.answer_callback_query(call.id, "⏳ در حال ارسال چالش...")
+                try:
+                    today_matches = _wc_get_today_matches()
+                    target = next((m for m in today_matches if str(m.get("id")) == match_id), None)
+                    if not target:
+                        return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد", show_alert=True)
+
+                    home = (target.get("homeTeam", {}).get("shortName") or
+                            target.get("homeTeam", {}).get("name") or "؟")
+                    away = (target.get("awayTeam", {}).get("shortName") or
+                            target.get("awayTeam", {}).get("name") or "؟")
+
+                    if not home.strip() or not away.strip():
+                        return _bot.answer_callback_query(call.id, "❌ نام تیم‌ها هنوز مشخص نیست", show_alert=True)
+
+                    utc_date = target.get("utcDate", "")
+                    try:
+                        dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
+                        match_time_str = _wc_utc_to_iran(dt).strftime("%Y/%m/%d — %H:%M") + " (تهران)"
+                    except Exception:
+                        dt = utc_date
+                        match_time_str = utc_date
+
+                    # اگه قبلاً ساخته شده فقط دوباره بفرسته
+                    if db.wc_challenge_exists(match_id):
+                        # چالش موجوده — فقط مجدد به کانال بفرست
+                        from database_supabase import execute_query
+                        row = execute_query(
+                            "SELECT * FROM worldcup_challenges WHERE match_id=%s",
+                            (match_id,), fetch_one=True
+                        )
+                        if row:
+                            _wc_send_challenge_to_channel(row["id"], home, away, match_time_str)
+                            _bot.answer_callback_query(call.id, "✅ چالش مجدداً ارسال شد!", show_alert=True)
+                            return
+
+                    challenge_id = db.create_wc_challenge(match_id, home, away, dt)
+                    if challenge_id:
+                        _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
+                        _bot.answer_callback_query(call.id, f"✅ چالش {home} vs {away} ارسال شد!", show_alert=True)
+                    else:
+                        _bot.answer_callback_query(call.id, "❌ خطا در ساخت چالش", show_alert=True)
+                except Exception as e:
+                    print(f"❌ wc_sendnow: {e}")
+                    _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
                 return
             
             elif data == "admin_transfer":
                 _owner_states[call.from_user.id] = {"state": "transfer_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "💎 <b>انتقال الماس (از طرف سیستم)</b>\n\n"
                     "📝 یوزرنیم کاربر مقصد را ارسال کنید:\n\nمثال: <code>ali</code>",
                     chat_id=call.message.chat.id,
@@ -1631,7 +1933,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "give_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     "💰 <b>دادن الماس به کاربر</b>\n\n"
                     "📝 یوزرنیم کاربر را ارسال کنید:\n\nمثال: <code>ali</code>",
                     chat_id=call.message.chat.id,
@@ -1646,7 +1948,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "set_card"}
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
-                _safe_edit_message(
+                _bot.edit_message_text(
                     f"💳 <b>تنظیم شماره کارت</b>\n\n"
                     f"کارت فعلی: <code>{cur_card}</code>\n\n"
                     f"شماره کارت جدید را ارسال کنید:",

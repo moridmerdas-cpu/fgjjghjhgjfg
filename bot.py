@@ -857,16 +857,96 @@ async def _get_weather(city):
 
 
 _CURRENCY_LABELS = {
-    "usd": "دلار",
-    "eur": "یورو",
-    "gbp": "پوند",
-    "usdt": "Tether",
-    "btc": "Bitcoin",
+    "usd":  "💵 دلار آمریکا",
+    "eur":  "💶 یورو",
+    "gbp":  "💷 پوند انگلیس",
+    "usdt": "💎 تتر (USDT)",
+    "btc":  "₿ بیت‌کوین",
+    "eth":  "⟠ اتریوم",
 }
-_CURRENCY_DEFAULT_LIST = ("usd", "usdt", "eur", "gbp")  # خروجی پیش‌فرض «ارز»
+_CURRENCY_DEFAULT_LIST = ("usd", "eur", "gbp", "usdt", "btc", "eth")
 
 _currency_cache = {"data": {}, "ts": 0.0}
-_CURRENCY_CACHE_TTL = 30  # ثانیه — جلوگیری از اسپم به API
+_CURRENCY_CACHE_TTL = 60  # ثانیه
+
+async def _fetch_currency_prices() -> dict:
+    """
+    دریافت قیمت ارزها به تومان:
+    - دلار آزاد → Nobitex (usdt-rls) که برابر نرخ آزاد است
+    - یورو/پوند → open.er-api.com (رایگان) × نرخ دلار
+    - بیت‌کوین/اتریوم → CoinGecko × نرخ دلار
+    - کش ۶۰ ثانیه‌ای
+    """
+    now = time.time()
+    if now - _currency_cache["ts"] < _CURRENCY_CACHE_TTL and _currency_cache["data"]:
+        return _currency_cache["data"]
+
+    loop = asyncio.get_event_loop()
+    result = {}
+
+    # ─── مرحله ۱: نرخ دلار آزاد از Nobitex ──────────────────────────────────
+    usd_toman = 0
+    for src, pair in [("usdt", "usdt-rls"), ("btc", "btc-rls"), ("eth", "eth-rls")]:
+        try:
+            nb = await loop.run_in_executor(
+                None, lambda s=src: _fetch_json_sync(
+                    "https://api.nobitex.ir/market/stats",
+                    json_body={"srcCurrency": s, "dstCurrency": "rls"}, timeout=8
+                )
+            )
+            rial = float(nb["stats"][f"{s}-rls"]["latest"])
+            val = int(rial / 10)
+            result[src] = val
+            if src == "usdt":
+                usd_toman = val
+                result["usd"] = val
+        except Exception as e:
+            print(f"⚠️ Nobitex {src}: {e}")
+
+    # ─── مرحله ۲: نرخ یورو/پوند از exchangerate-api ─────────────────────────
+    if usd_toman:
+        try:
+            fx = await loop.run_in_executor(
+                None, lambda: _fetch_json_sync(
+                    "https://open.er-api.com/v6/latest/USD", timeout=8
+                )
+            )
+            rates = fx.get("rates", {})
+            if rates.get("EUR"):
+                result["eur"] = int(usd_toman * rates["EUR"])
+            if rates.get("GBP"):
+                result["gbp"] = int(usd_toman * rates["GBP"])
+            if rates.get("AED"):
+                result["aed"] = int(usd_toman * rates["AED"])
+        except Exception as e:
+            print(f"⚠️ exchangerate EUR/GBP: {e}")
+            result.setdefault("eur", int(usd_toman * 1.08))
+            result.setdefault("gbp", int(usd_toman * 1.27))
+
+    # ─── مرحله ۳: BTC/ETH دقیق‌تر از CoinGecko ──────────────────────────────
+    if usd_toman and ("btc" not in result or "eth" not in result):
+        try:
+            cg = await loop.run_in_executor(
+                None, lambda: _fetch_json_sync(
+                    "https://api.coingecko.com/api/v3/simple/price"
+                    "?ids=bitcoin,ethereum&vs_currencies=usd", timeout=10
+                )
+            )
+            btc_usd = cg.get("bitcoin", {}).get("usd", 0)
+            eth_usd = cg.get("ethereum", {}).get("usd", 0)
+            if btc_usd:
+                result["btc"] = int(btc_usd * usd_toman)
+            if eth_usd:
+                result["eth"] = int(eth_usd * usd_toman)
+        except Exception as e:
+            print(f"⚠️ CoinGecko: {e}")
+
+    if not result:
+        return _currency_cache.get("data") or {}
+
+    _currency_cache["data"] = result
+    _currency_cache["ts"] = now
+    return result
 
 
 def _fetch_json_sync(url, json_body=None, timeout=6, retries=3):
@@ -887,75 +967,6 @@ def _fetch_json_sync(url, json_body=None, timeout=6, retries=3):
             if attempt < retries - 1:
                 _time.sleep(2 ** attempt)  # 1s, 2s
     raise last_err
-
-
-async def _fetch_currency_prices() -> dict:
-    """
-    دریافت قیمت لحظه‌ای ارزها به تومان — فقط از Nobitex (ریال → تومان).
-    دلار  → usdt-rls
-    یورو  → تخمین از نرخ EUR/USD جهانی × قیمت تتر
-    پوند  → تخمین از نرخ GBP/USD جهانی × قیمت تتر
-    تتر   → usdt-rls
-    بیت‌کوین → btc-rls
-    """
-    now = time.time()
-    if now - _currency_cache["ts"] < _CURRENCY_CACHE_TTL and _currency_cache["data"]:
-        return _currency_cache["data"]
-
-    loop = asyncio.get_event_loop()
-    result = {}
-
-    # ─── دریافت همه قیمت‌ها از Nobitex ──────────────────────────────────────
-    PAIRS = {
-        "usdt": "usdt-rls",
-        "btc":  "btc-rls",
-        "eth":  "eth-rls",
-    }
-    try:
-        nb = await loop.run_in_executor(
-            None,
-            lambda: _fetch_json_sync("https://api.nobitex.ir/v3/orderbook/all")
-        )
-        for key, pair in PAIRS.items():
-            try:
-                asks = nb.get(pair.upper().replace("-", ""), {}).get("asks", [])
-                if asks:
-                    rial = float(asks[0][0])
-                    result[key] = int(rial / 10)
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"⚠️ خطا در دریافت قیمت از نوبیتکس (orderbook): {e}")
-
-    # fallback: اگه orderbook کار نکرد از market/stats استفاده کن
-    if not result:
-        for src in ("usdt", "btc", "eth"):
-            try:
-                nb = await loop.run_in_executor(
-                    None,
-                    lambda s=src: _fetch_json_sync(
-                        "https://api.nobitex.ir/market/stats",
-                        json_body={"srcCurrency": s, "dstCurrency": "rls"},
-                    ),
-                )
-                rial = float(nb["stats"][f"{src}-rls"]["latest"])
-                result[src] = int(rial / 10)
-            except Exception as e:
-                print(f"⚠️ خطا در دریافت قیمت {src} از نوبیتکس: {e}")
-
-    # ─── تخمین دلار از قیمت تتر ──────────────────────────────────────────────
-    if "usdt" in result:
-        result["usd"] = result["usdt"]  # تتر ≈ دلار
-        # تخمین یورو و پوند از نرخ‌های ثابت تقریبی (بدون API خارجی)
-        result.setdefault("eur", int(result["usdt"] * 1.08))
-        result.setdefault("gbp", int(result["usdt"] * 1.27))
-
-    if not result:
-        return None
-
-    _currency_cache["data"] = result
-    _currency_cache["ts"] = now
-    return result
 
 
 async def _get_currency_text(target: str = None) -> str:

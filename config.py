@@ -53,7 +53,7 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
 # ─── سیستم توکن ──────────────────────────────────────────────────────────────
 TOKENS_PER_SESSION = 2
 SESSION_HOURS = 2
-DAILY_TOKEN_GIFT = 0.5
+DAILY_TOKEN_GIFT = 10
 REFERRAL_TOKENS = 12
 WELCOME_TOKENS = 10
 TOKEN_PRICE_TOMAN = 200
