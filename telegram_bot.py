@@ -509,6 +509,14 @@ def start_token_bot():
     # وضعیت انتخاب تیم کاربران: tg_id -> {challenge_id, selected_option}
     _wc_pending_bet = {}
 
+    IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
+
+    def _wc_utc_to_iran(dt: datetime.datetime) -> datetime.datetime:
+        """تبدیل datetime (UTC، naive یا aware) به ساعت ایران (UTC+3:30)"""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(IRAN_TZ)
+
     def _wc_api_get(endpoint: str) -> dict:
         """فراخوانی API football-data.org"""
         import urllib.request, urllib.error, json as _json
@@ -548,7 +556,7 @@ def start_token_bot():
     def _wc_get_today_matches() -> list:
         """دریافت بازی‌های امروز (هر وضعیتی) — بدون کش، برای دکمه «بازی‌های امروز»"""
         comp = getattr(config, "WC_COMPETITION", "WC")
-        today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        today_str = datetime.datetime.now(IRAN_TZ).strftime("%Y-%m-%d")
         data = _wc_api_get(f"competitions/{comp}/matches?dateFrom={today_str}&dateTo={today_str}")
         return data.get("matches", [])
 
@@ -636,7 +644,8 @@ def start_token_bot():
                     # فقط بازی‌هایی که حداقل ۳۰ دقیقه دیگر شروع می‌شوند
                     if dt < datetime.datetime.utcnow() + datetime.timedelta(minutes=30):
                         continue
-                    match_time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+                    dt_iran = _wc_utc_to_iran(dt)
+                    match_time_str = dt_iran.strftime("%Y-%m-%d %H:%M") + " به وقت ایران"
                 except Exception:
                     match_time_str = utc_date
                     dt = utc_date
@@ -1246,7 +1255,7 @@ def start_token_bot():
                         time_str = m.get("utcDate", "")
                         try:
                             dt = datetime.datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%SZ")
-                            time_str = dt.strftime("%H:%M UTC")
+                            time_str = _wc_utc_to_iran(dt).strftime("%H:%M")
                         except Exception:
                             pass
                         lines.append(f"⚽️ {home} vs {away}\n🕐 {time_str} | {status}\n")
