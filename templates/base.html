@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}NexoSelf{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+    
+    <!-- ===== لوگو و آیکون سایت ===== -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='logo.png') }}">
+    
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;700;900&display=swap" rel="stylesheet">
     {% block extra_head %}{% endblock %}
 </head>
@@ -13,7 +18,8 @@
     <nav class="navbar" id="mainNav">
         <div class="container">
             <div class="nav-brand" onclick="window.location.href='/'">
-                <span class="logo-icon">🚀</span>
+                <!-- ===== لوگو در هدر ===== -->
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="NexoSelf" style="height:36px; width:auto; border-radius:8px;">
                 <span class="logo-text">NexoSelf</span>
                 <span class="logo-badge">v2.0</span>
             </div>
@@ -41,7 +47,9 @@
         <div class="container">
             <div class="footer-grid">
                 <div>
-                    <h4>🚀 NexoSelf</h4>
+                    <!-- ===== لوگو در فوتر ===== -->
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="NexoSelf" style="height:30px; width:auto; border-radius:6px; margin-bottom:8px;">
+                    <h4>NexoSelf</h4>
                     <p>سلف‌بات نسل جدید برای تلگرام</p>
                 </div>
                 <div>

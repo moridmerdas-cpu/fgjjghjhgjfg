@@ -5,65 +5,196 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ورود تلگرام - NexoSelf</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Tahoma, Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            margin: 0;
+            padding: 20px;
         }
+
         .container {
             background: white;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            width: 90%;
-            max-width: 400px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
             text-align: center;
+            animation: slideUp 0.5s ease;
         }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .logo-wrapper {
+            margin-bottom: 20px;
+        }
+        
+        .logo-wrapper img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
         h1 {
             color: #333;
-            margin-bottom: 1rem;
+            font-size: 28px;
+            margin-bottom: 10px;
         }
-        .info {
-            background: #eef;
-            padding: 1rem;
-            border-radius: 5px;
-            margin: 1rem 0;
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
         }
-        button {
-            padding: 0.75rem 2rem;
-            background: #667eea;
+
+        .info-box {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border-right: 4px solid #667eea;
+        }
+
+        .info-box p {
+            color: #555;
+            font-size: 15px;
+            line-height: 1.8;
+        }
+
+        .info-box b {
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .btn-primary {
+            padding: 14px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 5px;
-            font-size: 1rem;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            margin: 0.5rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
-        button:hover {
-            background: #5568d3;
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
+        }
+
+        .btn-secondary {
+            padding: 14px 20px;
+            background: #f0f0f0;
+            color: #555;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            background: #e8e8e8;
+            transform: translateY(-2px);
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #999;
+            font-size: 12px;
+        }
+
+        .telegram-icon {
+            font-size: 40px;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 30px 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📱 ورود با تلگرام</h1>
-        <div class="info">
-            <p>سلام <b>{{ username }}</b>!</p>
-            <p>برای ادامه، باید با حساب تلگرام خود وارد شوید.</p>
+        <!-- ===== لوگو ===== -->
+        <div class="logo-wrapper">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="NexoSelf">
         </div>
-        <button onclick="startLogin()">🔐 شروع ورود</button>
-        <br>
-        <button onclick="window.location.href='/'">🔙 بازگشت</button>
+        
+        <span class="telegram-icon">📱</span>
+        <h1>ورود با تلگرام</h1>
+        <p class="subtitle">اتصال حساب کاربری به تلگرام</p>
+        
+        <div class="info-box">
+            <p>
+                👋 سلام <b>{{ username }}</b>!<br>
+                برای استفاده از امکانات سلف‌بات،<br>
+                باید حساب تلگرام خود را متصل کنید.
+            </p>
+            <p style="margin-top:10px; font-size:13px; color:#888;">
+                🔒 اطلاعات شما کاملاً امن است
+            </p>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn-primary" onclick="startLogin()">
+                🔐 شروع ورود تلگرام
+            </button>
+            <button class="btn-secondary" onclick="window.location.href='/'">
+                🔙 بازگشت به صفحه اصلی
+            </button>
+        </div>
+
+        <div class="footer">
+            © 2026 NexoSelf - تمامی حقوق محفوظ است
+        </div>
     </div>
     
     <script>
         function startLogin() {
-            alert('در حال انتقال به فرآیند ورود تلگرام...');
             // اینجا باید API call به backend زده شود
+            // فعلاً یک پیام نمایشی
+            alert('🔄 در حال انتقال به فرآیند ورود تلگرام...');
+            // window.location.href = '/api/tg-login-start';
         }
     </script>
 </body>

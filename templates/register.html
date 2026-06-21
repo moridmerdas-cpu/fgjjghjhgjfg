@@ -47,16 +47,15 @@
             margin-bottom: 30px;
         }
 
-        .logo {
+        .logo-wrapper {
+            margin-bottom: 20px;
+        }
+        
+        .logo-wrapper img {
             width: 80px;
             height: 80px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 50%;
-            margin: 0 auto 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 40px;
+            object-fit: cover;
             box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
         }
 
@@ -81,6 +80,7 @@
             color: #555;
             font-weight: 600;
             font-size: 14px;
+            text-align: right;
         }
 
         .input-wrapper {
@@ -95,6 +95,7 @@
             font-size: 15px;
             transition: all 0.3s ease;
             font-family: inherit;
+            text-align: right;
         }
 
         .input-wrapper input:focus {
@@ -120,6 +121,7 @@
             margin-bottom: 25px;
             font-size: 13px;
             color: #555;
+            text-align: right;
         }
 
         .requirements strong {
@@ -241,8 +243,11 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">🚀</div>
-            <h1>ثبت‌نام در NexoSelf</h1>
+            <!-- ===== لوگو ===== -->
+            <div class="logo-wrapper">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="NexoSelf">
+            </div>
+            <h1>🚀 ثبت‌نام در NexoSelf</h1>
             <p class="subtitle">سلف‌ساز پیشرفته تلگرام</p>
         </div>
 
@@ -261,7 +266,7 @@
             </ul>
         </div>
 
-        <form method="POST" action="/register">
+        <form method="POST" action="{{ url_for('register_page') }}">
             <div class="form-group">
                 <label for="username">👤 نام کاربری:</label>
                 <div class="input-wrapper">
@@ -317,7 +322,7 @@
 
         <div class="login-link">
             قبلاً ثبت‌نام کرده‌اید؟ 
-            <a href="/login">وارد شوید</a>
+            <a href="{{ url_for('login_page') }}">وارد شوید</a>
         </div>
 
         <div class="footer">
