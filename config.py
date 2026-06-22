@@ -53,7 +53,8 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
 # ─── سیستم توکن ──────────────────────────────────────────────────────────────
 TOKENS_PER_SESSION = 2
 SESSION_HOURS = 2
-DAILY_TOKEN_GIFT = 10
+DAILY_TOKEN_GIFT = 5          # ✅ هدیه روزانه: ۵ الماس (هر ۲۴ ساعت یک‌بار)
+DAILY_GIFT_COOLDOWN_HOURS = 24
 REFERRAL_TOKENS = 12
 WELCOME_TOKENS = 10
 TOKEN_PRICE_TOMAN = 200
@@ -66,6 +67,12 @@ SPONSORS = [
 
 # ─── کش تنظیمات ──────────────────────────────────────────────────────────────
 CACHE_TTL = 60
+
+# ─── سیستم ماموریت‌ها ─────────────────────────────────────────────────────────
+MISSION_DEFAULT_REWARD = int(os.environ.get("MISSION_DEFAULT_REWARD", "0"))  # الماس
+
+# ─── پیام عمومی (Broadcast) ────────────────────────────────────────────────────
+BROADCAST_DELAY_SECONDS = float(os.environ.get("BROADCAST_DELAY_SECONDS", "0.05"))
 
 # ─── سیستم جام جهانی ──────────────────────────────────────────────────────────
 FOOTBALL_API_KEY   = os.environ.get("FOOTBALL_API_KEY", "")   # کلید API از football-data.org

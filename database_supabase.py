@@ -50,6 +50,7 @@ def init_tables():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             telegram_user_id INTEGER,
+            plan_expiry TIMESTAMP DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
@@ -160,16 +161,19 @@ def verify_account(username: str, password: str) -> Optional[int]:
 
 def get_account(owner_id: int) -> Optional[Dict]:
     try:
-        query = "SELECT id, username, telegram_user_id, created_at FROM amel_accounts WHERE id = %s"
+        query = "SELECT id, username, telegram_user_id, plan_expiry, created_at FROM amel_accounts WHERE id = %s"
         result = execute_query(query, (owner_id,), fetch_one=True)
         return dict(result) if result else None
     except Exception as e:
         print(f"❌ get_account error: {e}")
         return None
 
+# الیاس مستقیم — برای فراخوانی از bot.py به صورت db.get_account_by_owner(owner_id)
+get_account_by_owner = get_account
+
 def get_account_by_username(username: str) -> Optional[Dict]:
     try:
-        query = "SELECT id, username, telegram_user_id, created_at FROM amel_accounts WHERE username = %s"
+        query = "SELECT id, username, telegram_user_id, plan_expiry, created_at FROM amel_accounts WHERE username = %s"
         result = execute_query(query, (username.strip(),), fetch_one=True)
         return dict(result) if result else None
     except Exception as e:
@@ -178,7 +182,7 @@ def get_account_by_username(username: str) -> Optional[Dict]:
 
 def get_account_by_tg_id(tg_id: int) -> Optional[Dict]:
     try:
-        query = "SELECT id, username, telegram_user_id, created_at FROM amel_accounts WHERE telegram_user_id = %s"
+        query = "SELECT id, username, telegram_user_id, plan_expiry, created_at FROM amel_accounts WHERE telegram_user_id = %s"
         result = execute_query(query, (tg_id,), fetch_one=True)
         return dict(result) if result else None
     except Exception as e:
@@ -187,12 +191,45 @@ def get_account_by_tg_id(tg_id: int) -> Optional[Dict]:
 
 def get_all_accounts() -> List[Dict]:
     try:
-        query = "SELECT id, username, created_at FROM amel_accounts ORDER BY created_at"
+        query = "SELECT id, username, telegram_user_id, plan_expiry, created_at FROM amel_accounts ORDER BY created_at"
         result = execute_query(query, fetch_all=True)
         return [dict(r) for r in result] if result else []
     except Exception as e:
         print(f"❌ get_all_accounts error: {e}")
         return []
+
+def set_plan_expiry(owner_id: int, expiry: Optional[datetime.datetime]) -> bool:
+    """تنظیم تاریخ انقضای پلن کاربر — None یعنی بدون محدودیت (رایگان/نامحدود)."""
+    try:
+        execute_query(
+            "UPDATE amel_accounts SET plan_expiry = %s WHERE id = %s",
+            (expiry, owner_id)
+        )
+        return True
+    except Exception as e:
+        print(f"❌ set_plan_expiry error: {e}")
+        return False
+
+def is_plan_active(owner_id: int) -> bool:
+    """True اگر پلن کاربر فعال باشد (plan_expiry نداشته باشد یا هنوز نگذشته باشد)."""
+    try:
+        result = execute_query(
+            "SELECT plan_expiry FROM amel_accounts WHERE id = %s",
+            (owner_id,), fetch_one=True
+        )
+        if not result:
+            return False
+        expiry = result["plan_expiry"]
+        if not expiry:
+            return True
+        if isinstance(expiry, str):
+            expiry = datetime.datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+        return expiry > datetime.datetime.now(datetime.timezone.utc)
+    except Exception as e:
+        print(f"❌ is_plan_active error: {e}")
+        return True  # در صورت خطا، اجازه ادامه بدهیم
 
 def account_exists() -> bool:
     try:
@@ -202,6 +239,16 @@ def account_exists() -> bool:
     except Exception as e:
         print(f"❌ account_exists error: {e}")
         return False
+
+def get_all_telegram_ids() -> List[int]:
+    """آیدی تلگرام تمام کاربران ثبت‌شده‌ای که ربات الماس را استارت کرده‌اند (برای پیام عمومی)."""
+    try:
+        query = "SELECT telegram_user_id FROM amel_accounts WHERE telegram_user_id IS NOT NULL"
+        result = execute_query(query, fetch_all=True)
+        return [r['telegram_user_id'] for r in result] if result else []
+    except Exception as e:
+        print(f"❌ get_all_telegram_ids error: {e}")
+        return []
 
 def save_telegram_user_id(owner_id: int, tg_user_id: int):
     try:
@@ -361,10 +408,14 @@ def transfer_diamonds(from_owner_id: int, to_owner_id: int, amount: int) -> tupl
         return False, f"❌ خطا: {e}"
 
 def claim_daily_token(owner_id: int):
+    """
+    هدیه روزانه — مقدار از config.DAILY_TOKEN_GIFT خوانده می‌شود (پیش‌فرض ۵ الماس).
+    Anti-spam: هر owner_id فقط هر ۲۴ ساعت یک‌بار می‌تواند هدیه بگیرد (last_daily_ts).
+    """
     import time as _time
     import config as _cfg
-    COOLDOWN = 86400  # 24 ساعت
-    DAILY_AMOUNT = 10  # ثابت: ۱۰ الماس در روز
+    COOLDOWN = int(getattr(_cfg, "DAILY_GIFT_COOLDOWN_HOURS", 24)) * 3600
+    DAILY_AMOUNT = int(getattr(_cfg, "DAILY_TOKEN_GIFT", 5))
     try:
         _init_tokens(owner_id)
         now_ts = int(_time.time())
@@ -384,9 +435,10 @@ def claim_daily_token(owner_id: int):
             m = (remaining % 3600) // 60
             return False, f"⏰ هدیه روزانه دریافت شد!\n\n🕐 تا هدیه بعدی: <b>{h} ساعت و {m} دقیقه</b> مانده."
 
+        today_str = datetime.date.today().isoformat()
         execute_query(
-            "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s, last_daily_ts = %s WHERE owner_id = %s",
-            (DAILY_AMOUNT, DAILY_AMOUNT, now_ts, owner_id)
+            "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s, last_daily_ts = %s, last_daily = %s WHERE owner_id = %s",
+            (DAILY_AMOUNT, DAILY_AMOUNT, now_ts, today_str, owner_id)
         )
         return True, f"🎁 <b>{DAILY_AMOUNT} الماس</b> دریافت کردید!\n💎 فردا دوباره بیا!"
     except Exception as e:
@@ -394,17 +446,26 @@ def claim_daily_token(owner_id: int):
         return False, "❌ خطا در دریافت هدیه"
 
 def get_token_stats(owner_id: int) -> dict:
+    """⚠️ can_claim_daily بر اساس last_daily_ts (cooldown ۲۴ ساعته واقعی) محاسبه می‌شود."""
+    import time as _time
+    import config as _cfg
+    COOLDOWN = int(getattr(_cfg, "DAILY_GIFT_COOLDOWN_HOURS", 24)) * 3600
     try:
         _init_tokens(owner_id)
-        query = "SELECT balance, last_daily, total_earned FROM amel_tokens WHERE owner_id = %s"
+        try:
+            execute_query("ALTER TABLE amel_tokens ADD COLUMN IF NOT EXISTS last_daily_ts BIGINT DEFAULT 0")
+        except Exception:
+            pass
+        query = "SELECT balance, last_daily, last_daily_ts, total_earned FROM amel_tokens WHERE owner_id = %s"
         result = execute_query(query, (owner_id,), fetch_one=True)
         if result:
-            today = datetime.date.today().isoformat()
+            last_ts = int(result["last_daily_ts"] or 0)
+            can_claim = (int(_time.time()) - last_ts) >= COOLDOWN
             return {
                 "balance": result['balance'],
                 "last_daily": result['last_daily'],
                 "total_earned": result['total_earned'],
-                "can_claim_daily": result['last_daily'] != today,
+                "can_claim_daily": can_claim,
             }
     except Exception as e:
         print(f"❌ get_token_stats error: {e}")
@@ -657,6 +718,52 @@ def finish_wc_challenge(challenge_id: int, winner_option: str) -> list:
     except Exception as e:
         print(f"❌ finish_wc_challenge error: {e}")
     return paid
+
+
+def get_wc_participants(challenge_id: int) -> list:
+    """شرکت‌کنندگان یک چالش مشخص — یوزرنیم، آیدی تلگرام و زمان ورود."""
+    try:
+        rows = execute_query(
+            """SELECT cp.user_id, cp.user_tg_id, cp.selected_option, cp.amount, cp.created_at,
+                      a.username
+               FROM challenge_participants cp
+               LEFT JOIN amel_accounts a ON a.id = cp.user_id
+               WHERE cp.challenge_id = %s
+               ORDER BY cp.created_at DESC""",
+            (challenge_id,), fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_wc_participants error: {e}")
+        return []
+
+
+def get_all_wc_participants(limit: int = 100) -> list:
+    """تمام شرکت‌کنندگان همهٔ چالش‌های جام جهانی (جدیدترین‌ها اول) — برای پنل مالک."""
+    try:
+        rows = execute_query(
+            """SELECT cp.user_id, cp.user_tg_id, cp.selected_option, cp.amount, cp.created_at,
+                      a.username, wc.team1, wc.team2, wc.id AS challenge_id
+               FROM challenge_participants cp
+               LEFT JOIN amel_accounts a ON a.id = cp.user_id
+               LEFT JOIN worldcup_challenges wc ON wc.id = cp.challenge_id
+               ORDER BY cp.created_at DESC
+               LIMIT %s""",
+            (limit,), fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_all_wc_participants error: {e}")
+        return []
+
+
+def get_wc_participant_count() -> int:
+    try:
+        r = execute_query("SELECT COUNT(*) AS cnt FROM challenge_participants", fetch_one=True)
+        return r["cnt"] if r else 0
+    except Exception as e:
+        print(f"❌ get_wc_participant_count error: {e}")
+        return 0
 
 
 # ── سازگاری با کد قدیمی ─────────────────────────────────────────────────────
@@ -1092,12 +1199,109 @@ def get_pending_payments() -> list:
         return []
 
 
+# ─── سیستم ماموریت‌ها (عضویت اجباری برای جایزه) ─────────────────────────────────
+
+def init_mission_tables():
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS amel_mission_channels (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            added_at TIMESTAMP DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_mission_claims (
+            owner_id INTEGER PRIMARY KEY,
+            reward INTEGER NOT NULL DEFAULT 0,
+            claimed_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    ]
+    for q in queries:
+        try:
+            execute_query(q)
+        except Exception as e:
+            print(f"❌ init_mission_tables error: {e}")
+    print("✅ جداول ماموریت‌ها ایجاد/تأیید شدند!")
+
+
+def add_mission_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    try:
+        execute_query(
+            "INSERT INTO amel_mission_channels (username) VALUES (%s) ON CONFLICT (username) DO NOTHING",
+            (username,)
+        )
+        return True
+    except Exception as e:
+        print(f"❌ add_mission_channel error: {e}")
+        return False
+
+
+def remove_mission_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    try:
+        affected = execute_query("DELETE FROM amel_mission_channels WHERE username = %s", (username,))
+        return bool(affected)
+    except Exception as e:
+        print(f"❌ remove_mission_channel error: {e}")
+        return False
+
+
+def get_mission_channels() -> list:
+    try:
+        rows = execute_query("SELECT username FROM amel_mission_channels ORDER BY added_at", fetch_all=True)
+        return [r["username"] for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_mission_channels error: {e}")
+        return []
+
+
+def has_claimed_mission(owner_id: int) -> bool:
+    try:
+        r = execute_query("SELECT 1 FROM amel_mission_claims WHERE owner_id = %s", (owner_id,), fetch_one=True)
+        return r is not None
+    except Exception as e:
+        print(f"❌ has_claimed_mission error: {e}")
+        return False
+
+
+def claim_mission_reward(owner_id: int, reward: int) -> tuple:
+    """ثبت دریافت جایزهٔ ماموریت — فقط یک‌بار برای هر کاربر مجاز است (جلوگیری از تقلب)."""
+    try:
+        if has_claimed_mission(owner_id):
+            return False, "❌ شما قبلاً جایزهٔ این ماموریت را دریافت کرده‌اید."
+        execute_query(
+            "INSERT INTO amel_mission_claims (owner_id, reward) VALUES (%s, %s) ON CONFLICT (owner_id) DO NOTHING",
+            (owner_id, reward)
+        )
+        if reward > 0:
+            add_tokens(owner_id, reward)
+        return True, f"🎉 ماموریت تکمیل شد! <b>{reward} الماس</b> به حساب شما اضافه شد."
+    except Exception as e:
+        print(f"❌ claim_mission_reward error: {e}")
+        return False, "❌ خطا در ثبت جایزه."
+
+
+def get_mission_claim_count() -> int:
+    try:
+        r = execute_query("SELECT COUNT(*) AS cnt FROM amel_mission_claims", fetch_one=True)
+        return r["cnt"] if r else 0
+    except Exception as e:
+        print(f"❌ get_mission_claim_count error: {e}")
+        return 0
+
+
 # ─── مقداردهی اولیه ──────────────────────────────────────────────────────────
 try:
     init_tables()
     init_world_cup_tables()
     init_bet_tables()
     init_purchase_tables()
+    init_mission_tables()
 except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")
 

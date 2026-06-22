@@ -8,9 +8,12 @@ from database_supabase import (
     create_account as supa_create_account,
     verify_account as supa_verify_account,
     get_account as supa_get_account,
+    get_account_by_owner as supa_get_account_by_owner,
     get_account_by_username as supa_get_account_by_username,
     get_account_by_tg_id as supa_get_account_by_tg_id,
     get_all_accounts as supa_get_all_accounts,
+    set_plan_expiry as supa_set_plan_expiry,
+    is_plan_active as supa_is_plan_active,
     account_exists as supa_account_exists,
     save_telegram_user_id as supa_save_telegram_user_id,
     get_telegram_id_by_owner as supa_get_telegram_id_by_owner,
@@ -60,6 +63,16 @@ from database_supabase import (
     update_payment as supa_update_payment,
     get_payment as supa_get_payment,
     get_pending_payments as supa_get_pending_payments,
+    get_all_telegram_ids as supa_get_all_telegram_ids,
+    get_wc_participants as supa_get_wc_participants,
+    get_all_wc_participants as supa_get_all_wc_participants,
+    get_wc_participant_count as supa_get_wc_participant_count,
+    add_mission_channel as supa_add_mission_channel,
+    remove_mission_channel as supa_remove_mission_channel,
+    get_mission_channels as supa_get_mission_channels,
+    has_claimed_mission as supa_has_claimed_mission,
+    claim_mission_reward as supa_claim_mission_reward,
+    get_mission_claim_count as supa_get_mission_claim_count,
     SETTING_DEFAULTS,
     _hash_pw,
 )
@@ -77,6 +90,9 @@ def verify_account(username: str, password: str) -> Optional[int]:
 def get_account(owner_id: int) -> Optional[Dict]:
     return supa_get_account(owner_id)
 
+def get_account_by_owner(owner_id: int) -> Optional[Dict]:
+    return supa_get_account_by_owner(owner_id)
+
 def get_account_by_username(username: str) -> Optional[Dict]:
     return supa_get_account_by_username(username)
 
@@ -85,6 +101,12 @@ def get_account_by_tg_id(tg_id: int) -> Optional[Dict]:
 
 def get_all_accounts() -> List[Dict]:
     return supa_get_all_accounts()
+
+def set_plan_expiry(owner_id: int, expiry) -> bool:
+    return supa_set_plan_expiry(owner_id, expiry)
+
+def is_plan_active(owner_id: int) -> bool:
+    return supa_is_plan_active(owner_id)
 
 def account_exists() -> bool:
     return supa_account_exists()
@@ -291,6 +313,39 @@ def get_payment(payment_id):
 def get_pending_payments():
     return supa_get_pending_payments()
 
+# ─── ✅ پیام عمومی (Broadcast) ──────────────────────────────────────────────────
+def get_all_telegram_ids() -> List[int]:
+    return supa_get_all_telegram_ids()
+
+# ─── ✅ شرکت‌کنندگان جام جهانی ──────────────────────────────────────────────────
+def get_wc_participants(challenge_id: int) -> List[Dict]:
+    return supa_get_wc_participants(challenge_id)
+
+def get_all_wc_participants(limit: int = 100) -> List[Dict]:
+    return supa_get_all_wc_participants(limit)
+
+def get_wc_participant_count() -> int:
+    return supa_get_wc_participant_count()
+
+# ─── ✅ ماموریت‌ها ──────────────────────────────────────────────────────────────
+def add_mission_channel(username: str) -> bool:
+    return supa_add_mission_channel(username)
+
+def remove_mission_channel(username: str) -> bool:
+    return supa_remove_mission_channel(username)
+
+def get_mission_channels() -> List[str]:
+    return supa_get_mission_channels()
+
+def has_claimed_mission(owner_id: int) -> bool:
+    return supa_has_claimed_mission(owner_id)
+
+def claim_mission_reward(owner_id: int, reward: int) -> tuple:
+    return supa_claim_mission_reward(owner_id, reward)
+
+def get_mission_claim_count() -> int:
+    return supa_get_mission_claim_count()
+
 # ─── صادرات ────────────────────────────────────────────────────────────────────
 __all__ = [
     # حساب‌ها
@@ -328,4 +383,14 @@ __all__ = [
 
     # شرط‌بندی
     'create_bet', 'get_bet', 'update_bet_message', 'join_bet', 'finish_bet', 'cancel_bet',
+
+    # پیام عمومی
+    'get_all_telegram_ids',
+
+    # شرکت‌کنندگان جام جهانی
+    'get_wc_participants', 'get_all_wc_participants', 'get_wc_participant_count',
+
+    # ماموریت‌ها
+    'add_mission_channel', 'remove_mission_channel', 'get_mission_channels',
+    'has_claimed_mission', 'claim_mission_reward', 'get_mission_claim_count',
 ]
