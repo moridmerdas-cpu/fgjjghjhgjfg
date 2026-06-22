@@ -364,7 +364,7 @@ def claim_daily_token(owner_id: int):
     import time as _time
     import config as _cfg
     COOLDOWN = 86400  # 24 ساعت
-    DAILY_AMOUNT = 10  # ثابت: ۱۰ الماس در روز
+    DAILY_AMOUNT = 5  # روزانه ۵ الماس
     try:
         _init_tokens(owner_id)
         now_ts = int(_time.time())
@@ -1092,12 +1092,137 @@ def get_pending_payments() -> list:
         return []
 
 
-# ─── مقداردهی اولیه ──────────────────────────────────────────────────────────
+# ─── سیستم ماموریت‌ها ────────────────────────────────────────────────────────
+
+def init_mission_tables():
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS amel_missions (
+            id SERIAL PRIMARY KEY,
+            channel_username TEXT NOT NULL UNIQUE,
+            reward INTEGER NOT NULL DEFAULT 10,
+            active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS amel_mission_completions (
+            id SERIAL PRIMARY KEY,
+            owner_id INTEGER NOT NULL,
+            mission_id INTEGER NOT NULL,
+            completed_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(owner_id, mission_id)
+        )
+        """,
+    ]
+    for q in queries:
+        try:
+            execute_query(q)
+        except Exception as e:
+            print(f"❌ init_mission_tables error: {e}")
+
+
+def get_active_missions() -> list:
+    try:
+        rows = execute_query(
+            "SELECT * FROM amel_missions WHERE active = TRUE ORDER BY created_at",
+            fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_active_missions error: {e}")
+        return []
+
+
+def add_mission(channel_username: str, reward: int) -> bool:
+    if not channel_username.startswith("@"):
+        channel_username = "@" + channel_username
+    try:
+        execute_query(
+            "INSERT INTO amel_missions (channel_username, reward) VALUES (%s, %s) ON CONFLICT (channel_username) DO UPDATE SET active=TRUE, reward=%s",
+            (channel_username, reward, reward)
+        )
+        return True
+    except Exception as e:
+        print(f"❌ add_mission error: {e}")
+        return False
+
+
+def remove_mission(mission_id: int) -> bool:
+    try:
+        execute_query("UPDATE amel_missions SET active=FALSE WHERE id=%s", (mission_id,))
+        return True
+    except Exception as e:
+        print(f"❌ remove_mission error: {e}")
+        return False
+
+
+def get_completed_mission_ids(owner_id: int) -> list:
+    try:
+        rows = execute_query(
+            "SELECT mission_id FROM amel_mission_completions WHERE owner_id=%s",
+            (owner_id,), fetch_all=True
+        )
+        return [r["mission_id"] for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_completed_mission_ids error: {e}")
+        return []
+
+
+def complete_mission(owner_id: int, mission_id: int, reward: int) -> bool:
+    """ثبت انجام ماموریت و اضافه کردن جایزه"""
+    try:
+        r = execute_query(
+            "INSERT INTO amel_mission_completions (owner_id, mission_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING id",
+            (owner_id, mission_id), fetch_one=True
+        )
+        if r:
+            add_tokens(owner_id, reward)
+            return True
+        return False
+    except Exception as e:
+        print(f"❌ complete_mission error: {e}")
+        return False
+
+
+def get_all_telegram_ids() -> list:
+    """دریافت آیدی تلگرام همه کاربران ثبت‌شده"""
+    try:
+        rows = execute_query(
+            "SELECT telegram_user_id FROM amel_accounts WHERE telegram_user_id IS NOT NULL",
+            fetch_all=True
+        )
+        return [r["telegram_user_id"] for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_all_telegram_ids error: {e}")
+        return []
+
+
+def get_wc_participants() -> list:
+    """دریافت لیست کاربران شرکت‌کننده در جام جهانی"""
+    try:
+        rows = execute_query(
+            """SELECT DISTINCT a.username, a.telegram_user_id, a.created_at,
+                      COUNT(cp.id) as bet_count, SUM(cp.amount) as total_bet
+               FROM challenge_participants cp
+               JOIN amel_accounts a ON a.id = cp.user_id
+               GROUP BY a.id, a.username, a.telegram_user_id, a.created_at
+               ORDER BY bet_count DESC""",
+            fetch_all=True
+        )
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_wc_participants error: {e}")
+        return []
+
+
+# ─── مقداردهی اولیه (کامل) ───────────────────────────────────────────────────
 try:
     init_tables()
     init_world_cup_tables()
     init_bet_tables()
     init_purchase_tables()
+    init_mission_tables()
 except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")
 

@@ -254,13 +254,14 @@ def start_token_bot():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add("💎 موجودی", "🎁 هدیه روزانه")
         markup.add("🔗 رفرال", "🛒 خرید الماس")
+        markup.add("🎯 ماموریت‌ها")
         return markup
 
     def _owner_keyboard():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add("💎 موجودی", "🎁 هدیه روزانه")
         markup.add("🔗 رفرال", "🛒 خرید الماس")
-        markup.add("📢 مدیریت")
+        markup.add("🎯 ماموریت‌ها", "📢 مدیریت")
         return markup
 
     def _admin_panel_keyboard():
@@ -281,6 +282,11 @@ def start_token_bot():
             types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card"),
             types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments")
         )
+        markup.add(
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast"),
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions")
+        )
+        markup.add(types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants"))
         markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
         return markup
 
@@ -2483,6 +2489,74 @@ def start_token_bot():
                 _bot.send_message(call.message.chat.id, "\n".join(lines))
                 return
 
+            elif data == "admin_broadcast":
+                _owner_states[call.from_user.id] = {"state": "broadcast_msg"}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
+                _bot.edit_message_text(
+                    "📣 <b>ارسال پیام عمومی</b>\n\n"
+                    "پیام خود را ارسال کنید (متن، عکس یا لینک):\n"
+                    "به تمام کاربران ثبت‌شده ارسال می‌شود.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_wc_participants":
+                participants = db.get_wc_participants()
+                if not participants:
+                    text = "📭 هیچ شرکت‌کننده‌ای در جام جهانی ثبت نشده."
+                else:
+                    lines = [f"⚽️ <b>شرکت‌کنندگان جام جهانی ({len(participants)} نفر):</b>\n"]
+                    for i, p in enumerate(participants[:50], 1):
+                        uname = f"@{p['username']}"
+                        lines.append(f"{i}. <b>{uname}</b> — 🎯{p['bet_count']} شرط | 💎{p['total_bet']} الماس")
+                    text = "\n".join(lines)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_missions":
+                missions = db.get_active_missions()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if missions:
+                    text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
+                    for m in missions:
+                        text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
+                        markup.add(types.InlineKeyboardButton(f"❌ حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}"))
+                else:
+                    text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
+                markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="add_mission_prompt"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("del_mission_"):
+                mid = int(data.split("_")[2])
+                db.remove_mission(mid)
+                _bot.answer_callback_query(call.id, "✅ ماموریت حذف شد")
+                call.data = "admin_missions"
+                callback_admin(call)
+                return
+
+            elif data == "add_mission_prompt":
+                _owner_states[call.from_user.id] = {"state": "mission_channel"}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions"))
+                _bot.edit_message_text(
+                    "🎯 <b>افزودن ماموریت</b>\n\nآیدی کانال را ارسال کنید (با @):\nمثال: <code>@mychannel</code>",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
             else:
                 _bot.answer_callback_query(call.id, "❌ گزینه نامعتبر")
         
@@ -2496,13 +2570,36 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 📨 State handler
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.from_user.id == OWNER_TG_ID and m.from_user.id in _owner_states, chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.from_user.id == OWNER_TG_ID and m.from_user.id in _owner_states, chat_types=['private'],
+                          content_types=["text", "photo", "document"])
     def handle_owner_state(message):
         try:
             state_data = _owner_states[message.from_user.id]
             state = state_data["state"]
-            text = message.text.strip()
-            
+            text = (message.text or "").strip()
+
+            # ── پیام عمومی ─────────────────────────────────────────────────────
+            if state == "broadcast_msg":
+                _owner_states.pop(message.from_user.id, None)
+                tg_ids = db.get_all_telegram_ids()
+                _bot.reply_to(message, f"⏳ در حال ارسال به {len(tg_ids)} کاربر...")
+                sent, failed = 0, 0
+                for tid in tg_ids:
+                    try:
+                        if message.photo:
+                            _bot.send_photo(tid, message.photo[-1].file_id, caption=message.caption or "")
+                        elif message.document:
+                            _bot.send_document(tid, message.document.file_id, caption=message.caption or "")
+                        else:
+                            _bot.send_message(tid, message.text)
+                        sent += 1
+                    except Exception:
+                        failed += 1
+                _bot.reply_to(message,
+                    f"✅ ارسال تمام شد!\n\n📤 موفق: {sent}\n❌ بلاک‌شده/خطا: {failed}",
+                    reply_markup=_owner_keyboard())
+                return
+
             if state == "waiting_channel":
                 if not text.startswith("@"):
                     text = "@" + text
@@ -2639,6 +2736,28 @@ def start_token_bot():
                     f"✅ شماره کارت ذخیره شد:\n<code>{card}</code>",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
+
+            elif state == "mission_channel":
+                ch = text.strip()
+                if not ch.startswith("@"):
+                    ch = "@" + ch
+                state_data["data"] = {"channel": ch}
+                state_data["state"] = "mission_reward"
+                _bot.reply_to(message, f"✅ کانال: <b>{ch}</b>\n\n💎 مقدار جایزه (الماس) را ارسال کنید:")
+
+            elif state == "mission_reward":
+                try:
+                    reward = int(text.strip())
+                    if reward < 1:
+                        return _bot.reply_to(message, "❌ جایزه باید بیشتر از ۰ باشد.")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
+                ch = state_data["data"]["channel"]
+                db.add_mission(ch, reward)
+                _bot.reply_to(message,
+                    f"✅ ماموریت اضافه شد!\n🔸 {ch} — 💎{reward} الماس",
+                    reply_markup=_owner_keyboard())
+                _owner_states.pop(message.from_user.id, None)
         
         except Exception as e:
             print(f"❌ خطا در handle_owner_state: {e}")
@@ -2656,6 +2775,82 @@ def start_token_bot():
             "📢 تمام دستورات مدیریتی به پنل دکمه‌ای منتقل شدند.\n\n"
             "روی دکمه <b>📢 مدیریت</b> کلیک کنید.",
             reply_markup=_owner_keyboard())
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🎯 سیستم ماموریت‌ها
+    # ══════════════════════════════════════════════════════════════════════════
+    @_bot.message_handler(func=lambda m: m.text == "🎯 ماموریت‌ها", chat_types=['private'])
+    def cmd_missions(message):
+        try:
+            if not require_membership(message):
+                return
+            account = _get_account_cached(message.from_user.id)
+            if not account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+
+            missions = db.get_active_missions()
+            if not missions:
+                return _bot.reply_to(message, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_user_keyboard())
+
+            completed_ids = db.get_completed_mission_ids(account["id"])
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            lines = ["🎯 <b>ماموریت‌ها</b>\n\nبرای دریافت جایزه، در کانال‌های زیر عضو شوید:\n"]
+            for m in missions:
+                done = m["id"] in completed_ids
+                status = "✅" if done else "⏳"
+                ch_clean = m["channel_username"].lstrip("@")
+                lines.append(f"{status} {m['channel_username']} — 💎{m['reward']} الماس")
+                if not done:
+                    markup.add(types.InlineKeyboardButton(
+                        f"🔗 عضویت در {m['channel_username']}",
+                        url=f"https://t.me/{ch_clean}"
+                    ))
+            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions"))
+            _bot.reply_to(message, "\n".join(lines), reply_markup=markup)
+        except Exception as e:
+            print(f"❌ خطا در cmd_missions: {e}")
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "check_missions")
+    def callback_check_missions(call):
+        try:
+            account = _get_account_cached(call.from_user.id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+
+            missions = db.get_active_missions()
+            completed_ids = db.get_completed_mission_ids(account["id"])
+            total_reward = 0
+            newly_done = []
+
+            for m in missions:
+                if m["id"] in completed_ids:
+                    continue
+                ch = m["channel_username"]
+                try:
+                    member = _bot.get_chat_member(ch, call.from_user.id)
+                    if member.status in ("member", "administrator", "creator"):
+                        if db.complete_mission(account["id"], m["id"], m["reward"]):
+                            total_reward += m["reward"]
+                            newly_done.append(ch)
+                except Exception:
+                    pass  # کانال پیدا نشد یا خطا
+
+            if not newly_done:
+                pending = [m["channel_username"] for m in missions if m["id"] not in completed_ids]
+                if not pending:
+                    return _bot.answer_callback_query(call.id, "✅ همه ماموریت‌ها قبلاً انجام شده!", show_alert=True)
+                return _bot.answer_callback_query(call.id,
+                    f"❌ ماموریت انجام نشده!\nابتدا در {len(pending)} کانال عضو شوید سپس دوباره بررسی کنید.",
+                    show_alert=True)
+
+            cache.invalidate(f"account_{call.from_user.id}")
+            new_balance = db.get_token_balance(account["id"])
+            _bot.answer_callback_query(call.id,
+                f"🎉 تبریک! {len(newly_done)} ماموریت انجام شد!\n💎 +{total_reward} الماس دریافت کردید!",
+                show_alert=True)
+        except Exception as e:
+            print(f"❌ خطا در callback_check_missions: {e}")
+            _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # ✅ پیام‌های ناشناخته

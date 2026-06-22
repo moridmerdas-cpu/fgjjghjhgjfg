@@ -341,3 +341,36 @@ __all__ = [
     # شرط‌بندی
     'create_bet', 'get_bet', 'update_bet_message', 'join_bet', 'finish_bet', 'cancel_bet',
 ]
+
+
+# ─── سیستم ماموریت‌ها ─────────────────────────────────────────────────────────
+from database_supabase import (
+    get_active_missions as supa_get_active_missions,
+    add_mission as supa_add_mission,
+    remove_mission as supa_remove_mission,
+    get_completed_mission_ids as supa_get_completed_mission_ids,
+    complete_mission as supa_complete_mission,
+    get_all_telegram_ids as supa_get_all_telegram_ids,
+    get_wc_participants as supa_get_wc_participants,
+)
+
+def get_active_missions() -> list:
+    return supa_get_active_missions()
+
+def add_mission(channel_username: str, reward: int) -> bool:
+    return supa_add_mission(channel_username, reward)
+
+def remove_mission(mission_id: int) -> bool:
+    return supa_remove_mission(mission_id)
+
+def get_completed_mission_ids(owner_id: int) -> list:
+    return supa_get_completed_mission_ids(owner_id)
+
+def complete_mission(owner_id: int, mission_id: int, reward: int) -> bool:
+    return supa_complete_mission(owner_id, mission_id, reward)
+
+def get_all_telegram_ids() -> list:
+    return supa_get_all_telegram_ids()
+
+def get_wc_participants() -> list:
+    return supa_get_wc_participants()
