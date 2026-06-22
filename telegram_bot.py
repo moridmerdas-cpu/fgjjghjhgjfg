@@ -1092,7 +1092,8 @@ def start_token_bot():
             print(f"❌ _check_expiring_subscriptions: {e}")
 
     _start_subscription_checker()
-
+    
+    @_bot.message_handler(commands=["start"])
     def cmd_start(message):
         try:
             tg_id = message.from_user.id
