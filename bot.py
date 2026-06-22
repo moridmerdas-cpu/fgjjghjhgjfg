@@ -27,6 +27,53 @@ FONTS = {
 }
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
+# ─── 🖋 فونت‌ساز (دستور «فونت <متن> <شماره>») ───────────────────────────────────
+def _leet_style(text: str) -> str:
+    """استایل گیمینگ/هکری — جایگزینی حروف با اعداد مشابه"""
+    leet_map = {
+        'a': '4', 'A': '4', 'e': '3', 'E': '3', 'i': '1', 'I': '1',
+        'o': '0', 'O': '0', 's': '5', 'S': '5', 't': '7', 'T': '7',
+        'b': '8', 'B': '8', 'g': '9', 'G': '9',
+    }
+    return "".join(leet_map.get(ch, ch) for ch in text)
+
+
+def _wide_style(text: str) -> str:
+    """استایل کشیده/خاص — فاصله‌گذاری بین حروف"""
+    return "\u2009".join(list(text))
+
+
+FONT_MAKER_STYLES = {
+    "1": {"name": "ساده و استاندارد",        "fn": lambda t: t},
+    "2": {"name": "بولد (Bold)",              "fn": lambda t: _convert_font(t, "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇")},
+    "3": {"name": "دکوری / فنسی (Fancy)",     "fn": lambda t: _convert_font(t, "𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏")},
+    "4": {"name": "تایپی خاص (Unicode Fancy)", "fn": lambda t: _convert_font(t, "ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ")},
+    "5": {"name": "گیمینگ / هکری",            "fn": _leet_style},
+    "6": {"name": "کشیده / خاص (Wide)",       "fn": _wide_style},
+}
+
+
+def apply_font(text: str, font_id: str):
+    """متن را با فونت‌ساز به استایل انتخابی تبدیل می‌کند. خروجی: (متن_تبدیل‌شده, None) یا (None, پیام_خطا)"""
+    style = FONT_MAKER_STYLES.get(str(font_id))
+    if not style:
+        return None, "❌ فونت انتخابی وجود ندارد"
+    try:
+        return style["fn"](text), None
+    except Exception:
+        return None, "❌ خطا در تبدیل فونت"
+
+
+def _font_maker_list_text() -> str:
+    lines = ["🖋 <b>فونت‌ساز</b> — دستور: <code>فونت &lt;متن&gt; &lt;شماره&gt;</code>\nمثال: <code>فونت amir 4</code>\n"]
+    for k, v in FONT_MAKER_STYLES.items():
+        try:
+            sample = v["fn"]("Aa")
+        except Exception:
+            sample = ""
+        lines.append(f"{k}️⃣ {v['name']} — {sample}")
+    return "\n".join(lines)
+
 LINK_PATTERN = re.compile(
     r"(https?://\S+|t\.me/\S+|telegram\.me/\S+|www\.\S+)", re.IGNORECASE
 )
@@ -94,6 +141,11 @@ class BotManager:
     def start(self, owner_id: int, loop: asyncio.AbstractEventLoop, check_tokens: bool = True) -> bool:
         if self.is_running(owner_id):
             self.stop(owner_id)
+
+        # ✅ کاربری که در سایت اکانت ندارد، سلف برایش کار نکند
+        if not db.get_account(owner_id):
+            print(f"⛔ [{owner_id}] اکانتی در سایت یافت نشد — سلف استارت نشد")
+            return False
 
         tg_id = db.get_telegram_id_by_owner(owner_id)
         is_owner = (tg_id is not None and tg_id == config.OWNER_TG_ID)
@@ -189,12 +241,14 @@ class BotManager:
                 # ✅ استارت ساعت با دقت بالا
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
+                guard_task = asyncio.ensure_future(_account_subscription_guard_loop(cl, owner_id, entry))
 
                 retry_delay = 5
                 await cl.run_until_disconnected()
 
                 clock_task.cancel()
                 sched_task.cancel()
+                guard_task.cancel()
 
                 if entry["stop"]:
                     break
@@ -212,6 +266,125 @@ class BotManager:
 
 
 bot_manager = BotManager()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 📲 ورود با کیپد عددی داخل ربات (روش کمکی)
+# ──────────────────────────────────────────────────────────────────────────
+# ⚠️ روش اصلی ورود همچنان از طریق سایت است (send_code از app.py).
+# این بخش فقط مرحلهٔ «وارد کردن کد» را به‌صورت دکمه‌ای جایگزین تایپ متنی می‌کند،
+# و دقیقاً از همان session موقت (_login_phone / _login_phone_hash /
+# _login_partial_session) که سایت ذخیره کرده استفاده می‌کند.
+# ══════════════════════════════════════════════════════════════════════════
+import asyncio as _asyncio
+from telethon.errors import (
+    SessionPasswordNeededError as _SessionPasswordNeededError,
+    PhoneCodeInvalidError as _PhoneCodeInvalidError,
+    PhoneCodeExpiredError as _PhoneCodeExpiredError,
+)
+
+_login_loop = None
+_login_loop_lock = threading.Lock()
+
+
+def _get_login_loop():
+    """یک event loop مستقل و کوچک، فقط برای عملیات Telethon مربوط به ورود."""
+    global _login_loop
+    with _login_loop_lock:
+        if _login_loop is None or _login_loop.is_closed():
+            _login_loop = _asyncio.new_event_loop()
+            t = threading.Thread(target=_login_loop.run_forever, daemon=True)
+            t.start()
+        return _login_loop
+
+
+def _run_login_async(coro, timeout=30):
+    return _asyncio.run_coroutine_threadsafe(coro, _get_login_loop()).result(timeout=timeout)
+
+
+def verify_login_code(owner_id: int, code: str) -> dict:
+    """
+    تایید کد ارسالی تلگرام — همان منطق /api/login/verify_code در app.py،
+    اما به‌صورت یک تابع همگام (sync) قابل فراخوانی از telegram_bot.py.
+    خروجی: {"ok": True} یا {"ok": False, "need_2fa": True} یا {"ok": False, "error": "..."}
+    """
+    code = (code or "").strip()
+    if not code:
+        return {"ok": False, "error": "کد را وارد کنید."}
+
+    phone = db.get_setting(owner_id, "_login_phone")
+    ph = db.get_setting(owner_id, "_login_phone_hash")
+    partial_sess = db.get_setting(owner_id, "_login_partial_session")
+    if not phone or not ph or not partial_sess:
+        return {"ok": False, "error": "ابتدا شمارهٔ تلفن خود را در پنل وب وارد کنید."}
+
+    async def _verify():
+        cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
+        await cl.connect()
+        try:
+            await cl.sign_in(phone=phone, code=code, phone_code_hash=ph)
+            me = await cl.get_me()
+            sess = cl.session.save()
+            db.set_setting(owner_id, "_login_phone", "")
+            db.set_setting(owner_id, "_login_phone_hash", "")
+            db.set_setting(owner_id, "_login_partial_session", "")
+            db.set_setting(owner_id, "session_data", sess)
+            db.set_setting(owner_id, "logged_in", "1")
+            db.save_telegram_user_id(owner_id, me.id)
+            return {"ok": True}
+        finally:
+            await cl.disconnect()
+
+    try:
+        result = _run_login_async(_verify())
+        bot_manager.start(owner_id, _get_login_loop(), check_tokens=False)
+        return result
+    except _SessionPasswordNeededError:
+        return {"ok": False, "need_2fa": True}
+    except (_PhoneCodeInvalidError, _PhoneCodeExpiredError):
+        return {"ok": False, "error": "کد اشتباه یا منقضی‌شده است."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def verify_login_2fa(owner_id: int, password: str) -> dict:
+    """تایید رمز دومرحله‌ای (در صورت فعال بودن) — مرحلهٔ تکمیلی ورود با کیپد."""
+    password = (password or "").strip()
+    if not password:
+        return {"ok": False, "error": "رمز دومرحله‌ای را وارد کنید."}
+
+    partial_sess = db.get_setting(owner_id, "_login_partial_session")
+    if not partial_sess:
+        return {"ok": False, "error": "ابتدا کد تایید را وارد کنید."}
+
+    async def _verify():
+        cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
+        await cl.connect()
+        try:
+            await cl.sign_in(password=password)
+            me = await cl.get_me()
+            sess = cl.session.save()
+            db.set_setting(owner_id, "_login_phone", "")
+            db.set_setting(owner_id, "_login_phone_hash", "")
+            db.set_setting(owner_id, "_login_partial_session", "")
+            db.set_setting(owner_id, "session_data", sess)
+            db.set_setting(owner_id, "logged_in", "1")
+            db.save_telegram_user_id(owner_id, me.id)
+            return {"ok": True}
+        finally:
+            await cl.disconnect()
+
+    try:
+        result = _run_login_async(_verify())
+        bot_manager.start(owner_id, _get_login_loop(), check_tokens=False)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def has_pending_code_login(owner_id: int) -> bool:
+    """آیا این کاربر شمارهٔ تلفن را در سایت ثبت کرده و منتظر واردکردن کد است؟"""
+    return bool(db.get_setting(owner_id, "_login_phone_hash"))
 
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
@@ -384,7 +557,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "تنظیم دشمن", "حذف دشمن", "نمایش لیست دشمن", "پاک کردن لیست دشمن",
             "تنظیم دوست", "حذف دوست", "نمایش لیست دوست", "پاک کردن لیست دوست",
             "سایلنت چت روشن", "سایلنت چت خاموش", "سایلنت کاربر", "لغو سایلنت کاربر",
-            "فونت ", "لیست فونت",
+            "فونت", "فونت ", "لیست فونت",
             "ذخیره ", "ارسال ذخیره ",
             "ترجمه ", "هوا ", "قیمت دلار", "ارز",
             "وضعیت", "راهنما", "help",
@@ -569,12 +742,26 @@ async def _handle_command(cl, event, text, owner_id, entry):
         ss("enemy_reply_active", "0"); await edit("⚔️ پاسخ خودکار به دشمن خاموش شد.")
 
     # ─── فونت ────────────────────────────────────────────────────────────────
+    elif text.strip() == "فونت":
+        await edit(_font_maker_list_text())
     elif text.startswith("فونت "):
-        font_id = text.split()[-1]
-        if font_id in FONTS:
-            ss("selected_font", font_id); await edit(f"🔤 فونت {font_id} انتخاب شد.\nاین فونت روی پیام‌ها و ساعت اعمال می‌شود.")
+        parts = text.split()
+        if len(parts) == 2:
+            # «فونت <0-8>» → تنظیم فونت دائمی پیام‌ها/ساعت (رفتار قبلی، بدون تغییر)
+            font_id = parts[-1]
+            if font_id in FONTS:
+                ss("selected_font", font_id); await edit(f"🔤 فونت {font_id} انتخاب شد.\nاین فونت روی پیام‌ها و ساعت اعمال می‌شود.")
+            else:
+                await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.\n\n💡 برای فونت‌ساز: «فونت <متن> <شماره ۱ تا ۶>» (مثال: فونت amir 4)")
         else:
-            await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
+            # «فونت <متن> <شماره ۱-۶>» → فونت‌ساز (تبدیل یک‌بارهٔ متن)
+            word = " ".join(parts[1:-1])
+            style_id = parts[-1]
+            result, err = apply_font(word, style_id)
+            if err:
+                await edit(f"{err}\n\n{_font_maker_list_text()}")
+            else:
+                await edit(f"{result}")
     elif text == "لیست فونت":
         samples = {"0":"متن عادی","1":"𝗕𝗼𝗹𝗱","2":"𝘐𝘵𝘢𝘭𝘪𝘤","3":"𝙼𝚘𝚗𝚘","4":"Ｆｕｌｌ","5":"𝐒𝐞𝐫𝐢𝐟","6":"𝒮𝒸𝓇𝒾𝓅𝓉","7":"S̶t̶r̶i̶k̶e̶","8":"U̲n̲d̲e̲r̲"}
         lines = ["📝 فونت‌های موجود:\n"] + [f"فونت {k} — {v}" for k, v in samples.items()]
@@ -1045,6 +1232,9 @@ def _help_text():
 🔹 فونت:
 • فونت [0-8] — تغییر فونت پیام‌ها و ساعت
 • لیست فونت — نمایش نمونه‌ها
+• فونت &lt;متن&gt; &lt;شماره ۱ تا ۶&gt; — فونت‌ساز (تبدیل یک‌بارهٔ متن دلخواه)
+   مثال: فونت amir 4
+• فونت (بدون آرگومان) — نمایش لیست فونت‌ساز
 
 💡 نکته: فونت انتخابی روی ساعت نام/بیو هم اعمال می‌شود!
 💡 نکته: در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد!
@@ -1110,3 +1300,74 @@ async def _scheduler_loop(cl, owner_id):
         except Exception:
             pass
         await asyncio.sleep(30)
+
+
+async def _account_subscription_guard_loop(cl, owner_id: int, entry: dict):
+    """
+    هر ۶۰ ثانیه یک‌بار بررسی می‌کند:
+    1. آیا اکانت وب‌سایت هنوز موجود است؟
+    2. آیا پلن کاربر منقضی نشده؟
+    اگر هر کدام از این شرط‌ها نقض شود → بات خاموش می‌شود.
+    """
+    CHECK_INTERVAL = 60  # ثانیه
+    NOTIFIED_EXPIRY = set()
+
+    while not entry.get("stop"):
+        try:
+            account = db.get_account_by_owner(owner_id)
+
+            # ─── چک ۱: اکانت وب‌سایت باید وجود داشته باشد ───────────────────
+            if not account:
+                print(f"🚫 [{owner_id}] اکانت وب‌سایت یافت نشد — بات متوقف می‌شود.")
+                try:
+                    await cl.send_message("me", "⚠️ بات شما به دلیل حذف اکانت وب‌سایت متوقف شد.")
+                except Exception:
+                    pass
+                entry["stop"] = True
+                await cl.disconnect()
+                return
+
+            # ─── چک ۲: پلن اکانت باید فعال باشد ─────────────────────────────
+            plan_expiry = account.get("plan_expiry") or account.get("subscription_expiry")
+            if plan_expiry:
+                if isinstance(plan_expiry, str):
+                    try:
+                        plan_expiry = datetime.datetime.fromisoformat(plan_expiry.replace("Z", "+00:00"))
+                    except Exception:
+                        plan_expiry = None
+
+                if plan_expiry:
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    if plan_expiry.tzinfo is None:
+                        plan_expiry = plan_expiry.replace(tzinfo=datetime.timezone.utc)
+
+                    remaining = plan_expiry - now
+                    # اطلاع‌رسانی ۱ ساعت قبل از انقضا (فقط یک‌بار)
+                    if 0 < remaining.total_seconds() < 3600 and owner_id not in NOTIFIED_EXPIRY:
+                        NOTIFIED_EXPIRY.add(owner_id)
+                        mins = int(remaining.total_seconds() // 60)
+                        try:
+                            await cl.send_message("me",
+                                f"⏰ <b>هشدار:</b> پلن شما {mins} دقیقه دیگر منقضی می‌شود!\n"
+                                f"برای تمدید به پنل وب مراجعه کنید."
+                            )
+                        except Exception:
+                            pass
+
+                    if remaining.total_seconds() <= 0:
+                        print(f"⌛ [{owner_id}] پلن منقضی شد — بات متوقف می‌شود.")
+                        try:
+                            await cl.send_message("me",
+                                "🔴 پلن شما منقضی شده است.\n"
+                                "بات غیرفعال شد. برای تمدید به پنل وب مراجعه کنید."
+                            )
+                        except Exception:
+                            pass
+                        entry["stop"] = True
+                        await cl.disconnect()
+                        return
+
+        except Exception as e:
+            print(f"⚠️ [{owner_id}] guard_loop error: {e}")
+
+        await asyncio.sleep(CHECK_INTERVAL)
