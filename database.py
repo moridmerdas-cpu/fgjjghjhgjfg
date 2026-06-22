@@ -74,6 +74,18 @@ def create_account(username: str, password: str) -> Optional[int]:
 def verify_account(username: str, password: str) -> Optional[int]:
     return supa_verify_account(username, password)
 
+def get_account_password_hash(owner_id: int) -> Optional[str]:
+    """دریافت هش رمز عبور برای تأیید هویت از طریق کیپد"""
+    from database_supabase import execute_query
+    try:
+        row = execute_query(
+            "SELECT password_hash FROM amel_accounts WHERE id = %s",
+            (owner_id,), fetch_one=True
+        )
+        return row["password_hash"] if row else None
+    except Exception:
+        return None
+
 def get_account(owner_id: int) -> Optional[Dict]:
     return supa_get_account(owner_id)
 

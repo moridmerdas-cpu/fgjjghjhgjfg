@@ -103,6 +103,73 @@ _owner_states = {}
 # ─── شرط‌بندی‌های فعال: bet_id -> {creator_tg_id, opponent_tg_id or None} ────
 _active_bets = {}
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🔐 سیستم کیپد ورود (Inline Keyboard PIN)
+# ══════════════════════════════════════════════════════════════════════════════
+# buffer: tg_id -> {"digits": str, "expires": float, "msg_id": int or None}
+_keypad_sessions: dict = {}
+_KEYPAD_TIMEOUT = 120  # ثانیه
+
+
+def _keypad_expired(tg_id: int) -> bool:
+    """بررسی انقضای سشن کیپد"""
+    s = _keypad_sessions.get(tg_id)
+    if not s:
+        return True
+    return time.time() > s["expires"]
+
+
+def _keypad_reset(tg_id: int):
+    """پاکسازی سشن کیپد"""
+    _keypad_sessions.pop(tg_id, None)
+
+
+def _keypad_keyboard(digits: str) -> "types.InlineKeyboardMarkup":
+    """ساخت کیبورد عددی با نمایش ارقام وارد شده"""
+    display = "🔑 " + ("*" * len(digits) if digits else "_ _ _ _ _")
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    # ردیف ۱: 1 2 3
+    markup.add(
+        types.InlineKeyboardButton("1", callback_data="kp_1"),
+        types.InlineKeyboardButton("2", callback_data="kp_2"),
+        types.InlineKeyboardButton("3", callback_data="kp_3"),
+    )
+    # ردیف ۲: 4 5 6
+    markup.add(
+        types.InlineKeyboardButton("4", callback_data="kp_4"),
+        types.InlineKeyboardButton("5", callback_data="kp_5"),
+        types.InlineKeyboardButton("6", callback_data="kp_6"),
+    )
+    # ردیف ۳: 7 8 9
+    markup.add(
+        types.InlineKeyboardButton("7", callback_data="kp_7"),
+        types.InlineKeyboardButton("8", callback_data="kp_8"),
+        types.InlineKeyboardButton("9", callback_data="kp_9"),
+    )
+    # ردیف ۴: ⬅️ 0 ✔️
+    markup.add(
+        types.InlineKeyboardButton("⬅️", callback_data="kp_del"),
+        types.InlineKeyboardButton("0", callback_data="kp_0"),
+        types.InlineKeyboardButton("✔️", callback_data="kp_confirm"),
+    )
+    # ردیف ۵: لغو
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="kp_cancel"))
+    return markup, display
+
+
+def _keypad_text(display: str, error: str = "") -> str:
+    lines = [
+        "🔐 <b>ورود با کیپد امن</b>",
+        "",
+        f"<code>{display}</code>",
+        "",
+        "⌨️ رمز عبور پنل وب خود را وارد کنید:",
+    ]
+    if error:
+        lines.append(f"\n⚠️ {error}")
+    lines.append(f"\n⏱ این فرم <b>{_KEYPAD_TIMEOUT}</b> ثانیه اعتبار دارد.")
+    return "\n".join(lines)
+
 
 def get_bot():
     return _bot
@@ -189,13 +256,14 @@ def start_token_bot():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add("💎 موجودی", "🎁 هدیه روزانه")
         markup.add("🔗 رفرال", "🛒 خرید الماس")
+        markup.add("🔐 ورود با کیپد")
         return markup
 
     def _owner_keyboard():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add("💎 موجودی", "🎁 هدیه روزانه")
         markup.add("🔗 رفرال", "🛒 خرید الماس")
-        markup.add("📢 مدیریت")
+        markup.add("📢 مدیریت", "🔐 ورود با کیپد")
         return markup
 
     def _admin_panel_keyboard():
@@ -218,6 +286,181 @@ def start_token_bot():
         )
         markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
         return markup
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🔐 کیپد ورود — /keypad یا دکمه «🔐 ورود با کیپد»
+    # ══════════════════════════════════════════════════════════════════════════
+    @_bot.message_handler(commands=["keypad"], chat_types=["private"])
+    def cmd_keypad(message):
+        _open_keypad(message)
+
+    @_bot.message_handler(func=lambda m: m.text == "🔐 ورود با کیپد", chat_types=["private"])
+    def cmd_keypad_btn(message):
+        _open_keypad(message)
+
+    def _open_keypad(message):
+        """باز کردن کیپد عددی برای ورود"""
+        tg_id = message.from_user.id
+        _keypad_sessions[tg_id] = {
+            "digits": "",
+            "expires": time.time() + _KEYPAD_TIMEOUT,
+            "msg_id": None,
+        }
+        markup, display = _keypad_keyboard("")
+        sent = _bot.reply_to(message, _keypad_text(display), reply_markup=markup)
+        _keypad_sessions[tg_id]["msg_id"] = sent.message_id
+
+        # تایمر خودکار پاکسازی سشن
+        def _auto_expire():
+            time.sleep(_KEYPAD_TIMEOUT + 2)
+            if tg_id in _keypad_sessions:
+                _keypad_reset(tg_id)
+                try:
+                    _bot.edit_message_text(
+                        "⏰ <b>زمان ورود با کیپد منقضی شد.</b>\n\nدوباره /keypad بزنید.",
+                        chat_id=message.chat.id,
+                        message_id=sent.message_id,
+                    )
+                except Exception:
+                    pass
+
+        threading.Thread(target=_auto_expire, daemon=True).start()
+
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("kp_"))
+    def callback_keypad(call):
+        """پردازش کلیک‌های کیپد"""
+        tg_id = call.from_user.id
+        action = call.data[3:]  # بعد از «kp_»
+
+        # لغو
+        if action == "cancel":
+            _keypad_reset(tg_id)
+            try:
+                _bot.edit_message_text(
+                    "❌ ورود با کیپد لغو شد.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                )
+            except Exception:
+                pass
+            _bot.answer_callback_query(call.id)
+            return
+
+        # بررسی سشن
+        if _keypad_expired(tg_id):
+            _keypad_reset(tg_id)
+            try:
+                _bot.edit_message_text(
+                    "⏰ <b>سشن منقضی شده.</b> دوباره /keypad بزنید.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                )
+            except Exception:
+                pass
+            _bot.answer_callback_query(call.id, "⏰ سشن منقضی شده!", show_alert=True)
+            return
+
+        session = _keypad_sessions[tg_id]
+        digits = session["digits"]
+
+        # حذف آخرین رقم
+        if action == "del":
+            digits = digits[:-1]
+            session["digits"] = digits
+            markup, display = _keypad_keyboard(digits)
+            try:
+                _bot.edit_message_text(
+                    _keypad_text(display),
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup,
+                )
+            except Exception:
+                pass
+            _bot.answer_callback_query(call.id)
+            return
+
+        # تأیید و ورود
+        if action == "confirm":
+            if not digits:
+                _bot.answer_callback_query(call.id, "❗ رمز عبور را وارد کنید!", show_alert=True)
+                return
+
+            # جستجوی حساب بر اساس tg_id
+            account = _get_account_cached(tg_id)
+            if not account:
+                _bot.answer_callback_query(call.id, "❌ حساب یافت نشد. ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                _keypad_reset(tg_id)
+                try:
+                    _bot.edit_message_text(
+                        "❌ حساب کاربری یافت نشد.",
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                    )
+                except Exception:
+                    pass
+                return
+
+            # تأیید رمز عبور با sha256 (همان روش پروژه)
+            import hashlib
+            stored_hash = db.get_account_password_hash(account["id"])
+            if stored_hash:
+                entered_hash = hashlib.sha256(digits.encode()).hexdigest()
+                if entered_hash == stored_hash:
+                    _keypad_reset(tg_id)
+                    site_url = getattr(config, "SITE_URL", "")
+                    markup_ok = types.InlineKeyboardMarkup()
+                    if site_url:
+                        markup_ok.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
+                    try:
+                        _bot.edit_message_text(
+                            f"✅ <b>ورود موفق!</b>\n\n"
+                            f"👤 کاربر: <b>{account['username']}</b>\n"
+                            f"💎 موجودی: <b>{db.get_token_balance(account['id'])}</b> الماس\n\n"
+                            f"می‌توانید وارد پنل وب شوید 👇",
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            reply_markup=markup_ok,
+                        )
+                    except Exception:
+                        pass
+                    _bot.answer_callback_query(call.id, "✅ ورود موفق!", show_alert=True)
+                else:
+                    # رمز اشتباه — نمایش خطا، buffer پاک
+                    session["digits"] = ""
+                    markup, display = _keypad_keyboard("")
+                    try:
+                        _bot.edit_message_text(
+                            _keypad_text(display, "رمز عبور اشتباه است! دوباره وارد کنید."),
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            reply_markup=markup,
+                        )
+                    except Exception:
+                        pass
+                    _bot.answer_callback_query(call.id, "❌ رمز اشتباه!", show_alert=True)
+            else:
+                _bot.answer_callback_query(call.id, "⚠️ رمز عبور در سیستم یافت نشد.", show_alert=True)
+            return
+
+        # عدد (0-9)
+        if action.isdigit():
+            if len(digits) >= 20:
+                _bot.answer_callback_query(call.id, "❗ حداکثر ۲۰ رقم مجاز است.", show_alert=True)
+                return
+            digits += action
+            session["digits"] = digits
+            markup, display = _keypad_keyboard(digits)
+            try:
+                _bot.edit_message_text(
+                    _keypad_text(display),
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup,
+                )
+            except Exception:
+                pass
+            _bot.answer_callback_query(call.id)
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 دستور شرط بندی — فقط در گروه سلف
