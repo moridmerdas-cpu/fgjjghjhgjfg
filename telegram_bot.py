@@ -990,7 +990,6 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # /start
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(commands=["start"])
     def _grant_free_trial(account_id: int, tg_id: int):
         """یک روز سلف رایگان برای کاربران جدید"""
         try:
@@ -1093,6 +1092,7 @@ def start_token_bot():
 
     _start_subscription_checker()
 
+    @_bot.message_handler(commands=["start"])
     def cmd_start(message):
         try:
             tg_id = message.from_user.id
