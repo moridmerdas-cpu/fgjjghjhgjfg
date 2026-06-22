@@ -104,71 +104,69 @@ _owner_states = {}
 _active_bets = {}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 🔐 سیستم کیپد ورود (Inline Keyboard PIN)
+# 🔐 سیستم ساخت اکانت و لاگین تلگرام از طریق ربات
 # ══════════════════════════════════════════════════════════════════════════════
-# buffer: tg_id -> {"digits": str, "expires": float, "msg_id": int or None}
-_keypad_sessions: dict = {}
-_KEYPAD_TIMEOUT = 120  # ثانیه
+_reg_sessions: dict = {}
+_REG_TIMEOUT = 300
+
+_tg_loop = None
 
 
-def _keypad_expired(tg_id: int) -> bool:
-    """بررسی انقضای سشن کیپد"""
-    s = _keypad_sessions.get(tg_id)
-    if not s:
-        return True
-    return time.time() > s["expires"]
+def _get_tg_loop():
+    global _tg_loop
+    import asyncio as _asyncio
+    if _tg_loop is None or _tg_loop.is_closed():
+        _tg_loop = _asyncio.new_event_loop()
+        t = threading.Thread(target=_tg_loop.run_forever, daemon=True)
+        t.start()
+    return _tg_loop
 
 
-def _keypad_reset(tg_id: int):
-    """پاکسازی سشن کیپد"""
-    _keypad_sessions.pop(tg_id, None)
+def _run_tg(coro):
+    import asyncio as _asyncio
+    return _asyncio.run_coroutine_threadsafe(coro, _get_tg_loop()).result(timeout=30)
 
 
-def _keypad_keyboard(digits: str) -> "types.InlineKeyboardMarkup":
-    """ساخت کیبورد عددی با نمایش ارقام وارد شده"""
-    display = "🔑 " + ("*" * len(digits) if digits else "_ _ _ _ _")
+def _kp_markup(digits, mode="code"):
+    prefix = f"reg_kp_{mode}_"
     markup = types.InlineKeyboardMarkup(row_width=3)
-    # ردیف ۱: 1 2 3
     markup.add(
-        types.InlineKeyboardButton("1", callback_data="kp_1"),
-        types.InlineKeyboardButton("2", callback_data="kp_2"),
-        types.InlineKeyboardButton("3", callback_data="kp_3"),
+        types.InlineKeyboardButton("1", callback_data=f"{prefix}1"),
+        types.InlineKeyboardButton("2", callback_data=f"{prefix}2"),
+        types.InlineKeyboardButton("3", callback_data=f"{prefix}3"),
     )
-    # ردیف ۲: 4 5 6
     markup.add(
-        types.InlineKeyboardButton("4", callback_data="kp_4"),
-        types.InlineKeyboardButton("5", callback_data="kp_5"),
-        types.InlineKeyboardButton("6", callback_data="kp_6"),
+        types.InlineKeyboardButton("4", callback_data=f"{prefix}4"),
+        types.InlineKeyboardButton("5", callback_data=f"{prefix}5"),
+        types.InlineKeyboardButton("6", callback_data=f"{prefix}6"),
     )
-    # ردیف ۳: 7 8 9
     markup.add(
-        types.InlineKeyboardButton("7", callback_data="kp_7"),
-        types.InlineKeyboardButton("8", callback_data="kp_8"),
-        types.InlineKeyboardButton("9", callback_data="kp_9"),
+        types.InlineKeyboardButton("7", callback_data=f"{prefix}7"),
+        types.InlineKeyboardButton("8", callback_data=f"{prefix}8"),
+        types.InlineKeyboardButton("9", callback_data=f"{prefix}9"),
     )
-    # ردیف ۴: ⬅️ 0 ✔️
     markup.add(
-        types.InlineKeyboardButton("⬅️", callback_data="kp_del"),
-        types.InlineKeyboardButton("0", callback_data="kp_0"),
-        types.InlineKeyboardButton("✔️", callback_data="kp_confirm"),
+        types.InlineKeyboardButton("⬅️", callback_data=f"{prefix}del"),
+        types.InlineKeyboardButton("0", callback_data=f"{prefix}0"),
+        types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm"),
     )
-    # ردیف ۵: لغو
-    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="kp_cancel"))
-    return markup, display
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel"))
+    return markup
 
 
-def _keypad_text(display: str, error: str = "") -> str:
-    lines = [
-        "🔐 <b>ورود با کیپد امن</b>",
-        "",
-        f"<code>{display}</code>",
-        "",
-        "⌨️ رمز عبور پنل وب خود را وارد کنید:",
-    ]
-    if error:
-        lines.append(f"\n⚠️ {error}")
-    lines.append(f"\n⏱ این فرم <b>{_KEYPAD_TIMEOUT}</b> ثانیه اعتبار دارد.")
-    return "\n".join(lines)
+def _kp_display(digits, mode="code"):
+    if mode in ("2fa", "pw"):
+        return "●" * len(digits) if digits else "_ _ _ _ _"
+    return digits if digits else "_ _ _ _ _"
+
+
+def _reg_expired(tg_id):
+    s = _reg_sessions.get(tg_id)
+    return not s or time.time() > s.get("expires", 0)
+
+
+def _reg_clear(tg_id):
+    _reg_sessions.pop(tg_id, None)
 
 
 def get_bot():
@@ -256,14 +254,13 @@ def start_token_bot():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add("💎 موجودی", "🎁 هدیه روزانه")
         markup.add("🔗 رفرال", "🛒 خرید الماس")
-        markup.add("🔐 ورود با کیپد")
         return markup
 
     def _owner_keyboard():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add("💎 موجودی", "🎁 هدیه روزانه")
         markup.add("🔗 رفرال", "🛒 خرید الماس")
-        markup.add("📢 مدیریت", "🔐 ورود با کیپد")
+        markup.add("📢 مدیریت")
         return markup
 
     def _admin_panel_keyboard():
@@ -286,181 +283,6 @@ def start_token_bot():
         )
         markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
         return markup
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # 🔐 کیپد ورود — /keypad یا دکمه «🔐 ورود با کیپد»
-    # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(commands=["keypad"], chat_types=["private"])
-    def cmd_keypad(message):
-        _open_keypad(message)
-
-    @_bot.message_handler(func=lambda m: m.text == "🔐 ورود با کیپد", chat_types=["private"])
-    def cmd_keypad_btn(message):
-        _open_keypad(message)
-
-    def _open_keypad(message):
-        """باز کردن کیپد عددی برای ورود"""
-        tg_id = message.from_user.id
-        _keypad_sessions[tg_id] = {
-            "digits": "",
-            "expires": time.time() + _KEYPAD_TIMEOUT,
-            "msg_id": None,
-        }
-        markup, display = _keypad_keyboard("")
-        sent = _bot.reply_to(message, _keypad_text(display), reply_markup=markup)
-        _keypad_sessions[tg_id]["msg_id"] = sent.message_id
-
-        # تایمر خودکار پاکسازی سشن
-        def _auto_expire():
-            time.sleep(_KEYPAD_TIMEOUT + 2)
-            if tg_id in _keypad_sessions:
-                _keypad_reset(tg_id)
-                try:
-                    _bot.edit_message_text(
-                        "⏰ <b>زمان ورود با کیپد منقضی شد.</b>\n\nدوباره /keypad بزنید.",
-                        chat_id=message.chat.id,
-                        message_id=sent.message_id,
-                    )
-                except Exception:
-                    pass
-
-        threading.Thread(target=_auto_expire, daemon=True).start()
-
-    @_bot.callback_query_handler(func=lambda call: call.data.startswith("kp_"))
-    def callback_keypad(call):
-        """پردازش کلیک‌های کیپد"""
-        tg_id = call.from_user.id
-        action = call.data[3:]  # بعد از «kp_»
-
-        # لغو
-        if action == "cancel":
-            _keypad_reset(tg_id)
-            try:
-                _bot.edit_message_text(
-                    "❌ ورود با کیپد لغو شد.",
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                )
-            except Exception:
-                pass
-            _bot.answer_callback_query(call.id)
-            return
-
-        # بررسی سشن
-        if _keypad_expired(tg_id):
-            _keypad_reset(tg_id)
-            try:
-                _bot.edit_message_text(
-                    "⏰ <b>سشن منقضی شده.</b> دوباره /keypad بزنید.",
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                )
-            except Exception:
-                pass
-            _bot.answer_callback_query(call.id, "⏰ سشن منقضی شده!", show_alert=True)
-            return
-
-        session = _keypad_sessions[tg_id]
-        digits = session["digits"]
-
-        # حذف آخرین رقم
-        if action == "del":
-            digits = digits[:-1]
-            session["digits"] = digits
-            markup, display = _keypad_keyboard(digits)
-            try:
-                _bot.edit_message_text(
-                    _keypad_text(display),
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=markup,
-                )
-            except Exception:
-                pass
-            _bot.answer_callback_query(call.id)
-            return
-
-        # تأیید و ورود
-        if action == "confirm":
-            if not digits:
-                _bot.answer_callback_query(call.id, "❗ رمز عبور را وارد کنید!", show_alert=True)
-                return
-
-            # جستجوی حساب بر اساس tg_id
-            account = _get_account_cached(tg_id)
-            if not account:
-                _bot.answer_callback_query(call.id, "❌ حساب یافت نشد. ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
-                _keypad_reset(tg_id)
-                try:
-                    _bot.edit_message_text(
-                        "❌ حساب کاربری یافت نشد.",
-                        chat_id=call.message.chat.id,
-                        message_id=call.message.message_id,
-                    )
-                except Exception:
-                    pass
-                return
-
-            # تأیید رمز عبور با sha256 (همان روش پروژه)
-            import hashlib
-            stored_hash = db.get_account_password_hash(account["id"])
-            if stored_hash:
-                entered_hash = hashlib.sha256(digits.encode()).hexdigest()
-                if entered_hash == stored_hash:
-                    _keypad_reset(tg_id)
-                    site_url = getattr(config, "SITE_URL", "")
-                    markup_ok = types.InlineKeyboardMarkup()
-                    if site_url:
-                        markup_ok.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
-                    try:
-                        _bot.edit_message_text(
-                            f"✅ <b>ورود موفق!</b>\n\n"
-                            f"👤 کاربر: <b>{account['username']}</b>\n"
-                            f"💎 موجودی: <b>{db.get_token_balance(account['id'])}</b> الماس\n\n"
-                            f"می‌توانید وارد پنل وب شوید 👇",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=markup_ok,
-                        )
-                    except Exception:
-                        pass
-                    _bot.answer_callback_query(call.id, "✅ ورود موفق!", show_alert=True)
-                else:
-                    # رمز اشتباه — نمایش خطا، buffer پاک
-                    session["digits"] = ""
-                    markup, display = _keypad_keyboard("")
-                    try:
-                        _bot.edit_message_text(
-                            _keypad_text(display, "رمز عبور اشتباه است! دوباره وارد کنید."),
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=markup,
-                        )
-                    except Exception:
-                        pass
-                    _bot.answer_callback_query(call.id, "❌ رمز اشتباه!", show_alert=True)
-            else:
-                _bot.answer_callback_query(call.id, "⚠️ رمز عبور در سیستم یافت نشد.", show_alert=True)
-            return
-
-        # عدد (0-9)
-        if action.isdigit():
-            if len(digits) >= 20:
-                _bot.answer_callback_query(call.id, "❗ حداکثر ۲۰ رقم مجاز است.", show_alert=True)
-                return
-            digits += action
-            session["digits"] = digits
-            markup, display = _keypad_keyboard(digits)
-            try:
-                _bot.edit_message_text(
-                    _keypad_text(display),
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=markup,
-                )
-            except Exception:
-                pass
-            _bot.answer_callback_query(call.id)
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 دستور شرط بندی — فقط در گروه سلف
@@ -1314,6 +1136,439 @@ def start_token_bot():
 
     _start_subscription_checker()
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🆕 ساخت اکانت از طریق ربات — فلوی کامل Telethon
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── مرحله ۱: کاربر «ساخت اکانت با ربات» را می‌زند → شماره بخواه ─────────
+    @_bot.callback_query_handler(func=lambda call: call.data == "reg_start")
+    def callback_reg_start(call):
+        tg_id = call.from_user.id
+        _reg_sessions[tg_id] = {
+            "step": "phone",
+            "digits": "",
+            "expires": time.time() + _REG_TIMEOUT,
+        }
+        _bot.answer_callback_query(call.id)
+        try:
+            _bot.edit_message_text(
+                "📱 <b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
+                "شماره تلفن خود را با کد کشور وارد کنید:\n"
+                "مثال: <code>+989123456789</code>\n\n"
+                "⏱ این فرم ۵ دقیقه اعتبار دارد.",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=types.InlineKeyboardMarkup().add(
+                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel")
+                ),
+            )
+        except Exception:
+            pass
+
+    # ── مرحله ۱b: دریافت شماره به صورت متن ──────────────────────────────────
+    @_bot.message_handler(
+        func=lambda m: m.chat.type == "private"
+        and m.from_user.id in _reg_sessions
+        and _reg_sessions[m.from_user.id].get("step") == "phone"
+        and not _reg_expired(m.from_user.id)
+    )
+    def handle_reg_phone(message):
+        tg_id = message.from_user.id
+        phone = message.text.strip()
+        if not phone.startswith("+"):
+            phone = "+" + phone
+
+        session = _reg_sessions[tg_id]
+        session["phone"] = phone
+        session["step"] = "sending_code"
+        session["expires"] = time.time() + _REG_TIMEOUT
+
+        wait_msg = _bot.reply_to(message, "⏳ در حال ارسال کد تأیید...")
+
+        try:
+            from telethon import TelegramClient
+            from telethon.sessions import StringSession
+
+            async def _send_code():
+                cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
+                await cl.connect()
+                result = await cl.send_code_request(phone)
+                partial = cl.session.save()
+                await cl.disconnect()
+                return result.phone_code_hash, partial
+
+            phone_hash, partial_sess = _run_tg(_send_code())
+            session["phone_hash"] = phone_hash
+            session["partial_session"] = partial_sess
+            session["step"] = "code"
+            session["digits"] = ""
+            session["expires"] = time.time() + _REG_TIMEOUT
+
+            try:
+                _bot.delete_message(message.chat.id, wait_msg.message_id)
+            except Exception:
+                pass
+
+            sent = _bot.send_message(
+                tg_id,
+                f"📲 <b>مرحله ۲ از ۳ — کد تأیید</b>\n\n"
+                f"کد ارسال‌شده به <b>{phone}</b> را با کیپد زیر وارد کنید:\n\n"
+                f"<code>{_kp_display('', 'code')}</code>",
+                reply_markup=_kp_markup("", "code"),
+            )
+            session["msg_id"] = sent.message_id
+
+        except Exception as e:
+            _reg_clear(tg_id)
+            try:
+                _bot.delete_message(message.chat.id, wait_msg.message_id)
+            except Exception:
+                pass
+            _bot.reply_to(message, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
+
+    # ── مرحله ۲ & ۳: کیپد (code / 2fa / pw) ────────────────────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("reg_kp_"))
+    def callback_reg_kp(call):
+        tg_id = call.from_user.id
+
+        if _reg_expired(tg_id):
+            _reg_clear(tg_id)
+            _bot.answer_callback_query(call.id, "⏰ سشن منقضی شده! دوباره /start بزنید.", show_alert=True)
+            try:
+                _bot.edit_message_text("⏰ سشن منقضی شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            except Exception:
+                pass
+            return
+
+        session = _reg_sessions[tg_id]
+        # parse: reg_kp_{mode}_{action}
+        parts = call.data.split("_", 3)   # ["reg","kp",mode,action]
+        mode = parts[2]
+        action = parts[3]
+
+        digits = session.get("digits", "")
+
+        if action == "del":
+            digits = digits[:-1]
+        elif action == "confirm":
+            _process_reg_confirm(call, tg_id, session, mode, digits)
+            return
+        elif action.isdigit():
+            if len(digits) >= 10:
+                _bot.answer_callback_query(call.id, "❗ حداکثر ۱۰ رقم", show_alert=True)
+                return
+            digits += action
+        else:
+            _bot.answer_callback_query(call.id)
+            return
+
+        session["digits"] = digits
+        display = _kp_display(digits, mode)
+
+        label_map = {
+            "code": "📲 <b>مرحله ۲ از ۳ — کد تأیید</b>\n\nکد دریافتی را وارد کنید:",
+            "2fa": "🔒 <b>رمز دو مرحله‌ای</b>\n\nرمز دو مرحله‌ای تلگرام را وارد کنید:",
+            "pw": "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\nرمز عبور برای ورود به پنل وب را وارد کنید:\n(حداقل ۴ رقم)",
+        }
+        text = f"{label_map.get(mode, '')}\n\n<code>{display}</code>"
+
+        try:
+            _bot.edit_message_text(
+                text,
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=_kp_markup(digits, mode),
+            )
+        except Exception:
+            pass
+        _bot.answer_callback_query(call.id)
+
+    def _process_reg_confirm(call, tg_id, session, mode, digits):
+        """پردازش تأیید در هر مرحله"""
+        if not digits:
+            _bot.answer_callback_query(call.id, "❗ چیزی وارد نکردید!", show_alert=True)
+            return
+
+        _bot.answer_callback_query(call.id, "⏳ در حال بررسی...")
+
+        # ── تأیید کد تلگرام ──────────────────────────────────────────────────
+        if mode == "code":
+            try:
+                from telethon import TelegramClient
+                from telethon.sessions import StringSession
+                from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PhoneCodeExpiredError
+
+                phone = session["phone"]
+                phone_hash = session["phone_hash"]
+                partial_sess = session["partial_session"]
+
+                async def _verify_code():
+                    cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
+                    await cl.connect()
+                    await cl.sign_in(phone=phone, code=digits, phone_code_hash=phone_hash)
+                    me = await cl.get_me()
+                    sess = cl.session.save()
+                    await cl.disconnect()
+                    return sess, me
+
+                try:
+                    sess, me = _run_tg(_verify_code())
+                    # کد درسته — ذخیره session موقت و رفتن به مرحله pw
+                    session["saved_session"] = sess
+                    session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
+                    session["step"] = "pw"
+                    session["digits"] = ""
+                    session["expires"] = time.time() + _REG_TIMEOUT
+
+                    try:
+                        _bot.edit_message_text(
+                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
+                            "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
+                            "(حداقل ۴ رقم)\n\n"
+                            f"<code>{_kp_display('', 'pw')}</code>",
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            reply_markup=_kp_markup("", "pw"),
+                        )
+                    except Exception:
+                        pass
+
+                except Exception as e:
+                    err_str = str(e)
+                    if "SessionPasswordNeeded" in err_str or "password" in err_str.lower():
+                        # نیاز به ۲FA
+                        session["step"] = "2fa"
+                        session["digits"] = ""
+                        session["expires"] = time.time() + _REG_TIMEOUT
+                        try:
+                            _bot.edit_message_text(
+                                "🔒 <b>رمز دو مرحله‌ای</b>\n\n"
+                                "حساب شما رمز دو مرحله‌ای دارد.\n"
+                                "آن را با کیپد وارد کنید:\n\n"
+                                f"<code>{_kp_display('', '2fa')}</code>",
+                                chat_id=call.message.chat.id,
+                                message_id=call.message.message_id,
+                                reply_markup=_kp_markup("", "2fa"),
+                            )
+                        except Exception:
+                            pass
+                    elif "PhoneCodeInvalid" in err_str or "PHONE_CODE_INVALID" in err_str:
+                        session["digits"] = ""
+                        try:
+                            _bot.edit_message_text(
+                                "❌ کد اشتباه بود! دوباره وارد کنید:\n\n"
+                                f"<code>{_kp_display('', 'code')}</code>",
+                                chat_id=call.message.chat.id,
+                                message_id=call.message.message_id,
+                                reply_markup=_kp_markup("", "code"),
+                            )
+                        except Exception:
+                            pass
+                    elif "PhoneCodeExpired" in err_str or "PHONE_CODE_EXPIRED" in err_str:
+                        _reg_clear(tg_id)
+                        try:
+                            _bot.edit_message_text(
+                                "⏰ کد منقضی شده! دوباره /start بزنید.",
+                                chat_id=call.message.chat.id,
+                                message_id=call.message.message_id,
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        _reg_clear(tg_id)
+                        try:
+                            _bot.edit_message_text(
+                                f"❌ خطا: {err_str[:200]}\n\nدوباره /start بزنید.",
+                                chat_id=call.message.chat.id,
+                                message_id=call.message.message_id,
+                            )
+                        except Exception:
+                            pass
+
+            except Exception as e:
+                _reg_clear(tg_id)
+                try:
+                    _bot.edit_message_text(f"❌ خطای داخلی: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                except Exception:
+                    pass
+
+        # ── تأیید ۲FA ────────────────────────────────────────────────────────
+        elif mode == "2fa":
+            try:
+                from telethon import TelegramClient
+                from telethon.sessions import StringSession
+
+                partial_sess = session["partial_session"]
+
+                async def _verify_2fa():
+                    cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
+                    await cl.connect()
+                    await cl.sign_in(password=digits)
+                    me = await cl.get_me()
+                    sess = cl.session.save()
+                    await cl.disconnect()
+                    return sess, me
+
+                try:
+                    sess, me = _run_tg(_verify_2fa())
+                    session["saved_session"] = sess
+                    session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
+                    session["step"] = "pw"
+                    session["digits"] = ""
+                    session["expires"] = time.time() + _REG_TIMEOUT
+                    try:
+                        _bot.edit_message_text(
+                            "✅ ورود موفق!\n\n"
+                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
+                            "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
+                            "(حداقل ۴ رقم)\n\n"
+                            f"<code>{_kp_display('', 'pw')}</code>",
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            reply_markup=_kp_markup("", "pw"),
+                        )
+                    except Exception:
+                        pass
+                except Exception as e:
+                    session["digits"] = ""
+                    try:
+                        _bot.edit_message_text(
+                            f"❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره وارد کنید:\n\n<code>{_kp_display('', '2fa')}</code>",
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            reply_markup=_kp_markup("", "2fa"),
+                        )
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                _reg_clear(tg_id)
+                try:
+                    _bot.edit_message_text(f"❌ خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                except Exception:
+                    pass
+
+        # ── ثبت رمز عبور پنل و ساخت اکانت ──────────────────────────────────
+        elif mode == "pw":
+            if len(digits) < 4:
+                _bot.answer_callback_query(call.id, "❗ رمز باید حداقل ۴ رقم باشد!", show_alert=True)
+                return
+
+            try:
+                tg_user = session["tg_user"]
+                saved_session = session["saved_session"]
+                tg_id_val = tg_user["id"]
+
+                # بررسی اکانت تکراری بر اساس tg_id
+                existing = db.get_account_by_tg_id(tg_id_val)
+                if existing:
+                    # اکانت قبلاً وجود دارد — فقط session رو آپدیت کن
+                    db.set_setting(existing["id"], "session_data", saved_session)
+                    db.set_setting(existing["id"], "logged_in", "1")
+                    db.save_telegram_user_id(existing["id"], tg_id_val)
+                    _reg_clear(tg_id)
+
+                    from bot import bot_manager
+                    from app import get_loop
+                    try:
+                        bot_manager.start(existing["id"], get_loop(), check_tokens=False)
+                    except Exception:
+                        pass
+
+                    try:
+                        _bot.edit_message_text(
+                            f"✅ <b>خوش برگشتید!</b>\n\n"
+                            f"👤 {tg_user['name']}\n"
+                            f"🆔 اکانت موجود بود — سلف‌بات فعال شد!\n\n"
+                            f"💎 موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                        )
+                    except Exception:
+                        pass
+                    return
+
+                # ساخت یوزرنیم از نام یا username تلگرام
+                base_username = (tg_user.get("username") or tg_user["name"] or f"user{tg_id_val}").lower()
+                base_username = "".join(c for c in base_username if c.isalnum() or c == "_")[:20] or f"user{tg_id_val}"
+
+                # بررسی تکراری بودن username
+                candidate = base_username
+                suffix = 1
+                while db.get_account_by_username(candidate):
+                    candidate = f"{base_username}{suffix}"
+                    suffix += 1
+
+                # ساخت اکانت
+                new_id = db.create_account(candidate, digits)
+                if not new_id:
+                    _reg_clear(tg_id)
+                    try:
+                        _bot.edit_message_text("❌ خطا در ساخت اکانت. دوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    except Exception:
+                        pass
+                    return
+
+                db.init_user_settings(new_id)
+                db.set_setting(new_id, "session_data", saved_session)
+                db.set_setting(new_id, "logged_in", "1")
+                db.save_telegram_user_id(new_id, tg_id_val)
+
+                # هدیه خوش‌آمد
+                db.add_tokens(new_id, config.WELCOME_TOKENS)
+
+                _reg_clear(tg_id)
+
+                from bot import bot_manager
+                from app import get_loop
+                try:
+                    bot_manager.start(new_id, get_loop(), check_tokens=False)
+                except Exception:
+                    pass
+
+                site_url = getattr(config, "SITE_URL", "")
+                markup_done = types.InlineKeyboardMarkup()
+                if site_url:
+                    markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
+
+                try:
+                    _bot.edit_message_text(
+                        f"🎉 <b>اکانت ساخته شد!</b>\n\n"
+                        f"👤 نام: <b>{tg_user['name']}</b>\n"
+                        f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n"
+                        f"🔒 رمز عبور: همان رمزی که وارد کردید\n\n"
+                        f"🎁 <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n\n"
+                        f"✅ سلف‌بات فعال شد — می‌توانید از تلگرام استفاده کنید.",
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=markup_done,
+                    )
+                except Exception:
+                    pass
+
+                # رفرال
+                ref_tg_id = session.get("referrer_tg_id")
+                if ref_tg_id:
+                    threading.Thread(target=_process_referral_async, args=(ref_tg_id, tg_id_val), daemon=True).start()
+
+            except Exception as e:
+                _reg_clear(tg_id)
+                try:
+                    _bot.edit_message_text(f"❌ خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                except Exception:
+                    pass
+
+    # ── لغو فرایند ───────────────────────────────────────────────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data == "reg_cancel")
+    def callback_reg_cancel(call):
+        tg_id = call.from_user.id
+        _reg_clear(tg_id)
+        _bot.answer_callback_query(call.id)
+        try:
+            _bot.edit_message_text("❌ فرایند ثبت‌نام لغو شد.\n\nبرای شروع مجدد /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        except Exception:
+            pass
+
     @_bot.message_handler(commands=["start"])
     def cmd_start(message):
         try:
@@ -1337,16 +1592,29 @@ def start_token_bot():
             site_url = getattr(config, "SITE_URL", "")
 
             if not account:
-                markup = types.InlineKeyboardMarkup()
+                # ذخیره کد رفرال در سشن در صورت وجود
+                if ref_code and ref_code.startswith("ref_"):
+                    try:
+                        referrer_tg = int(ref_code[4:])
+                        _reg_sessions[tg_id] = _reg_sessions.get(tg_id, {})
+                        _reg_sessions[tg_id]["referrer_tg_id"] = referrer_tg
+                    except Exception:
+                        pass
+
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start"),
+                )
                 if site_url:
-                    markup.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
-                _bot.reply_to(message,
+                    markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register"))
+                _bot.reply_to(
+                    message,
                     "👋 <b>سلام!</b>\n\n"
-                    "برای استفاده از ربات:\n"
-                    "1️⃣ در پنل وب ثبت‌نام کنید\n"
-                    "2️⃣ حساب تلگرام را وصل کنید\n"
-                    "3️⃣ دوباره /start بزنید",
-                    reply_markup=markup if site_url else None)
+                    "❌ اکانت نداری! برای استفاده از ربات باید اکانت بسازی:\n\n"
+                    "🤖 <b>ساخت با ربات</b> — مستقیم از همینجا، بدون نیاز به سایت\n"
+                    "🌐 <b>ساخت با وب سایت</b> — از طریق پنل وب",
+                    reply_markup=markup,
+                )
                 return
 
             # سلف رایگان برای کاربر جدید
