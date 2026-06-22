@@ -991,6 +991,93 @@ def start_token_bot():
     # /start
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(commands=["start"])
+    def cmd_start(message):
+        try:
+            tg_id = message.from_user.id
+            parts = message.text.strip().split()
+            ref_code = parts[1] if len(parts) > 1 else None
+
+            if ref_code and ref_code.startswith("ref_"):
+                try:
+                    referrer_id = int(ref_code[4:])
+                    threading.Thread(target=_process_referral_async, args=(referrer_id, tg_id), daemon=True).start()
+                except Exception:
+                    pass
+
+            is_member, missing = _check_membership_cached(tg_id)
+            if not is_member:
+                send_forced_channels_menu(message, missing)
+                return
+
+            account = _get_account_cached(tg_id)
+            site_url = getattr(config, "SITE_URL", "")
+
+            if not account:
+                markup = types.InlineKeyboardMarkup()
+                if site_url:
+                    markup.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
+                _bot.reply_to(message,
+                    "👋 <b>سلام!</b>\n\n"
+                    "برای استفاده از ربات:\n"
+                    "1️⃣ در پنل وب ثبت‌نام کنید\n"
+                    "2️⃣ حساب تلگرام را وصل کنید\n"
+                    "3️⃣ دوباره /start بزنید",
+                    reply_markup=markup if site_url else None)
+                return
+
+            # سلف رایگان برای کاربر جدید
+            threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
+
+            stats = db.get_token_stats(account["id"])
+            sub = db.get_subscription(account["id"])
+
+            now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
+
+            # وضعیت اشتراک
+            if sub:
+                sub_exp = sub.get("expires_at")
+                plan_fa = {"weekly": "هفتگی", "monthly": "ماهانه", "bimonthly": "دو ماهه", "free_trial": "رایگان"}.get(sub.get("plan", ""), sub.get("plan", ""))
+                import datetime as _dt
+                exp_dt = sub_exp
+                if isinstance(exp_dt, str):
+                    exp_dt = _dt.datetime.fromisoformat(exp_dt.replace("Z", "+00:00"))
+                if exp_dt and exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
+                is_active = exp_dt and exp_dt > _dt.datetime.now(_dt.timezone.utc)
+                sub_status = (
+                    f"✅ فعال — پلن {plan_fa}\n"
+                    f"   📅 انقضا: {_fmt_tehran(sub_exp)}\n"
+                    f"   ⏳ باقی‌مانده: {_remaining_str(sub_exp)}"
+                ) if is_active else "❌ اشتراک ندارید"
+            else:
+                sub_status = "❌ اشتراک ندارید"
+
+            if message.chat.type == 'private':
+                markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
+            else:
+                markup = None
+
+            _bot.reply_to(
+                message,
+                f"👋 سلام <b>{account['username']}</b>!\n\n"
+                f"🕐 وقت تهران: <b>{now_tehran}</b>\n\n"
+                f"💎 موجودی الماس: <b>{stats['balance']}</b>\n"
+                f"📊 کل دریافتی: <b>{stats['total_earned']}</b>\n\n"
+                f"📦 اشتراک سلف:\n{sub_status}",
+                reply_markup=markup
+            )
+
+            if message.chat.type == 'private':
+                sponsors = getattr(config, 'SPONSORS', [])
+                if sponsors:
+                    sponsors_text = "🤝 <b>اسپانسرهای رسمی پروژه:</b>\n"
+                    for sp in sponsors:
+                        sponsors_text += f"🔸 @{sp['username']}\n"
+                    sponsors_text += f"\n👑 <b>مالک و پشتیبانی:</b> @{config.OWNER_USERNAME}"
+                    _bot.send_message(message.chat.id, sponsors_text)
+        except Exception as e:
+            print(f"❌ خطا در cmd_start: {e}")
+
     def _grant_free_trial(account_id: int, tg_id: int):
         """یک روز سلف رایگان برای کاربران جدید"""
         try:
@@ -1092,94 +1179,6 @@ def start_token_bot():
             print(f"❌ _check_expiring_subscriptions: {e}")
 
     _start_subscription_checker()
-    
-    @_bot.message_handler(commands=["start"])
-    def cmd_start(message):
-        try:
-            tg_id = message.from_user.id
-            parts = message.text.strip().split()
-            ref_code = parts[1] if len(parts) > 1 else None
-
-            if ref_code and ref_code.startswith("ref_"):
-                try:
-                    referrer_id = int(ref_code[4:])
-                    threading.Thread(target=_process_referral_async, args=(referrer_id, tg_id), daemon=True).start()
-                except Exception:
-                    pass
-
-            is_member, missing = _check_membership_cached(tg_id)
-            if not is_member:
-                send_forced_channels_menu(message, missing)
-                return
-
-            account = _get_account_cached(tg_id)
-            site_url = getattr(config, "SITE_URL", "")
-
-            if not account:
-                markup = types.InlineKeyboardMarkup()
-                if site_url:
-                    markup.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
-                _bot.reply_to(message,
-                    "👋 <b>سلام!</b>\n\n"
-                    "برای استفاده از ربات:\n"
-                    "1️⃣ در پنل وب ثبت‌نام کنید\n"
-                    "2️⃣ حساب تلگرام را وصل کنید\n"
-                    "3️⃣ دوباره /start بزنید",
-                    reply_markup=markup if site_url else None)
-                return
-
-            # سلف رایگان برای کاربر جدید
-            threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
-
-            stats = db.get_token_stats(account["id"])
-            sub = db.get_subscription(account["id"])
-
-            now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
-
-            # وضعیت اشتراک
-            if sub:
-                sub_exp = sub.get("expires_at")
-                plan_fa = {"weekly": "هفتگی", "monthly": "ماهانه", "bimonthly": "دو ماهه", "free_trial": "رایگان"}.get(sub.get("plan", ""), sub.get("plan", ""))
-                import datetime as _dt
-                exp_dt = sub_exp
-                if isinstance(exp_dt, str):
-                    exp_dt = _dt.datetime.fromisoformat(exp_dt.replace("Z", "+00:00"))
-                if exp_dt and exp_dt.tzinfo is None:
-                    exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
-                is_active = exp_dt and exp_dt > _dt.datetime.now(_dt.timezone.utc)
-                sub_status = (
-                    f"✅ فعال — پلن {plan_fa}\n"
-                    f"   📅 انقضا: {_fmt_tehran(sub_exp)}\n"
-                    f"   ⏳ باقی‌مانده: {_remaining_str(sub_exp)}"
-                ) if is_active else "❌ اشتراک ندارید"
-            else:
-                sub_status = "❌ اشتراک ندارید"
-
-            if message.chat.type == 'private':
-                markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
-            else:
-                markup = None
-
-            _bot.reply_to(
-                message,
-                f"👋 سلام <b>{account['username']}</b>!\n\n"
-                f"🕐 وقت تهران: <b>{now_tehran}</b>\n\n"
-                f"💎 موجودی الماس: <b>{stats['balance']}</b>\n"
-                f"📊 کل دریافتی: <b>{stats['total_earned']}</b>\n\n"
-                f"📦 اشتراک سلف:\n{sub_status}",
-                reply_markup=markup
-            )
-
-            if message.chat.type == 'private':
-                sponsors = getattr(config, 'SPONSORS', [])
-                if sponsors:
-                    sponsors_text = "🤝 <b>اسپانسرهای رسمی پروژه:</b>\n"
-                    for sp in sponsors:
-                        sponsors_text += f"🔸 @{sp['username']}\n"
-                    sponsors_text += f"\n👑 <b>مالک و پشتیبانی:</b> @{config.OWNER_USERNAME}"
-                    _bot.send_message(message.chat.id, sponsors_text)
-        except Exception as e:
-            print(f"❌ خطا در cmd_start: {e}")
 
     def _process_referral_async(referrer_id, tg_id):
         try:
@@ -1562,7 +1561,7 @@ def start_token_bot():
                             _bot.send_message(
                                 payment["tg_id"],
                                 f"✅ <b>پرداخت تأیید شد!</b>\n\n"
-                                f"🎉 اشتراک {plan.get('fa','')  } شما فعال شد\n"
+                                f"🎉 اشتراک {plan.get('fa','')} شما فعال شد\n"
                                 f"📅 انقضا: <b>{exp_str}</b>"
                             )
                         except Exception: pass
