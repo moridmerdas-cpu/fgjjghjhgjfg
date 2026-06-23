@@ -27,3 +27,7 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
+        sync: false
+      # ─── Upstash Redis ──────────────────────────────────────────────────────
+      - key: UPSTASH_REDIS_URL
+        sync: false

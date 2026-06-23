@@ -7,6 +7,7 @@ import psycopg2
 import psycopg2.extras
 from typing import Optional, Dict, List, Any
 from config import DATABASE_URL
+import redis_cache as rc
 
 # ─── اتصال به دیتابیس ──────────────────────────────────────────────────────────
 _conn = None
@@ -243,40 +244,53 @@ SETTING_DEFAULTS = {
     "logged_in": "0",
 }
 
-# کش تنظیمات
+# کش تنظیمات (RAM — fallback سریع)
 _settings_cache = {}
 
 def get_setting(owner_id: int, key: str, default=None) -> str:
-    cache_key = f"{owner_id}:{key}"
-    if cache_key in _settings_cache:
-        return _settings_cache[cache_key]
-    
+    # ۱. کش RAM
+    ram_key = f"{owner_id}:{key}"
+    if ram_key in _settings_cache:
+        return _settings_cache[ram_key]
+
+    # ۲. کش Redis
+    cached = rc.rget(rc.k_setting(owner_id, key))
+    if cached is not None:
+        _settings_cache[ram_key] = cached
+        return cached
+
+    # ۳. Supabase
     try:
         query = "SELECT value FROM amel_settings WHERE owner_id = %s AND key = %s"
         result = execute_query(query, (owner_id, key), fetch_one=True)
         if result:
-            _settings_cache[cache_key] = result['value']
-            return result['value']
+            val = result['value']
+            _settings_cache[ram_key] = val
+            rc.rset(rc.k_setting(owner_id, key), val, rc.TTL_SETTING)
+            return val
     except Exception:
         pass
-    
-    default_val = SETTING_DEFAULTS.get(key, default)
-    _settings_cache[cache_key] = str(default_val) if default_val is not None else ""
-    return _settings_cache[cache_key]
+
+    default_val = str(SETTING_DEFAULTS.get(key, default) or "")
+    _settings_cache[ram_key] = default_val
+    rc.rset(rc.k_setting(owner_id, key), default_val, rc.TTL_SETTING)
+    return default_val
 
 def set_setting(owner_id: int, key: str, value):
     try:
         check_query = "SELECT 1 FROM amel_settings WHERE owner_id = %s AND key = %s"
         exists = execute_query(check_query, (owner_id, key), fetch_one=True)
-        
+
         if exists:
             query = "UPDATE amel_settings SET value = %s WHERE owner_id = %s AND key = %s"
             execute_query(query, (str(value), owner_id, key))
         else:
             query = "INSERT INTO amel_settings (owner_id, key, value) VALUES (%s, %s, %s)"
             execute_query(query, (owner_id, key, str(value)))
-        
-        _settings_cache[f"{owner_id}:{key}"] = str(value)
+
+        str_val = str(value)
+        _settings_cache[f"{owner_id}:{key}"] = str_val
+        rc.rset(rc.k_setting(owner_id, key), str_val, rc.TTL_SETTING)
     except Exception as e:
         print(f"❌ set_setting error: {e}")
 
@@ -309,11 +323,20 @@ def _init_tokens(owner_id: int):
         print(f"❌ _init_tokens error: {e}")
 
 def get_token_balance(owner_id: int) -> int:
+    # کش Redis
+    cached = rc.rget(rc.k_token(owner_id))
+    if cached is not None:
+        try:
+            return int(cached)
+        except Exception:
+            pass
     try:
         query = "SELECT balance FROM amel_tokens WHERE owner_id = %s"
         result = execute_query(query, (owner_id,), fetch_one=True)
         if result:
-            return result['balance']
+            bal = result['balance']
+            rc.rset(rc.k_token(owner_id), str(bal), rc.TTL_TOKEN)
+            return bal
         _init_tokens(owner_id)
         return 0
     except Exception as e:
@@ -325,6 +348,7 @@ def add_tokens(owner_id: int, amount: int):
         _init_tokens(owner_id)
         query = "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s WHERE owner_id = %s"
         execute_query(query, (amount, amount, owner_id))
+        rc.invalidate_token(owner_id)  # کش رو expire کن
     except Exception as e:
         print(f"❌ add_tokens error: {e}")
 
@@ -337,6 +361,7 @@ def deduct_tokens(owner_id: int, amount: int) -> bool:
             return False
         query = "UPDATE amel_tokens SET balance = balance - %s WHERE owner_id = %s"
         execute_query(query, (amount, owner_id))
+        rc.invalidate_token(owner_id)  # کش رو expire کن
         return True
     except Exception as e:
         print(f"❌ deduct_tokens error: {e}")
@@ -937,9 +962,21 @@ def _tehran_now():
 
 
 def get_subscription(owner_id: int) -> Optional[Dict]:
+    # کش Redis
+    cached = rc.rget_json(rc.k_subscribe(owner_id))
+    if cached is not None:
+        return cached
     try:
         r = execute_query("SELECT * FROM amel_subscriptions WHERE owner_id=%s", (owner_id,), fetch_one=True)
-        return dict(r) if r else None
+        result = dict(r) if r else None
+        if result:
+            # تبدیل datetime به string برای JSON
+            if isinstance(result.get("expires_at"), datetime.datetime):
+                result["expires_at"] = result["expires_at"].isoformat()
+            if isinstance(result.get("created_at"), datetime.datetime):
+                result["created_at"] = result["created_at"].isoformat()
+        rc.rset_json(rc.k_subscribe(owner_id), result, rc.TTL_SUBSCRIBE)
+        return result
     except Exception as e:
         print(f"❌ get_subscription error: {e}")
         return None
@@ -968,6 +1005,7 @@ def set_subscription(owner_id: int, plan: str, days: int):
                ON CONFLICT (owner_id) DO UPDATE SET plan=%s, expires_at=%s""",
             (owner_id, plan, expires, plan, expires)
         )
+        rc.invalidate_subscribe(owner_id)  # کش اشتراک رو پاک کن
         return expires
     except Exception as e:
         print(f"❌ set_subscription error: {e}")

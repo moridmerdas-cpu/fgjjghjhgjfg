@@ -2,6 +2,7 @@
 import sqlite3
 import datetime
 from config import CACHE_DB_PATH
+import redis_cache as rc
 
 # ─── اتصال به دیتابیس کش ──────────────────────────────────────────────────────
 _conn = None
@@ -78,10 +79,15 @@ def _init_tables():
 
 # ─── چنل‌های اجباری ──────────────────────────────────────────────────────────
 def get_forced_channels():
+    cached = rc.rget_json(rc.k_forced_channels())
+    if cached is not None:
+        return cached
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT username FROM forced_channels ORDER BY added_at DESC")
-    return [r["username"] for r in c.fetchall()]
+    result = [r["username"] for r in c.fetchall()]
+    rc.rset_json(rc.k_forced_channels(), result, rc.TTL_CHANNELS)
+    return result
 
 def add_forced_channel(username: str) -> bool:
     if not username.startswith("@"):
@@ -91,6 +97,7 @@ def add_forced_channel(username: str) -> bool:
         c = conn.cursor()
         c.execute("INSERT INTO forced_channels (username) VALUES (?)", (username,))
         conn.commit()
+        rc.invalidate_forced_channels()
         return True
     except Exception:
         return False
@@ -102,6 +109,7 @@ def remove_forced_channel(username: str) -> bool:
     c = conn.cursor()
     c.execute("DELETE FROM forced_channels WHERE username = ?", (username,))
     conn.commit()
+    rc.invalidate_forced_channels()
     return c.rowcount > 0
 
 def check_user_membership(bot, user_id: int) -> tuple:
@@ -162,6 +170,9 @@ def is_silent_user(owner_id: int, user_id: int) -> bool:
     return c.fetchone() is not None
 
 # ─── 📋 لیست دشمن ──────────────────────────────────────────────────────────────
+def _invalidate_enemies(owner_id: int):
+    rc.invalidate_enemies(owner_id)
+
 def add_enemy(owner_id: int, user_id: int, username=None, name=None):
     conn = get_conn()
     c = conn.cursor()
@@ -171,6 +182,7 @@ def add_enemy(owner_id: int, user_id: int, username=None, name=None):
             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (owner_id, user_id, username, name))
         conn.commit()
+        _invalidate_enemies(owner_id)
         print(f"✅ دشمن با ID: {user_id} برای کاربر {owner_id} در کش ذخیره شد")
         return True
     except Exception as e:
@@ -182,33 +194,39 @@ def remove_enemy(owner_id: int, user_id: int) -> bool:
     c = conn.cursor()
     c.execute("DELETE FROM enemies WHERE owner_id = ? AND user_id = ?", (owner_id, user_id))
     conn.commit()
+    _invalidate_enemies(owner_id)
     return c.rowcount > 0
 
 def get_enemies(owner_id: int):
+    cached = rc.rget_json(rc.k_enemies(owner_id))
+    if cached is not None:
+        return cached
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT * FROM enemies WHERE owner_id = ? ORDER BY added_at DESC", (owner_id,))
-    return [dict(r) for r in c.fetchall()]
+    result = [dict(r) for r in c.fetchall()]
+    rc.rset_json(rc.k_enemies(owner_id), result, rc.TTL_ENEMIES)
+    return result
 
 def is_enemy(owner_id: int, user_id: int) -> bool:
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT 1 FROM enemies WHERE owner_id = ? AND user_id = ?", (owner_id, user_id))
-    return c.fetchone() is not None
+    # چک سریع از لیست کش‌شده
+    enemies = get_enemies(owner_id)
+    return any(e["user_id"] == user_id for e in enemies)
 
 def clear_enemies(owner_id: int):
     conn = get_conn()
     c = conn.cursor()
     c.execute("DELETE FROM enemies WHERE owner_id = ?", (owner_id,))
     conn.commit()
+    _invalidate_enemies(owner_id)
 
 def get_enemy_count(owner_id: int) -> int:
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) as cnt FROM enemies WHERE owner_id = ?", (owner_id,))
-    return c.fetchone()["cnt"]
+    return len(get_enemies(owner_id))
 
 # ─── 📋 لیست دوست ──────────────────────────────────────────────────────────────
+def _invalidate_friends(owner_id: int):
+    rc.invalidate_friends(owner_id)
+
 def add_friend(owner_id: int, user_id: int, username=None, name=None):
     conn = get_conn()
     c = conn.cursor()
@@ -218,6 +236,7 @@ def add_friend(owner_id: int, user_id: int, username=None, name=None):
             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (owner_id, user_id, username, name))
         conn.commit()
+        _invalidate_friends(owner_id)
         print(f"✅ دوست با ID: {user_id} برای کاربر {owner_id} در کش ذخیره شد")
         return True
     except Exception as e:
@@ -229,28 +248,30 @@ def remove_friend(owner_id: int, user_id: int) -> bool:
     c = conn.cursor()
     c.execute("DELETE FROM friends WHERE owner_id = ? AND user_id = ?", (owner_id, user_id))
     conn.commit()
+    _invalidate_friends(owner_id)
     return c.rowcount > 0
 
 def get_friends(owner_id: int):
+    cached = rc.rget_json(rc.k_friends(owner_id))
+    if cached is not None:
+        return cached
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT * FROM friends WHERE owner_id = ? ORDER BY added_at DESC", (owner_id,))
-    return [dict(r) for r in c.fetchall()]
+    result = [dict(r) for r in c.fetchall()]
+    rc.rset_json(rc.k_friends(owner_id), result, rc.TTL_FRIENDS)
+    return result
 
 def is_friend(owner_id: int, user_id: int) -> bool:
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT 1 FROM friends WHERE owner_id = ? AND user_id = ?", (owner_id, user_id))
-    return c.fetchone() is not None
+    friends = get_friends(owner_id)
+    return any(f["user_id"] == user_id for f in friends)
 
 def clear_friends(owner_id: int):
     conn = get_conn()
     c = conn.cursor()
     c.execute("DELETE FROM friends WHERE owner_id = ?", (owner_id,))
     conn.commit()
+    _invalidate_friends(owner_id)
 
 def get_friend_count(owner_id: int) -> int:
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) as cnt FROM friends WHERE owner_id = ?", (owner_id,))
-    return c.fetchone()["cnt"]
+    return len(get_friends(owner_id))

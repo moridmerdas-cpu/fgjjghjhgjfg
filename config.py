@@ -42,6 +42,9 @@ else:
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 SUPABASE_TABLE_PREFIX = os.environ.get("SUPABASE_TABLE_PREFIX", "amel_")
 
+# ─── Upstash Redis ─────────────────────────────────────────────────────────
+UPSTASH_REDIS_URL = os.environ.get("UPSTASH_REDIS_URL", "")
+
 # ─── دیتابیس موقت ──────────────────────────────────────────────────────────
 CACHE_DB_PATH = os.environ.get("CACHE_DB_PATH", "cache.db")
 
