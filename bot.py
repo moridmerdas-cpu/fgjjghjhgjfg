@@ -59,7 +59,7 @@ def _apply_font(owner_id, text):
     return fn(text)
 
 
-_SUPER = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹")
+_SUPER = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 
 def persian_time():
     iran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
