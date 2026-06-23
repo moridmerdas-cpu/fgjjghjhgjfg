@@ -1,105 +1,159 @@
-<!DOCTYPE html>
-<html dir="rtl" lang="fa">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ورود - Self Nexo</title>
-    <style>
-        body {
-            font-family: Tahoma, Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .container {
-            background: white;
-            padding: 2rem;
-            border-radius: 10px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            width: 90%;
-            max-width: 400px;
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 2rem;
-        }
-        .form-group {
-            margin-bottom: 1rem;
-        }
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #555;
-        }
-        input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 1rem;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 0.75rem;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            font-size: 1rem;
-            cursor: pointer;
-            margin-top: 1rem;
-        }
-        button:hover {
-            background: #5568d3;
-        }
-        .error {
-            background: #fee;
-            color: #c33;
-            padding: 0.75rem;
-            border-radius: 5px;
-            margin-bottom: 1rem;
-            text-align: center;
-        }
-        .link {
-            text-align: center;
-            margin-top: 1rem;
-        }
-        .link a {
-            color: #667eea;
-            text-decoration: none;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🔐 ورود به Self Nexo</h1>
-        
+{% extends "base.html" %}
+
+{% block title %}ورود به پنل — NexoSelf{% endblock %}
+
+{% block content %}
+<section style="min-height:70vh;display:flex;align-items:center;justify-content:center;padding:40px 0;">
+    <div class="auth-card" style="max-width:420px;width:100%;">
+        <div style="text-align:center;margin-bottom:32px;">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="NexoSelf" height="60" style="margin-bottom:12px;border-radius:14px;">
+            <h1 style="font-size:28px;font-weight:800;">🔐 ورود</h1>
+            <p style="color:var(--text2);font-size:14px;">به پنل مدیریت NexoSelf خوش آمدید</p>
+        </div>
+
         {% if error %}
-        <div class="error">{{ error }}</div>
+        <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#fca5a5;padding:12px 16px;border-radius:var(--radius-sm);text-align:center;margin-bottom:16px;">
+            {{ error }}
+        </div>
         {% endif %}
-        
-        <form method="POST" action="/login">
-            <div class="form-group">
-                <label for="username">نام کاربری:</label>
-                <input type="text" id="username" name="username" required>
+
+        <form method="POST" action="{{ url_for('panel_login_page') }}" style="display:flex;flex-direction:column;gap:16px;">
+            <div>
+                <label style="display:block;font-size:13px;color:var(--text2);margin-bottom:4px;">👤 یوزرنیم</label>
+                <input type="text" name="username" class="auth-input" placeholder="یوزرنیم خود را وارد کنید" required autocomplete="username" value="{{ request.form.username or '' }}">
             </div>
-            
-            <div class="form-group">
-                <label for="password">رمز عبور:</label>
-                <input type="password" id="password" name="password" required>
+
+            <div>
+                <label style="display:block;font-size:13px;color:var(--text2);margin-bottom:4px;">🔒 رمز عبور</label>
+                <input type="password" name="password" class="auth-input" placeholder="رمز عبور خود را وارد کنید" required autocomplete="current-password">
             </div>
-            
-            <button type="submit">ورود</button>
+
+            <button type="submit" class="btn-auth" style="width:100%;justify-content:center;font-size:16px;padding:14px;">
+                🚀 ورود به پنل
+            </button>
         </form>
-        
-        <div class="link">
-            <p>حساب ندارید؟ <a href="/register">ثبت‌نام کنید</a></p>
+
+        <div style="text-align:center;margin-top:20px;padding-top:20px;border-top:1px solid var(--border);font-size:14px;color:var(--text2);">
+            حساب ندارید؟ <a href="{{ url_for('register_page') }}" style="color:var(--accent2);font-weight:600;">ثبت‌نام کنید</a>
+        </div>
+
+        <div style="text-align:center;margin-top:12px;font-size:12px;color:var(--text3);">
+            <span>✨ ورود با تلگرام نیز پشتیبانی می‌شود</span>
         </div>
     </div>
-</body>
-</html>
+</section>
+
+<style>
+    .auth-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 32px 28px;
+        box-shadow: var(--shadow);
+        transition: var(--transition);
+    }
+    .auth-card:hover {
+        border-color: var(--border2);
+    }
+
+    .auth-input {
+        width: 100%;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border2);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        transition: var(--transition);
+        direction: rtl;
+    }
+    .auth-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .auth-input::placeholder {
+        color: var(--text3);
+    }
+
+    .btn-auth {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 34px;
+        background: linear-gradient(135deg, var(--accent), #a855f7);
+        border: none;
+        border-radius: var(--radius-sm);
+        color: #fff;
+        font-size: 16px;
+        font-weight: 700;
+        transition: var(--transition);
+        box-shadow: 0 4px 24px var(--accent-glow);
+        cursor: pointer;
+        font-family: inherit;
+    }
+    .btn-auth:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 40px var(--accent-glow);
+        background: linear-gradient(135deg, #7c5fff, #b875ff);
+    }
+    .btn-auth:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none !important;
+    }
+
+    @media (max-width: 480px) {
+        .auth-card {
+            padding: 24px 16px;
+        }
+        .auth-card h1 {
+            font-size: 24px;
+        }
+        .auth-input {
+            font-size: 15px;
+            padding: 10px 14px;
+        }
+        .btn-auth {
+            font-size: 15px;
+            padding: 12px 20px;
+        }
+    }
+</style>
+
+<script>
+    // ============================================================
+    // Auto-focus on username field
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        const usernameField = document.querySelector('input[name="username"]');
+        if (usernameField && !usernameField.value) {
+            setTimeout(() => usernameField.focus(), 100);
+        }
+    });
+
+    // ============================================================
+    // Enter key support
+    // ============================================================
+    document.querySelectorAll('.auth-input').forEach(input => {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const form = this.closest('form');
+                if (form) form.submit();
+            }
+        });
+    });
+
+    // ============================================================
+    // Prevent double submission
+    // ============================================================
+    document.querySelector('form')?.addEventListener('submit', function() {
+        const btn = this.querySelector('.btn-auth');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳ در حال ورود...';
+        }
+    });
+</script>
+{% endblock %}
