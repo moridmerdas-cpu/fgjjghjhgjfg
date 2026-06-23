@@ -111,7 +111,7 @@ class BotManager:
             tokens_deducted = config.TOKENS_PER_SESSION
 
         entry = {"client": None, "task": None, "stop": False, "is_owner": is_owner,
-                 "tokens_deducted": tokens_deducted, "owner_refunded": False}
+                 "tokens_deducted": tokens_deducted, "owner_refunded": False, "paused": False}
         self._bots[owner_id] = entry
         task = asyncio.run_coroutine_threadsafe(
             self._run_bot(owner_id), loop
@@ -133,19 +133,42 @@ class BotManager:
 
         return True
 
+    def pause(self, owner_id: int):
+        """کانکشن تلگرام رو نگه می‌داره ولی تمام عملیات سلف رو متوقف می‌کنه"""
+        entry = self._bots.get(owner_id)
+        if not entry or entry.get("is_owner"):
+            return
+        if not entry.get("paused"):
+            entry["paused"] = True
+            print(f"⏸️  [{owner_id}] پلن منقضی — سلف موقتاً متوقف شد (اتصال زنده‌ست)")
+
+    def resume(self, owner_id: int):
+        """بعد از تمدید پلن، سلف رو دوباره فعال می‌کنه"""
+        entry = self._bots.get(owner_id)
+        if not entry:
+            return
+        if entry.get("paused"):
+            entry["paused"] = False
+            print(f"▶️  [{owner_id}] پلن تمدید شد — سلف دوباره فعال شد")
+
+    def is_paused(self, owner_id: int) -> bool:
+        entry = self._bots.get(owner_id)
+        return bool(entry and entry.get("paused"))
+
     def _subscription_check(self, owner_id: int):
-        """چک می‌کنه پلن هنوز فعاله؛ اگه منقضی شده سلف رو خاموش می‌کنه"""
+        """هر ۵ دقیقه پلن رو چک می‌کنه — pause/resume می‌کنه، disconnect نمی‌کنه"""
         if not self.is_running(owner_id):
             return
         entry = self._bots.get(owner_id)
         if entry and entry.get("is_owner"):
             return
         if not db.is_subscribed(owner_id):
-            print(f"⛔ [{owner_id}] پلن منقضی شده — سلف خاموش می‌شه")
-            self.stop(owner_id)
+            self.pause(owner_id)
         else:
-            # چک بعدی ۵ دقیقه دیگه
-            self._start_subscription_watcher(owner_id)
+            # اگه پلن تمدید شده بود، resume کن
+            self.resume(owner_id)
+        # چک بعدی ۵ دقیقه دیگه
+        self._start_subscription_watcher(owner_id)
 
     def _start_subscription_watcher(self, owner_id: int):
         """یک تایمر ۵ دقیقه‌ای برای چک پلن راه‌اندازی می‌کنه"""
@@ -256,6 +279,9 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.NewMessage(incoming=True))
     async def on_incoming(event):
+        # اگه پلن منقضی شده، هیچ کاری نکن (اتصال زنده‌ست)
+        if entry.get("paused"):
+            return
         msg = event.message
         sender = await event.get_sender()
         chat = await event.get_chat()
@@ -405,6 +431,18 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             db.set_setting(owner_id, "self_bot_active", "0")
             await _safe_edit(event, owner_id, "❌ سلف‌بات خاموش شد.")
             return
+
+        # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن
+        if entry.get("paused"):
+            if text in ("وضعیت", "راهنما", "help"):
+                pass  # اجازه بده ادامه پیدا کنه
+            else:
+                await _safe_edit(event, owner_id,
+                    "⛔ اشتراک شما منقضی شده است.\n"
+                    "برای تمدید پلن با ادمین در تماس باشید.\n"
+                    "بعد از تمدید، سلف تا ۵ دقیقه دیگر خودکار فعال می‌شود."
+                )
+                return
 
         # لیست دستورات تنظیماتی که همیشه فعال هستند
         config_commands = [
