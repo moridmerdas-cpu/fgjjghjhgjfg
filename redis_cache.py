@@ -148,3 +148,59 @@ def invalidate_silent(owner_id: int):
 
 def invalidate_forced_channels():
     rdel(k_forced_channels())
+# ─── اضافات جدید برای سیستم Queue و Heartbeat ─────────────────────────────────
+
+# TTL‌های جدید
+TTL_HEARTBEAT = 60   # ۶۰ ثانیه برای Heartbeat
+TTL_QUEUE = 3600     # ۱ ساعت برای تسک‌های Queue
+
+def k_queue(owner_id: int) -> str:
+    return f"queue:{owner_id}"
+
+def k_heartbeat(owner_id: int) -> str:
+    return f"hb:{owner_id}"
+
+def k_active_bots() -> str:
+    return "active_bots:set"
+
+# توابع جدید برای مدیریت Queue
+def push_task(owner_id: int, task_type: str, data: dict) -> bool:
+    """افزودن تسک به Queue"""
+    r = get_redis()
+    if not r:
+        return False
+    try:
+        import json
+        task = {
+            "type": task_type,
+            "data": data,
+            "timestamp": time.time()
+        }
+        r.rpush(k_queue(owner_id), json.dumps(task))
+        return True
+    except Exception:
+        return False
+
+def pop_task(owner_id: int) -> Optional[dict]:
+    """دریافت تسک از Queue"""
+    r = get_redis()
+    if not r:
+        return None
+    try:
+        import json
+        raw = r.lpop(k_queue(owner_id))
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return None
+
+def get_queue_length(owner_id: int) -> int:
+    """تعداد تسک‌های در صف"""
+    r = get_redis()
+    if not r:
+        return 0
+    try:
+        return r.llen(k_queue(owner_id))
+    except Exception:
+        return 0
