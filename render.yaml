@@ -31,3 +31,17 @@ services:
       # ─── Upstash Redis ──────────────────────────────────────────────────────
       - key: UPSTASH_REDIS_URL
         sync: false
+        services:
+  - type: web
+    name: amel-self55
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      # ... متغیرهای قبلی ...
+      # ─── اضافه کردن Redis ──────────────────────────────────────────────────
+      - key: UPSTASH_REDIS_URL
+        sync: false
+      # ─── Health Check ──────────────────────────────────────────────────────
+      - key: HEALTH_CHECK_PATH
+        value: "/health"
