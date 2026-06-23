@@ -59,10 +59,12 @@ def _apply_font(owner_id, text):
     return fn(text)
 
 
+_SUPER = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
 def persian_time():
     iran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
     now = datetime.datetime.now(iran_tz)
-    return f"{now.hour:02d}:{now.minute:02d}"
+    return f"{now.hour:02d}:{now.minute:02d}".translate(_SUPER)
 
 
 # ─── BotManager: مدیریت چندین کلاینت همزمان ────────────────────────────────────
