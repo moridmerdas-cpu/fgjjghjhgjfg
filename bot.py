@@ -98,6 +98,10 @@ class BotManager:
         tg_id = db.get_telegram_id_by_owner(owner_id)
         is_owner = (tg_id is not None and tg_id == config.OWNER_TG_ID)
 
+        # ─── چک اشتراک (پلن) ──────────────────────────────────────────────────
+        if not is_owner and not db.is_subscribed(owner_id):
+            return False
+
         tokens_deducted = 0
         if config.BOT_TOKEN and check_tokens and not is_owner:
             balance = db.get_token_balance(owner_id)
@@ -123,10 +127,43 @@ class BotManager:
             timer.start()
             self._timers[owner_id] = timer
 
+        # ─── تایمر چک دوره‌ای اشتراک (هر ۵ دقیقه) ──────────────────────────
+        if not is_owner:
+            self._start_subscription_watcher(owner_id)
+
         return True
+
+    def _subscription_check(self, owner_id: int):
+        """چک می‌کنه پلن هنوز فعاله؛ اگه منقضی شده سلف رو خاموش می‌کنه"""
+        if not self.is_running(owner_id):
+            return
+        entry = self._bots.get(owner_id)
+        if entry and entry.get("is_owner"):
+            return
+        if not db.is_subscribed(owner_id):
+            print(f"⛔ [{owner_id}] پلن منقضی شده — سلف خاموش می‌شه")
+            self.stop(owner_id)
+        else:
+            # چک بعدی ۵ دقیقه دیگه
+            self._start_subscription_watcher(owner_id)
+
+    def _start_subscription_watcher(self, owner_id: int):
+        """یک تایمر ۵ دقیقه‌ای برای چک پلن راه‌اندازی می‌کنه"""
+        t = threading.Timer(300, self._subscription_check, args=[owner_id])
+        t.daemon = True
+        t.start()
+        # نگه داشتن رفرنس در یک دیکشنری جداگانه
+        if not hasattr(self, '_sub_watchers'):
+            self._sub_watchers = {}
+        self._sub_watchers[owner_id] = t
 
     def stop(self, owner_id: int):
         self._cancel_timer(owner_id)
+        # لغو watcher پلن
+        if hasattr(self, '_sub_watchers'):
+            w = self._sub_watchers.pop(owner_id, None)
+            if w:
+                w.cancel()
         entry = self._bots.get(owner_id)
         if not entry:
             return
