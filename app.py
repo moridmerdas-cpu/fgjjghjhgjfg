@@ -14,13 +14,9 @@ from telethon.errors import (
 import database_supabase as db
 import db_cache as cache
 import config
-from bot_manager import bot_manager, get_bot_manager
-from heartbeat import get_heartbeat_manager
-from health_check import create_health_blueprint
+from bot import bot_manager
 
 app = Flask(__name__)
-health_bp = create_health_blueprint()
-app.register_blueprint(health_bp)
 app.secret_key = config.SECRET_KEY
 
 
@@ -521,8 +517,6 @@ def remove_forced_channel(username):
 
 # ─── اجرا ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    hb_manager = get_heartbeat_manager()
-    hb_manager.start()
     # استارت ربات توکن
     from telegram_bot import start_token_bot
     start_token_bot()
