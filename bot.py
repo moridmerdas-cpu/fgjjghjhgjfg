@@ -260,10 +260,30 @@ class BotManager:
 
                 if entry["stop"]:
                     break
+
+                # ✅ چک کن session هنوز در دیتابیس وجود داره
+                try:
+                    session_data = db.get_setting(owner_id, "session_data", "")
+                    if not session_data:
+                        print(f"⚠️  [{owner_id}] session حذف شده — توقف کامل")
+                        break
+                except Exception:
+                    break
+
                 print(f"⚠️  [{owner_id}] اتصال قطع شد، اتصال مجدد...")
 
             except Exception as e:
+                err_str = str(e)
                 print(f"❌ [{owner_id}] خطا: {e}")
+
+                # ✅ اگه session توسط تلگرام باطل شده، نیاز به لاگین مجدد
+                if any(k in err_str for k in ("AUTH_KEY_UNREGISTERED", "SESSION_REVOKED",
+                                               "USER_DEACTIVATED", "UnauthorizedError")):
+                    print(f"❌ [{owner_id}] Session باطل شده — نیاز به لاگین مجدد")
+                    db.set_setting(owner_id, "logged_in", "0")
+                    db.set_setting(owner_id, "session_data", "")
+                    break
+
                 if entry["stop"]:
                     break
 

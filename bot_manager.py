@@ -157,6 +157,7 @@ class AdvancedBotManager:
                 args=[owner_id]
             )
             timer.daemon = True
+            timer._timer_start = time.time()  # ✅ برای محاسبه دقیق زمان باقی‌مانده
             timer.start()
             self._timers[owner_id] = timer
             print(f"⏱️ [{owner_id}] تایمر {config.SESSION_HOURS} ساعته تنظیم شد")
@@ -335,6 +336,14 @@ class AdvancedBotManager:
                     db.set_setting(owner_id, "session_data", "")
                     break
                 except Exception as e:
+                    err_str = str(e)
+                    # ✅ session باطل‌شده توسط تلگرام — دیگه retry نکن
+                    if any(k in err_str for k in ("AUTH_KEY_UNREGISTERED", "SESSION_REVOKED",
+                                                   "USER_DEACTIVATED", "AUTH_KEY_DUPLICATED")):
+                        print(f"❌ [{owner_id}] Session باطل شده ({e}) — توقف کامل")
+                        db.set_setting(owner_id, "logged_in", "0")
+                        db.set_setting(owner_id, "session_data", "")
+                        break
                     print(f"❌ [{owner_id}] خطا در اتصال: {e}")
                     retry_count += 1
                     await asyncio.sleep(retry_delay)
@@ -393,6 +402,15 @@ class AdvancedBotManager:
                     sched_task.cancel()
                 
                 if entry["stop"]:
+                    break
+
+                # ✅ چک کن session هنوز در دیتابیس وجود داره
+                try:
+                    session_data = db.get_setting(owner_id, "session_data", "")
+                    if not session_data:
+                        print(f"⚠️ [{owner_id}] session حذف شده — توقف کامل")
+                        break
+                except Exception:
                     break
                 
                 print(f"⚠️ [{owner_id}] اتصال قطع شد، تلاش مجدد...")

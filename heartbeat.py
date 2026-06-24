@@ -65,14 +65,20 @@ class HeartbeatManager:
                 pass
     
     def is_alive(self, owner_id: int) -> bool:
-        """بررسی زنده بودن یک اکانت"""
+        """بررسی زنده بودن یک اکانت — اول Redis، بعد fallback به حافظه"""
+        # ✅ اول چک حافظه (همیشه کار می‌کنه بدون Redis)
+        with self._lock:
+            in_memory = owner_id in self._active_owners
+        
         r = self._get_redis()
         if r:
             try:
                 return r.exists(f"hb:{owner_id}") > 0
             except Exception:
                 pass
-        return owner_id in self._active_owners
+        
+        # ✅ fallback به حافظه وقتی Redis نیست
+        return in_memory
     
     def get_all_alive(self) -> list:
         """دریافت لیست همه اکانت‌های زنده"""
