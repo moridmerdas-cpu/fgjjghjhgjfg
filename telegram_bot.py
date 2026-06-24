@@ -1146,21 +1146,21 @@ def start_token_bot():
     # 🆕 ساخت اکانت از طریق ربات — فلوی کامل Telethon
     # ══════════════════════════════════════════════════════════════════════════
 
-    # ── مرحله ۱: کاربر «ساخت اکانت با ربات» را می‌زند → شماره بخواه ─────────
+    # ── مرحله ۱: کاربر «ساخت اکانت با ربات» را می‌زند → یوزرنیم بخواه ────────
     @_bot.callback_query_handler(func=lambda call: call.data == "reg_start")
     def callback_reg_start(call):
         tg_id = call.from_user.id
         _reg_sessions[tg_id] = {
-            "step": "phone",
+            "step": "username",
             "digits": "",
             "expires": time.time() + _REG_TIMEOUT,
         }
         _bot.answer_callback_query(call.id)
         try:
             _bot.edit_message_text(
-                "📱 <b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
-                "شماره تلفن خود را با کد کشور وارد کنید:\n"
-                "مثال: <code>+989123456789</code>\n\n"
+                "👤 <b>مرحله ۱ از ۴ — انتخاب یوزرنیم</b>\n\n"
+                "یک یوزرنیم برای پنل خود انتخاب کنید:\n"
+                "مثال: <code>ali123</code>\n\n"
                 "⏱ این فرم ۵ دقیقه اعتبار دارد.",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -1171,7 +1171,39 @@ def start_token_bot():
         except Exception:
             pass
 
-    # ── مرحله ۱b: دریافت شماره به صورت متن ──────────────────────────────────
+    # ── مرحله ۱a: دریافت یوزرنیم به صورت متن ────────────────────────────────
+    @_bot.message_handler(
+        func=lambda m: m.chat.type == "private"
+        and m.from_user.id in _reg_sessions
+        and _reg_sessions[m.from_user.id].get("step") == "username"
+        and not _reg_expired(m.from_user.id)
+    )
+    def handle_reg_username(message):
+        tg_id = message.from_user.id
+        username = message.text.strip().lstrip("@").lower()
+        username = "".join(c for c in username if c.isalnum() or c == "_")[:20]
+        if not username or len(username) < 3:
+            return _bot.reply_to(message, "❌ یوزرنیم باید حداقل ۳ کاراکتر و فقط شامل حروف، اعداد و _ باشد.")
+        if db.get_account_by_username(username):
+            return _bot.reply_to(message, f"❌ یوزرنیم «{username}» قبلاً گرفته شده. یوزرنیم دیگری انتخاب کنید:")
+
+        session = _reg_sessions[tg_id]
+        session["chosen_username"] = username
+        session["step"] = "phone"
+        session["expires"] = time.time() + _REG_TIMEOUT
+
+        _bot.reply_to(
+            message,
+            f"✅ یوزرنیم <b>{username}</b> انتخاب شد.\n\n"
+            "📱 <b>مرحله ۲ از ۴ — شماره تلفن</b>\n\n"
+            "شماره تلفن خود را با کد کشور وارد کنید:\n"
+            "مثال: <code>+989123456789</code>",
+            reply_markup=types.InlineKeyboardMarkup().add(
+                types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel")
+            ),
+        )
+
+    # ── مرحله ۲: دریافت شماره به صورت متن ───────────────────────────────────
     @_bot.message_handler(
         func=lambda m: m.chat.type == "private"
         and m.from_user.id in _reg_sessions
@@ -1232,7 +1264,88 @@ def start_token_bot():
                 pass
             _bot.reply_to(message, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
 
-    # ── مرحله ۲ & ۳: کیپد (code / 2fa / pw) ────────────────────────────────
+    # ── مرحله ۲FA: دریافت رمز دو مرحله‌ای به صورت پیام متنی ─────────────────
+    @_bot.message_handler(
+        func=lambda m: m.chat.type == "private"
+        and m.from_user.id in _reg_sessions
+        and _reg_sessions[m.from_user.id].get("step") == "2fa"
+        and not _reg_expired(m.from_user.id)
+    )
+    def handle_reg_2fa(message):
+        tg_id = message.from_user.id
+        password = message.text.strip()
+        session = _reg_sessions[tg_id]
+
+        # پاک کردن پیام کاربر برای امنیت
+        try:
+            _bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            pass
+
+        wait_msg = _bot.send_message(tg_id, "⏳ در حال بررسی رمز دو مرحله‌ای...")
+
+        try:
+            from telethon import TelegramClient
+            from telethon.sessions import StringSession
+
+            partial_sess = session["partial_session"]
+
+            async def _verify_2fa_text():
+                cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
+                await cl.connect()
+                await cl.sign_in(password=password)
+                me = await cl.get_me()
+                sess = cl.session.save()
+                await cl.disconnect()
+                return sess, me
+
+            try:
+                sess, me = _run_tg(_verify_2fa_text())
+                session["saved_session"] = sess
+                session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
+                session["step"] = "pw"
+                session["digits"] = ""
+                session["expires"] = time.time() + _REG_TIMEOUT
+
+                try:
+                    _bot.delete_message(tg_id, wait_msg.message_id)
+                except Exception:
+                    pass
+
+                sent = _bot.send_message(
+                    tg_id,
+                    "✅ ورود موفق!\n\n"
+                    "🔑 <b>مرحله ۴ — رمز عبور پنل</b>\n\n"
+                    "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
+                    "(حداقل ۴ رقم)\n\n"
+                    f"<code>{_kp_display('', 'pw')}</code>",
+                    reply_markup=_kp_markup("", "pw"),
+                )
+                session["msg_id"] = sent.message_id
+
+            except Exception as e:
+                try:
+                    _bot.delete_message(tg_id, wait_msg.message_id)
+                except Exception:
+                    pass
+                _bot.send_message(
+                    tg_id,
+                    "❌ رمز دو مرحله‌ای اشتباه است!\n\n"
+                    "دوباره رمز دو مرحله‌ای اکانتت را بفرست:",
+                    reply_markup=types.InlineKeyboardMarkup().add(
+                        types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel")
+                    ),
+                )
+
+        except Exception as e:
+            _reg_clear(tg_id)
+            try:
+                _bot.delete_message(tg_id, wait_msg.message_id)
+            except Exception:
+                pass
+            _bot.send_message(tg_id, f"❌ خطای داخلی: {str(e)[:200]}\n\nدوباره /start بزنید.")
+
+    # ── مرحله ۲ & ۳: کیپد (code / pw) ──────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("reg_kp_"))
     def callback_reg_kp(call):
         tg_id = call.from_user.id
@@ -1342,19 +1455,22 @@ def start_token_bot():
                 except Exception as e:
                     err_str = str(e)
                     if "SessionPasswordNeeded" in err_str or "password" in err_str.lower():
-                        # نیاز به ۲FA
+                        # نیاز به ۲FA — رمز رو به صورت پیام متنی می‌گیریم
                         session["step"] = "2fa"
                         session["digits"] = ""
                         session["expires"] = time.time() + _REG_TIMEOUT
                         try:
                             _bot.edit_message_text(
-                                "🔒 <b>رمز دو مرحله‌ای</b>\n\n"
-                                "حساب شما رمز دو مرحله‌ای دارد.\n"
-                                "آن را با کیپد وارد کنید:\n\n"
-                                f"<code>{_kp_display('', '2fa')}</code>",
+                                "🔒 <b>تأیید دو مرحله‌ای</b>\n\n"
+                                "حساب شما رمز دو مرحله‌ای دارد.\n\n"
+                                "رمز دو مرحله‌ای اکانتت را به صورت پیام بفرست:\n"
+                                "مثال: <code>asghar1234</code>\n\n"
+                                "⚠️ پیام شما بعد از دریافت پاک خواهد شد.",
                                 chat_id=call.message.chat.id,
                                 message_id=call.message.message_id,
-                                reply_markup=_kp_markup("", "2fa"),
+                                reply_markup=types.InlineKeyboardMarkup().add(
+                                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel")
+                                ),
                             )
                         except Exception:
                             pass
@@ -1398,62 +1514,6 @@ def start_token_bot():
                 except Exception:
                     pass
 
-        # ── تأیید ۲FA ────────────────────────────────────────────────────────
-        elif mode == "2fa":
-            try:
-                from telethon import TelegramClient
-                from telethon.sessions import StringSession
-
-                partial_sess = session["partial_session"]
-
-                async def _verify_2fa():
-                    cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
-                    await cl.connect()
-                    await cl.sign_in(password=digits)
-                    me = await cl.get_me()
-                    sess = cl.session.save()
-                    await cl.disconnect()
-                    return sess, me
-
-                try:
-                    sess, me = _run_tg(_verify_2fa())
-                    session["saved_session"] = sess
-                    session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
-                    session["step"] = "pw"
-                    session["digits"] = ""
-                    session["expires"] = time.time() + _REG_TIMEOUT
-                    try:
-                        _bot.edit_message_text(
-                            "✅ ورود موفق!\n\n"
-                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
-                            "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
-                            "(حداقل ۴ رقم)\n\n"
-                            f"<code>{_kp_display('', 'pw')}</code>",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=_kp_markup("", "pw"),
-                        )
-                    except Exception:
-                        pass
-                except Exception as e:
-                    session["digits"] = ""
-                    try:
-                        _bot.edit_message_text(
-                            f"❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره وارد کنید:\n\n<code>{_kp_display('', '2fa')}</code>",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=_kp_markup("", "2fa"),
-                        )
-                    except Exception:
-                        pass
-
-            except Exception as e:
-                _reg_clear(tg_id)
-                try:
-                    _bot.edit_message_text(f"❌ خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
-                except Exception:
-                    pass
-
         # ── ثبت رمز عبور پنل و ساخت اکانت ──────────────────────────────────
         elif mode == "pw":
             if len(digits) < 4:
@@ -1494,16 +1554,29 @@ def start_token_bot():
                         pass
                     return
 
-                # ساخت یوزرنیم از نام یا username تلگرام
-                base_username = (tg_user.get("username") or tg_user["name"] or f"user{tg_id_val}").lower()
-                base_username = "".join(c for c in base_username if c.isalnum() or c == "_")[:20] or f"user{tg_id_val}"
-
-                # بررسی تکراری بودن username
-                candidate = base_username
-                suffix = 1
-                while db.get_account_by_username(candidate):
-                    candidate = f"{base_username}{suffix}"
-                    suffix += 1
+                # استفاده از یوزرنیم انتخابی کاربر
+                candidate = session.get("chosen_username")
+                if not candidate:
+                    # fallback: از نام تلگرام
+                    base_username = (tg_user.get("username") or tg_user["name"] or f"user{tg_id_val}").lower()
+                    base_username = "".join(c for c in base_username if c.isalnum() or c == "_")[:20] or f"user{tg_id_val}"
+                    candidate = base_username
+                    suffix = 1
+                    while db.get_account_by_username(candidate):
+                        candidate = f"{base_username}{suffix}"
+                        suffix += 1
+                elif db.get_account_by_username(candidate):
+                    # یوزرنیم در فاصله ثبت‌نام گرفته شده
+                    _reg_clear(tg_id)
+                    try:
+                        _bot.edit_message_text(
+                            "❌ یوزرنیم انتخابی شما در این فاصله گرفته شد!\n\nدوباره /start بزنید و یوزرنیم دیگری انتخاب کنید.",
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                        )
+                    except Exception:
+                        pass
+                    return
 
                 # ساخت اکانت
                 new_id = db.create_account(candidate, digits)
