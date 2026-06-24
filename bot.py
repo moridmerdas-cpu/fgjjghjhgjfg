@@ -5,18 +5,13 @@ import datetime
 import random
 import threading
 import time
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.errors import FloodWaitError
 import database as db
 import config
 from texts import ENEMY_REPLIES, FRIEND_REPLIES  
-
-# ─── ذخیره نجواها در حافظه (هر 12 ساعت پاک می‌شه) ────────────────────────────
-# ساختار: {owner_id: {whisper_key: {"text": ..., "target_id": ..., "created_at": ...}}}
-_whisper_store: dict = {}
-_whisper_last_clean: float = time.time()
 
 # ─── فونت‌ها ───────────────────────────────────────────────────────────────────
 FONTS = {
@@ -47,6 +42,37 @@ _last_friend_reply = {}     # {sender_id: timestamp}
 SECRETARY_COOLDOWN = 86400  # 24 ساعت
 FRIEND_COOLDOWN = 3600      # 1 ساعت
 
+# ─── سیستم نجوا ──────────────────────────────────────────────────────────────
+# { owner_id: { najwa_id: {"target_id": int, "text": str, "ts": float} } }
+_najwa_store: dict = {}
+NAJWA_TTL = 43200  # 12 ساعت
+
+def _najwa_cleanup(owner_id: int):
+    """پاک کردن نجواهای منقضی‌شده"""
+    now = time.time()
+    store = _najwa_store.get(owner_id, {})
+    expired = [k for k, v in store.items() if now - v["ts"] > NAJWA_TTL]
+    for k in expired:
+        del store[k]
+
+def _najwa_new(owner_id: int, target_id: int, text: str) -> str:
+    """ساخت یه نجوای جدید و برگردوندن شناسه‌اش"""
+    _najwa_cleanup(owner_id)
+    if owner_id not in _najwa_store:
+        _najwa_store[owner_id] = {}
+    najwa_id = f"{owner_id}_{int(time.time()*1000)}"
+    _najwa_store[owner_id][najwa_id] = {
+        "target_id": target_id,
+        "text": text,
+        "ts": time.time(),
+    }
+    return najwa_id
+
+def _najwa_get(owner_id: int, najwa_id: str):
+    """دریافت نجوا اگه هنوز منقضی نشده"""
+    _najwa_cleanup(owner_id)
+    return _najwa_store.get(owner_id, {}).get(najwa_id)
+
 
 def _convert_font(text, chars):
     result = []
@@ -62,6 +88,27 @@ def _apply_font(owner_id, text):
     font_id = db.get_setting(owner_id, "selected_font", "0")
     fn = FONTS.get(font_id, FONTS["0"])
     return fn(text)
+
+
+# ─── فونت‌های مخصوص ساعت (فقط روی ارقام اعمال می‌شود) ──────────────────────────
+CLOCK_FONTS = {
+    "0": "0123456789",
+    "1": "⓿❶❷❸❹❺❻❼❽❾",
+    "2": "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵",
+    "3": "⓪①②③④⑤⑥⑦⑧⑨",
+    "4": "𝟢𝟣𝟤𝟥𝟦𝟧𝟨𝟩𝟪𝟫",
+    "5": "0⑴⑵⑶⑷⑸⑹⑺⑻⑼",
+    "6": "₀₁₂₃₄₅₆₇₈₉",
+    "7": "⁰¹²³⁴⁵⁶⁷⁸⁹",
+    "8": "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗",
+    "9": "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
+}
+
+
+def _apply_clock_font(owner_id, text):
+    font_id = db.get_setting(owner_id, "selected_clock_font", "0")
+    digits = CLOCK_FONTS.get(font_id, CLOCK_FONTS["0"])
+    return "".join(digits[int(ch)] if ch.isdigit() else ch for ch in text)
 
 
 _SUPER = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
@@ -302,35 +349,6 @@ bot_manager = BotManager()
 
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
-def _clean_whispers_if_needed():
-    """هر 12 ساعت تمام نجواها رو پاک می‌کنه"""
-    global _whisper_last_clean
-    now = time.time()
-    if now - _whisper_last_clean >= 43200:  # 12 ساعت
-        _whisper_store.clear()
-        _whisper_last_clean = now
-
-
-def _save_whisper(owner_id: int, target_id: int, text: str) -> str:
-    """ذخیره نجوا و برگشت کلید یکتا"""
-    _clean_whispers_if_needed()
-    import uuid
-    key = str(uuid.uuid4())[:8]
-    if owner_id not in _whisper_store:
-        _whisper_store[owner_id] = {}
-    _whisper_store[owner_id][key] = {
-        "text": text,
-        "target_id": target_id,
-        "created_at": time.time(),
-    }
-    return key
-
-
-def _get_whisper(owner_id: int, key: str) -> dict | None:
-    """دریافت نجوا با کلید"""
-    return _whisper_store.get(owner_id, {}).get(key)
-
-
 def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.NewMessage(incoming=True))
@@ -344,29 +362,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         sender_id = getattr(sender, "id", 0)
         chat_id = getattr(chat, "id", 0)
         text = msg.text or ""
-
-        # ✅ بررسی عضویت اجباری (فقط در پیوی)
-        if event.is_private:
-            channels = db.get_forced_channels()
-            if channels:
-                missing = []
-                for ch in channels:
-                    try:
-                        from telethon.tl.functions.channels import GetParticipantRequest
-                        await cl(GetParticipantRequest(ch, sender_id))
-                    except Exception:
-                        missing.append(ch)
-                if missing:
-                    buttons = [[Button.url(f"📢 عضویت در @{ch}", f"https://t.me/{ch}")] for ch in missing]
-                    buttons.append([Button.inline("✅ عضو شدم", data=f"check_join:{sender_id}")])
-                    try:
-                        await event.reply(
-                            "🔒 برای استفاده از این ربات، ابتدا در چنل‌های زیر عضو شو:",
-                            buttons=buttons
-                        )
-                    except Exception:
-                        pass
-                    return
 
         # ✅ بررسی آیا ربات تگ شده است (برای گروه‌ها)
         is_tagged = False
@@ -434,6 +429,58 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
+        # ✅ جوین اجباری (فقط پیوی)
+        if event.is_private and db.get_setting(owner_id, "force_join_active") == "1":
+            channel_id = db.get_setting(owner_id, "force_join_channel", "")
+            if channel_id:
+                is_member = False
+                try:
+                    from telethon.tl.functions.channels import GetParticipantRequest
+                    from telethon.errors import UserNotParticipantError, ChannelPrivateError
+                    try:
+                        channel_entity = await cl.get_entity(int(channel_id) if channel_id.lstrip("-").isdigit() else channel_id)
+                        await cl(GetParticipantRequest(channel_entity, sender_id))
+                        is_member = True
+                    except (UserNotParticipantError, KeyError):
+                        is_member = False
+                    except ChannelPrivateError:
+                        is_member = True  # کانال خصوصی — نمی‌تونیم چک کنیم، رد می‌کنیم
+                    except Exception:
+                        is_member = True  # خطای ناشناخته — رد می‌کنیم تا اشتباهاً بلاک نشه
+                except Exception:
+                    is_member = True
+
+                if not is_member:
+                    # پیام رو حذف کن
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                    # پیام هشدار با دکمه رنگی جوین
+                    join_msg = db.get_setting(owner_id, "force_join_message",
+                        "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
+                    try:
+                        # ساخت دکمه لینک کانال
+                        channel_link = db.get_setting(owner_id, "force_join_link", "")
+                        from telethon.tl.types import (
+                            ReplyInlineMarkup, KeyboardButtonUrl, KeyboardButtonRow
+                        )
+                        if channel_link:
+                            buttons = ReplyInlineMarkup(rows=[
+                                KeyboardButtonRow(buttons=[
+                                    KeyboardButtonUrl(
+                                        text="📢 عضویت در کانال ✅",
+                                        url=channel_link
+                                    )
+                                ])
+                            ])
+                            await cl.send_message(sender_id, join_msg, buttons=buttons)
+                        else:
+                            await cl.send_message(sender_id, join_msg)
+                    except Exception:
+                        pass
+                    return
+
         # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت)
         if db.get_setting(owner_id, "secretary_active") == "1" and event.is_private:
             now = time.time()
@@ -442,7 +489,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             if now - last_reply >= SECRETARY_COOLDOWN:
                 sec_msg = db.get_setting(owner_id, "secretary_message", "در حال حاضر در دسترس نیستم.")
                 try:
-                    await event.reply(f"🤖 منشی خودکار:\n{sec_msg}")
+                    await event.reply(sec_msg)
                     _last_secretary_reply[chat_id] = now
                 except Exception:
                     pass
@@ -499,52 +546,33 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.CallbackQuery())
     async def on_callback(event):
-        data = event.data.decode("utf-8") if event.data else ""
-
-        # ─── بررسی عضویت اجباری ───────────────────────────────────────────────
-        if data.startswith("check_join:"):
-            expected_id = int(data.split(":")[1])
-            if event.sender_id != expected_id:
-                await event.answer("❌ این دکمه برای شما نیست.", alert=True)
-                return
-            channels = db.get_forced_channels()
-            missing = []
-            for ch in channels:
-                try:
-                    from telethon.tl.functions.channels import GetParticipantRequest
-                    await cl(GetParticipantRequest(ch, event.sender_id))
-                except Exception:
-                    missing.append(ch)
-            if missing:
-                await event.answer(
-                    f"❌ هنوز در {len(missing)} چنل عضو نشدی:\n" + "\n".join(f"@{c}" for c in missing),
-                    alert=True
-                )
-            else:
-                await event.answer("✅ عضویت تأیید شد! حالا می‌تونی پیام بفرستی.", alert=True)
-                try:
-                    await event.delete()
-                except Exception:
-                    pass
-            return
-
-        # ─── دکمه نجوا ────────────────────────────────────────────────────────
-        if data.startswith("whisper:"):
-            parts = data.split(":", 2)
-            if len(parts) < 3:
+        """هندلر دکمه‌های inline — فقط برای نجوا"""
+        try:
+            data = event.data.decode("utf-8") if event.data else ""
+            if data.startswith("najwa:"):
+                # فرمت: najwa:{owner_id}:{najwa_id}
+                parts = data.split(":", 2)
+                if len(parts) != 3:
+                    await event.answer("❌ نجوای نامعتبر", alert=True)
+                    return
+                oid = int(parts[1])
+                najwa_id = parts[2]
+                najwa = _najwa_get(oid, najwa_id)
+                if not najwa:
+                    await event.answer("⏳ این نجوا منقضی شده (بیش از ۱۲ ساعت)", alert=True)
+                    return
+                # فقط کاربر هدف می‌تونه ببینه
+                if event.sender_id != najwa["target_id"]:
+                    await event.answer("🔒 این نجوا برای شما نیست", alert=True)
+                    return
+                najwa_preview = "📨 نجوا:\n\n" + najwa["text"]
+                await event.answer(najwa_preview, alert=True)
+        except Exception as e:
+            print(f"❌ خطا در on_callback نجوا: {e}")
+            try:
                 await event.answer("❌ خطا", alert=True)
-                return
-            _, w_owner_id, key = parts
-            whisper = _get_whisper(int(w_owner_id), key)
-            if not whisper:
-                await event.answer("⏰ این نجوا منقضی شده است.", alert=True)
-                return
-            sender_id = event.sender_id
-            if sender_id != whisper["target_id"]:
-                await event.answer("🔒 این نجوا برای شما نیست!", alert=True)
-                return
-            await event.answer(f"📨 نجوا:\n{whisper['text']}", alert=True)
-            return
+            except Exception:
+                pass
 
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
@@ -587,14 +615,16 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "تنظیم دشمن", "حذف دشمن", "نمایش لیست دشمن", "پاک کردن لیست دشمن",
             "تنظیم دوست", "حذف دوست", "نمایش لیست دوست", "پاک کردن لیست دوست",
             "سایلنت چت روشن", "سایلنت چت خاموش", "سایلنت کاربر", "لغو سایلنت کاربر",
-            "فونت ", "لیست فونت",
+            "فونت ", "لیست فونت", "فونت متن روشن", "فونت متن خاموش", "بنویس ",
             "ذخیره ", "ارسال ذخیره ",
             "ترجمه ", "هوا ", "قیمت دلار", "ارز",
             "وضعیت", "راهنما", "help",
             "حذف بعد ",
             "سیو کانال", "توقف سیو",
+            "آخرین بازدید ", "اخرین بازدید ", "گروه های ", "گروه‌های ",
+            "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
+            "پیام جوین ", "لینک کانال جوین ",
             "ارسال نجوا ",
-            "چنل اجباری اضافه ", "چنل اجباری حذف ", "لیست چنل اجباری",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -753,76 +783,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "توقف سیو":
         ss("channel_save_active", "0"); await edit("🛑 سیو کانال متوقف شد.")
 
-    # ─── نجوا ─────────────────────────────────────────────────────────────────
-    elif text.startswith("ارسال نجوا "):
-        whisper_text = text[len("ارسال نجوا "):].strip()
-        if not whisper_text:
-            await edit("❗ متن نجوا رو بنویس.\nمثال: ارسال نجوا سلام دوستم!")
-            return
-
-        replied = await event.get_reply_message()
-        if not replied:
-            await edit("❗ روی پیام کاربر مورد نظر ریپلای کن.")
-            return
-
-        target_sender = await replied.get_sender()
-        target_id = getattr(target_sender, "id", None)
-        if not target_id:
-            await edit("❌ نتونستم اطلاعات کاربر رو بگیرم.")
-            return
-
-        target_name = getattr(target_sender, "first_name", None) or \
-                      getattr(target_sender, "username", None) or str(target_id)
-
-        # ذخیره نجوا و ساخت کلید
-        key = _save_whisper(owner_id, target_id, whisper_text)
-
-        # ارسال پیام به گروه با دکمه
-        try:
-            chat = await event.get_chat()
-            await cl.send_message(
-                chat.id,
-                f"📨 یک نجوا برای **{target_name}** ارسال شد 🔒",
-                buttons=[
-                    [Button.inline("📬 مشاهده نجوا", data=f"whisper:{owner_id}:{key}")]
-                ]
-            )
-            await msg.delete()  # پیام ارسال نجوا رو پاک کن
-        except Exception as e:
-            await edit(f"❌ خطا: {e}")
-        return
-
-    # ─── چنل‌های اجباری ───────────────────────────────────────────────────────
-    elif text.startswith("چنل اجباری اضافه "):
-        username = text[len("چنل اجباری اضافه "):].strip().lstrip("@")
-        if not username:
-            await edit("❗ یوزرنیم چنل رو بنویس.")
-            return
-        if db.add_forced_channel(username):
-            await edit(f"✅ چنل @{username} به لیست اجباری اضافه شد.")
-        else:
-            await edit(f"⚠️ چنل @{username} قبلاً اضافه شده بود.")
-
-    elif text.startswith("چنل اجباری حذف "):
-        username = text[len("چنل اجباری حذف "):].strip().lstrip("@")
-        if not username:
-            await edit("❗ یوزرنیم چنل رو بنویس.")
-            return
-        if db.remove_forced_channel(username):
-            await edit(f"✅ چنل @{username} از لیست اجباری حذف شد.")
-        else:
-            await edit("❗ این چنل در لیست نبود.")
-
-    elif text == "لیست چنل اجباری":
-        channels = db.get_forced_channels()
-        if not channels:
-            await edit("📋 هیچ چنل اجباری ثبت نشده.")
-        else:
-            lines = [f"📋 چنل‌های اجباری ({len(channels)} عدد):\n"]
-            for ch in channels:
-                lines.append(f"• @{ch}")
-            await edit("\n".join(lines))
-
     # ─── سایلنت ──────────────────────────────────────────────────────────────
     elif text == "سایلنت چت روشن":
         chat = await event.get_chat()
@@ -842,6 +802,47 @@ async def _handle_command(cl, event, text, owner_id, entry):
         ss("enemy_reply_active", "1"); await edit("⚔️ پاسخ خودکار به دشمن روشن شد.")
     elif text == "پاسخ دشمن خاموش":
         ss("enemy_reply_active", "0"); await edit("⚔️ پاسخ خودکار به دشمن خاموش شد.")
+
+    # ─── فونت متن (حالت خودکار) ──────────────────────────────────────────────
+    elif text == "فونت متن روشن":
+        ss("text_font_auto", "1")
+        font_id = gs("selected_font", "0")
+        fn = FONTS.get(font_id, FONTS["0"])
+        sample = fn("Hello World")
+        await edit(f"✅ فونت متن خودکار روشن شد.\n✏️ از این به بعد هر پیامی که بنویسی با فونت {font_id} ادیت می‌شه.\nنمونه: `{sample}`")
+
+    elif text == "فونت متن خاموش":
+        ss("text_font_auto", "0")
+        await edit("❌ فونت متن خودکار خاموش شد.\nپیام‌ها دیگه ادیت نمی‌شن.")
+
+    elif text.startswith("بنویس "):
+        # «بنویس [متن]» — متن رو با فونت فعلی برمی‌گردونه
+        raw = text[len("بنویس "):].strip()
+        if not raw:
+            await edit("❗ فرمت: بنویس [متن]")
+        else:
+            font_id = gs("selected_font", "0")
+            fn = FONTS.get(font_id, FONTS["0"])
+            styled = fn(raw)
+            await edit(styled)
+
+    # ─── فونت ساعت ──────────────────────────────────────────────────────────
+    elif text.startswith("فونت ساعت "):
+        font_id = text.split()[-1]
+        if font_id in CLOCK_FONTS:
+            ss("selected_clock_font", font_id)
+            digits = CLOCK_FONTS[font_id]
+            sample = _apply_clock_font(owner_id, "12:34")
+            await edit(f"⏰ فونت ساعت {font_id} انتخاب شد:\n`{sample}`")
+        else:
+            await edit("❗ شماره فونت ساعت باید بین ۰ تا ۹ باشد.")
+    elif text == "لیست فونت ساعت":
+        lines = ["⏰ **فونت‌های ساعت موجود:**\n"]
+        for k, digits in CLOCK_FONTS.items():
+            sample = "".join(digits[int(ch)] for ch in "1234567890")
+            lines.append(f"`فونت ساعت {k}` — `{sample}`")
+        lines.append("\n💡 برای انتخاب: `فونت ساعت [شماره]`")
+        await edit("\n".join(lines))
 
     # ─── فونت ────────────────────────────────────────────────────────────────
     elif text.startswith("فونت "):
@@ -871,31 +872,33 @@ async def _handle_command(cl, event, text, owner_id, entry):
             fn = FONTS[k]
             styled = fn(name)
             lines.append(f"`فونت {k}` — `{styled}`")
-        lines.append("\n💡 فونت انتخابی روی ساعت نام/بیو هم اعمال می‌شود!")
+        lines.append("\n💡 برای فونت مخصوص ساعت از `لیست فونت ساعت` استفاده کنید.")
         await edit("\n".join(lines))
 
     # ─── ساعت ────────────────────────────────────────────────────────────────
     elif text == "ساعت نام روشن":
-        ss("clock_name_active", "1"); await edit("⏰ ساعت در نام روشن شد.\n💡 فونت فعلی روی ساعت اعمال می‌شود.")
+        ss("clock_name_active", "1"); await edit("⏰ ساعت در نام روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
     elif text == "ساعت نام خاموش":
         ss("clock_name_active", "0"); await edit("⏰ ساعت در نام خاموش شد.")
     elif text == "ساعت بیو روشن":
-        ss("clock_bio_active", "1"); await edit("⏰ ساعت در بیو روشن شد.\n💡 فونت فعلی روی ساعت اعمال می‌شود.")
+        ss("clock_bio_active", "1"); await edit("⏰ ساعت در بیو روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
     elif text == "ساعت بیو خاموش":
         ss("clock_bio_active", "0"); await edit("⏰ ساعت در بیو خاموش شد.")
 
     # ─── اسپم ────────────────────────────────────────────────────────────────
     elif text.startswith("اسپم "):
+        # فرمت دقیق: "اسپم [عدد] [متن]"
+        # اگه دقیقاً این فرمت نباشه (مثلاً "اسپمش کردم") جوابی نده
         parts = text.split(" ", 2)
-        if len(parts) >= 3 and parts[1].isdigit():
-            count = min(int(parts[1]), 50)
+        if len(parts) >= 3 and parts[1].isdigit() and len(parts[2].strip()) > 0:
+            count = int(parts[1])          # نامحدود — هر عددی قبول می‌شه
             spam_text = parts[2]
             ss("spam_active", "1")
-            await edit(f"💣 اسپم شروع شد — {count} بار")
+            label = f"{count} بار" if count <= 9999 else "نامحدود"
+            await edit(f"💣 اسپم شروع شد — {label}\nبرای توقف: توقف اسپم")
             chat = await event.get_chat()
             asyncio.ensure_future(_do_spam(cl, owner_id, chat.id, spam_text, count))
-        else:
-            await edit("❗ فرمت: اسپم [تعداد] [متن]")
+        # اگه فرمت درست نیست → هیچ کاری نکن (بی‌صدا)
     elif text == "توقف اسپم":
         ss("spam_active", "0"); await edit("🛑 اسپم متوقف شد.")
 
@@ -972,6 +975,116 @@ async def _handle_command(cl, event, text, owner_id, entry):
             target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
         await edit(await _get_currency_text(target))
 
+    # ─── نجوا ────────────────────────────────────────────────────────────────
+    elif text.startswith("ارسال نجوا "):
+        najwa_text = text[len("ارسال نجوا "):].strip()
+        if not najwa_text:
+            await edit("❗ فرمت: ارسال نجوا [متن پیام]\nروی پیام کاربر هدف ریپلای کن")
+        else:
+            replied = await event.get_reply_message()
+            if not replied:
+                await edit("❗ روی پیام کاربر مورد نظر ریپلای کن سپس بنویس:\nارسال نجوا [متن]")
+            else:
+                target = await replied.get_sender()
+                if not target:
+                    await edit("❌ کاربر هدف پیدا نشد")
+                else:
+                    target_id = target.id
+                    target_name = (getattr(target, "first_name", "") or "") +                                   (" " + getattr(target, "last_name", "") if getattr(target, "last_name", None) else "")
+                    target_name = target_name.strip() or str(target_id)
+
+                    # ساخت نجوا و ذخیره
+                    najwa_id = _najwa_new(owner_id, target_id, najwa_text)
+                    cb_data = f"najwa:{owner_id}:{najwa_id}".encode("utf-8")
+
+                    # ارسال پیام در گروه با دکمه
+                    chat = await event.get_chat()
+                    from telethon.tl.types import (
+                        ReplyInlineMarkup, KeyboardButtonCallback, KeyboardButtonRow
+                    )
+                    buttons = ReplyInlineMarkup(rows=[
+                        KeyboardButtonRow(buttons=[
+                            KeyboardButtonCallback(
+                                text=f"📨 مشاهده نجوا — فقط برای {target_name}",
+                                data=cb_data
+                            )
+                        ])
+                    ])
+                    await cl.send_message(
+                        chat.id,
+                        f"📬 یک نجوا برای **{target_name}** ارسال شد",
+                        buttons=buttons
+                    )
+                    # حذف پیام اصلی (دستور فرستنده)
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+
+    # ─── جوین اجباری ─────────────────────────────────────────────────────────
+    elif text.startswith("تنظیم کانال "):
+        channel_raw = text[len("تنظیم کانال "):].strip()
+        if not channel_raw:
+            await edit("❗ فرمت: تنظیم کانال [آیدی یا @یوزرنیم]")
+        else:
+            # نرمال‌سازی: آیدی عددی یا @username
+            channel_input = channel_raw
+            try:
+                entity = await cl.get_entity(
+                    int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
+                    if channel_input.lstrip("-").isdigit() else channel_input
+                )
+                # ذخیره آیدی عددی برای دقت بیشتر
+                real_id = str(entity.id)
+                title = getattr(entity, "title", channel_input)
+                ss("force_join_channel", real_id)
+                ss("force_join_active", "1")
+                await edit(
+                    f"✅ کانال جوین اجباری تنظیم شد:\n"
+                    f"📢 {title} (ID: {real_id})\n\n"
+                    f"💡 دستورات:\n"
+                    f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
+                    f"> `پیام جوین [متن]` — تغییر پیام هشدار"
+                )
+            except Exception as e:
+                await edit(f"❌ کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
+
+    elif text == "حذف کانال اجباری":
+        ss("force_join_channel", "")
+        ss("force_join_active", "0")
+        await edit("🗑️ کانال جوین اجباری حذف شد.")
+
+    elif text == "جوین اجباری روشن":
+        channel_id = gs("force_join_channel", "")
+        if not channel_id:
+            await edit("❗ اول کانال رو تنظیم کن: `تنظیم کانال [آیدی]`")
+        else:
+            ss("force_join_active", "1")
+            await edit("✅ جوین اجباری روشن شد.")
+
+    elif text == "جوین اجباری خاموش":
+        ss("force_join_active", "0")
+        await edit("❌ جوین اجباری خاموش شد.")
+
+    elif text.startswith("پیام جوین "):
+        new_msg = text[len("پیام جوین "):].strip()
+        if not new_msg:
+            await edit("❗ فرمت: پیام جوین [متن پیام]")
+        else:
+            ss("force_join_message", new_msg)
+            await edit(f"✅ پیام جوین اجباری تنظیم شد:\n\n{new_msg}")
+
+    elif text.startswith("لینک کانال جوین "):
+        link = text[len("لینک کانال جوین "):].strip()
+        if not link:
+            await edit("❗ فرمت: لینک کانال جوین [لینک]\nمثال: لینک کانال جوین https://t.me/mychannel")
+        else:
+            # اطمینان از فرمت لینک
+            if not link.startswith("http"):
+                link = "https://t.me/" + link.lstrip("@")
+            ss("force_join_link", link)
+            await edit(f"✅ لینک دکمه جوین تنظیم شد:\n{link}")
+
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
         status_map = {
@@ -980,13 +1093,18 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "auto_seen_active": "سین خودکار", "auto_reaction_active": "ری‌اکشن",
             "private_lock_active": "قفل پیوی", "enemy_reply_active": "پاسخ دشمن",
             "auto_save_media": "ذخیره مدیا", "clock_name_active": "ساعت نام",
-            "clock_bio_active": "ساعت بیو",
+            "clock_bio_active": "ساعت بیو", "force_join_active": "جوین اجباری",
         }
         lines = [f"📊 وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
         for key, label in status_map.items():
             icon = "✅" if gs(key) == "1" else "❌"
             lines.append(f"{icon} {label}")
         lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
+        lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto','0')=='1' else '❌ خاموش'}")
+        lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
+        fj_ch = gs("force_join_channel", "")
+        if fj_ch:
+            lines.append(f"📢 کانال جوین اجباری: {fj_ch}")
         lines.append(f"👥 دشمن: {len(db.get_enemies(owner_id))} نفر")
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
@@ -994,6 +1112,149 @@ async def _handle_command(cl, event, text, owner_id, entry):
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
+
+    # ─── آخرین بازدید ────────────────────────────────────────────────────────
+    elif text.startswith("آخرین بازدید ") or text.startswith("اخرین بازدید "):
+        raw = text.split(" ", 2)[2].strip()
+        try:
+            from telethon.tl.functions.users import GetFullUserRequest
+            from telethon.tl.types import (
+                UserStatusOnline, UserStatusOffline, UserStatusRecently,
+                UserStatusLastWeek, UserStatusLastMonth, UserStatusEmpty
+            )
+            # resolve user
+            if raw.lstrip("-").isdigit():
+                entity = await cl.get_entity(int(raw))
+            elif raw.startswith("@"):
+                entity = await cl.get_entity(raw)
+            else:
+                entity = await cl.get_entity(raw)
+
+            full = await cl(GetFullUserRequest(entity))
+            user = full.users[0]
+
+            name = (user.first_name or "") + (" " + user.last_name if user.last_name else "")
+            name = name.strip() or str(user.id)
+            uname = f"@{user.username}" if user.username else "—"
+
+            status = user.status
+            if status is None or isinstance(status, UserStatusEmpty):
+                last = "❓ اطلاعاتی موجود نیست"
+            elif isinstance(status, UserStatusOnline):
+                last = "🟢 هم‌اکنون آنلاین است"
+            elif isinstance(status, UserStatusOffline):
+                dt = status.was_online
+                if dt:
+                    # تبدیل به تهران UTC+3:30
+                    import datetime as _dt
+                    tehran_offset = _dt.timedelta(hours=3, minutes=30)
+                    local_dt = dt.replace(tzinfo=_dt.timezone.utc) + tehran_offset
+                    last = f"🕐 آخرین بازدید: {local_dt.strftime('%Y/%m/%d — %H:%M')}"
+                else:
+                    last = "🕐 آفلاین (زمان نامشخص)"
+            elif isinstance(status, UserStatusRecently):
+                last = "🕐 اخیراً آنلاین بوده (کمتر از ۷ روز)"
+            elif isinstance(status, UserStatusLastWeek):
+                last = "📅 در هفته گذشته آنلاین بوده"
+            elif isinstance(status, UserStatusLastMonth):
+                last = "📅 در ماه گذشته آنلاین بوده"
+            else:
+                last = "❓ وضعیت نامشخص"
+
+            await edit(
+                f"👤 {name}\n"
+                f"🔗 {uname}\n"
+                f"🆔 {user.id}\n\n"
+                f"{last}"
+            )
+        except Exception as e:
+            await edit(f"❌ خطا: {e}")
+
+    # ─── گروه‌های کاربر ──────────────────────────────────────────────────────
+    elif text.startswith("گروه های ") or text.startswith("گروه‌های "):
+        raw = text.split(" ", 2)[2].strip() if "های " in text else text.split("‌های ", 1)[1].strip()
+        try:
+            from telethon.tl.functions.messages import SearchGlobalRequest
+            from telethon.tl.types import InputMessagesFilterEmpty, Channel, Chat
+
+            if raw.lstrip("-").isdigit():
+                entity = await cl.get_entity(int(raw))
+            elif raw.startswith("@"):
+                entity = await cl.get_entity(raw)
+            else:
+                entity = await cl.get_entity(raw)
+
+            name = (getattr(entity, "first_name", "") or "") + (" " + getattr(entity, "last_name", "") if getattr(entity, "last_name", None) else "")
+            name = name.strip() or str(entity.id)
+            uname_str = f"@{entity.username}" if getattr(entity, "username", None) else "—"
+
+            await edit(f"🔍 در حال جستجوی گروه‌های {name}...")
+
+            found_groups = {}  # id -> (title, username)
+            offset_id = 0
+            offset_peer = None
+            offset_rate = 0
+            batch = 0
+
+            while batch < 5:  # max 5 batch = ~100 پیام
+                try:
+                    res = await cl(SearchGlobalRequest(
+                        q=f"from:{entity.username}" if getattr(entity, "username", None) else "",
+                        filter=InputMessagesFilterEmpty(),
+                        min_date=None,
+                        max_date=None,
+                        offset_rate=offset_rate,
+                        offset_peer=offset_peer or await cl.get_input_entity("me"),
+                        offset_id=offset_id,
+                        limit=20,
+                        folder_id=None,
+                    ))
+                except Exception:
+                    break
+
+                if not res.messages:
+                    break
+
+                for msg in res.messages:
+                    peer_id = getattr(msg.peer_id, "channel_id", None) or getattr(msg.peer_id, "chat_id", None)
+                    if not peer_id:
+                        continue
+                    # فقط کانال/گروه عمومی
+                    for chat in res.chats:
+                        if chat.id == peer_id:
+                            cuname = getattr(chat, "username", None)
+                            if cuname and chat.id not in found_groups:
+                                found_groups[chat.id] = (getattr(chat, "title", str(chat.id)), cuname)
+                            break
+
+                offset_rate = res.next_rate or 0
+                offset_id = res.messages[-1].id
+                try:
+                    offset_peer = await cl.get_input_entity(res.messages[-1].peer_id)
+                except Exception:
+                    pass
+                batch += 1
+
+                if not res.next_rate:
+                    break
+
+                await asyncio.sleep(1)
+
+            if not found_groups:
+                await edit(
+                    f"👤 {name} ({uname_str})\n\n"
+                    "📭 هیچ گروه عمومی یافت نشد.\n"
+                    "💡 این روش فقط گروه‌هایی که کاربر پیام عمومی داده رو پیدا می‌کنه."
+                )
+            else:
+                lines = [f"👤 {name} ({uname_str})\n📊 {len(found_groups)} گروه عمومی یافت شد:\n"]
+                for i, (gid, (gtitle, gusername)) in enumerate(found_groups.items(), 1):
+                    lines.append(f"{i}. {gtitle}\n   🔗 t.me/{gusername}")
+                lines.append("\n💡 گروه‌هایی که کاربر در آن‌ها پیام داده")
+                await edit("\n".join(lines))
+
+        except Exception as e:
+            await edit(f"❌ خطا: {e}")
 
     # ─── ارسال زمان‌بندی شده ─────────────────────────────────────────────────
     elif text.startswith("ارسال زمان‌بندی "):
@@ -1004,6 +1265,22 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit(f"📅 پیام در {m.group(1)} ارسال خواهد شد.")
         else:
             await edit("❗ فرمت: ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن")
+
+    # ─── پیام عادی (دستور نیست) — اعمال فونت اگه حالت خودکار روشنه ─────────────
+    else:
+        font_id = gs("selected_font", "0")
+        auto_active = gs("text_font_auto", "0") == "1"
+        # فونت خودکار: فقط وقتی "فونت متن روشن" باشه، همه پیام‌ها ادیت می‌شن
+        if auto_active and font_id != "0" and text:
+            fn = FONTS.get(font_id, FONTS["0"])
+            styled = fn(text)
+            if styled != text:
+                try:
+                    await event.edit(styled)
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds + 1)
+                except Exception:
+                    pass
 
 
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
@@ -1034,12 +1311,17 @@ async def _resolve_target(event, parts):
 
 
 async def _do_spam(cl, owner_id, chat_id, text, count):
-    delay = float(db.get_setting(owner_id, "spam_delay", "2"))
-    for _ in range(count):
+    # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
+    delay = float(db.get_setting(owner_id, "spam_delay", "1"))
+    sent = 0
+    while True:
         if db.get_setting(owner_id, "spam_active") != "1":
+            break
+        if sent >= count:
             break
         try:
             await cl.send_message(chat_id, text)
+            sent += 1
             await asyncio.sleep(delay)
         except FloodWaitError as e:
             await asyncio.sleep(e.seconds + 1)
@@ -1318,6 +1600,20 @@ def _help_text():
             "پاسخ دشمن روشن",
             "پاسخ دشمن خاموش",
         ]),
+        ("🔹 جوین اجباری", [
+            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
+            "لینک کانال جوین [لینک]  ← لینک دکمه رنگی جوین",
+            "پیام جوین [متن]  ← تغییر متن پیام هشدار",
+            "جوین اجباری روشن / خاموش",
+            "حذف کانال اجباری",
+            "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
+        ]),
+        ("🔹 نجوا", [
+            "ارسال نجوا [متن]  ← ریپلای روی پیام کاربر هدف",
+            "💡 پیام توی گروه با دکمه نشون داده میشه",
+            "💡 فقط کاربر هدف می‌تونه متن رو ببینه",
+            "💡 نجواها بعد از ۱۲ ساعت پاک می‌شن",
+        ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
             "سین خودکار خاموش",
@@ -1338,8 +1634,9 @@ def _help_text():
             "ارز دلار / ارز تتر / ارز یورو / ارز پوند / ارز بیت کوین",
         ]),
         ("🔹 اسپم", [
-            "اسپم [تعداد] [متن]",
+            "اسپم [تعداد] [متن]  ← مثال: اسپم 100 سلام",
             "توقف اسپم",
+            "💡 تعداد نامحدود — فرمت باید دقیق باشه",
         ]),
         ("🔹 پیام", [
             "ذخیره [1-10]  ← ریپلای",
@@ -1352,21 +1649,21 @@ def _help_text():
             "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
             "توقف سیو",
         ]),
-        ("📨 نجوا", [
-            "ارسال نجوا [متن]  ← ریپلای روی کاربر بزن",
-            "پیام فقط برای کاربر مورد نظر نمایش داده می‌شود",
-            "نجواها هر ۱۲ ساعت پاک می‌شوند",
-        ]),
-        ("🔒 چنل اجباری پیوی", [
-            "چنل اجباری اضافه @یوزرنیم",
-            "چنل اجباری حذف @یوزرنیم",
-            "لیست چنل اجباری",
+        ("🔹 اطلاعات کاربر", [
+            "آخرین بازدید @یوزرنیم یا آیدی",
+            "گروه های @یوزرنیم یا آیدی  ← گروه‌های مشترک",
         ]),
         ("🔹 فونت", [
-            "فونت [0-8]  ← تغییر فونت",
-            "فونت [متن] [0-8]  ← پیش‌نمایش متن با فونت",
-            "لیست فونت  ← نمایش نمونه‌ها",
-            "💡 فونت روی ساعت نام/بیو هم اعمال می‌شود",
+            "فونت [0-8]  ← انتخاب فونت",
+            "فونت [متن] [0-8]  ← نوشتن یه کلمه با فونت",
+            "لیست فونت  ← نمایش همه فونت‌ها",
+            "──────────────────",
+            "فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
+            "فونت متن خاموش  ← خاموش کردن حالت خودکار",
+            "بنویس [متن]  ← نوشتن با فونت فعلی (بدون روشن کردن خودکار)",
+            "──────────────────",
+            "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
+            "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -1398,10 +1695,8 @@ async def _clock_loop(cl, owner_id):
                 last_minute = current_minute
                 time_str = f"{now.hour:02d}:{now.minute:02d}"
                 
-                # اعمال فونت
-                font_id = db.get_setting(owner_id, "selected_font", "0")
-                fn = FONTS.get(font_id, FONTS["0"])
-                styled_time = fn(time_str)
+                # اعمال فونت مخصوص ساعت
+                styled_time = _apply_clock_font(owner_id, time_str)
                 
                 # به‌روزرسانی نام
                 if db.get_setting(owner_id, "clock_name_active") == "1":
