@@ -253,7 +253,7 @@ def start_token_bot():
             return False
         return True
 
-    def _user_keyboard():
+    def _user_keyboard(show_remove_self=False):
         # ✅ دکمه‌های پایین صفحه با رنگ‌های مناسب
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
@@ -267,9 +267,13 @@ def start_token_bot():
         markup.add(
             types.KeyboardButton("🎯 ماموریت‌ها", style="primary")    # 🔵 آبی
         )
+        if show_remove_self:
+            markup.add(
+                types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
+            )
         return markup
 
-    def _owner_keyboard():
+    def _owner_keyboard(show_remove_self=False):
         # ✅ دکمه‌های پایین صفحه مخصوص ادمین
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
@@ -284,6 +288,10 @@ def start_token_bot():
             types.KeyboardButton("🎯 ماموریت‌ها", style="primary"),  # 🔵 آبی
             types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
         )
+        if show_remove_self:
+            markup.add(
+                types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
+            )
         return markup
 
     def _admin_panel_keyboard():
@@ -1664,6 +1672,32 @@ def start_token_bot():
         db.set_setting(account_id, "session_data", "")
         db.set_setting(account_id, "logged_in", "0")
 
+    @_bot.message_handler(func=lambda m: m.text == "🗑 حذف سلف از اکانت تلگرام", chat_types=['private'])
+    def cmd_remove_self_keyboard(message):
+        try:
+            account = _get_account_cached(message.from_user.id)
+            if not account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+            if db.get_setting(account["id"], "logged_in", "0") != "1":
+                return _bot.reply_to(message, "⚠️ سلف فعالی برای حذف وجود ندارد.")
+
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            # 🟢 دکمه تأیید با رنگ success (سبز)
+            markup.add(
+                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
+                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
+            )
+            _bot.reply_to(
+                message,
+                "⚠️ <b>مطمئن هستید؟</b>\n\n"
+                "با تأیید، سلف از اکانت تلگرامی که الان به آن وصل است خارج می‌شود.\n"
+                "💎 الماس‌ها و یوزرنیم پنل شما <b>حفظ می‌شوند</b>.\n\n"
+                "بعد از خروج می‌توانید دوباره با همین اکانت یا یک اکانت تلگرام دیگر، سلف را وصل کنید — بدون نیاز به ساخت اکانت جدید.",
+                reply_markup=markup,
+            )
+        except Exception as e:
+            print(f"❌ خطا در cmd_remove_self_keyboard: {e}")
+
     @_bot.callback_query_handler(func=lambda call: call.data == "remove_self_ask")
     def callback_remove_self_ask(call):
         try:
@@ -1719,19 +1753,19 @@ def start_token_bot():
             _remove_self_from_account(account["id"])
             cache.invalidate(f"account_{call.from_user.id}")
 
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            # 🟢 دکمه وصل کردن مجدد با رنگ success (سبز)
-            markup.add(types.InlineKeyboardButton("🤖 وصل کردن دوباره سلف", callback_data="reg_start", style="success"))
-
+            # آپدیت keyboard پایین صفحه (بدون دکمه حذف سلف)
+            kb = _owner_keyboard(show_remove_self=False) if call.from_user.id == OWNER_TG_ID else _user_keyboard(show_remove_self=False)
             try:
-                _bot.edit_message_text(
+                _bot.send_message(
+                    call.message.chat.id,
                     "✅ <b>سلف با موفقیت از اکانت تلگرام خارج شد.</b>\n\n"
                     f"👤 یوزرنیم پنل شما (<b>{account['username']}</b>) و موجودی الماس حفظ شدند.\n\n"
                     "هر زمان خواستید، با همین اکانت یا یک اکانت تلگرام دیگر دوباره وصل شوید 👇",
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=markup,
+                    reply_markup=types.InlineKeyboardMarkup(row_width=1).add(
+                        types.InlineKeyboardButton("🤖 وصل کردن دوباره سلف", callback_data="reg_start", style="success")
+                    ),
                 )
+                _bot.send_message(call.message.chat.id, "منوی اصلی:", reply_markup=kb)
             except Exception:
                 pass
         except Exception as e:
@@ -1819,7 +1853,11 @@ def start_token_bot():
                 sub_status = "❌ اشتراک ندارید"
 
             if message.chat.type == 'private':
-                markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
+                show_remove = db.get_setting(account["id"], "logged_in", "0") == "1"
+                if tg_id == OWNER_TG_ID:
+                    markup = _owner_keyboard(show_remove_self=show_remove)
+                else:
+                    markup = _user_keyboard(show_remove_self=show_remove)
             else:
                 markup = None
 
@@ -1832,22 +1870,6 @@ def start_token_bot():
                 f"📦 اشتراک سلف:\n{sub_status}",
                 reply_markup=markup
             )
-
-            # ── دکمه حذف سلف (در صورت لاگین بودن سلف) ───────────────────────
-            if message.chat.type == 'private' and db.get_setting(account["id"], "logged_in", "0") == "1":
-                self_markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه حذف سلف با رنگ danger (قرمز)
-                self_markup.add(types.InlineKeyboardButton("🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
-                try:
-                    _bot.send_message(
-                        message.chat.id,
-                        "🤖 سلف شما الان روی یک اکانت تلگرام متصل و فعال است.\n"
-                        "اگر می‌خواهید سلف را از آن اکانت خارج کنید (مثلاً برای وصل کردنش به اکانت تلگرام دیگری)، از دکمه زیر استفاده کنید.\n"
-                        "💎 الماس‌ها و دارایی‌های شما حفظ می‌شوند.",
-                        reply_markup=self_markup,
-                    )
-                except Exception:
-                    pass
 
             if message.chat.type == 'private':
                 sponsors = getattr(config, 'SPONSORS', [])
