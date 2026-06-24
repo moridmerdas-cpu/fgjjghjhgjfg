@@ -544,35 +544,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-    @cl.on(events.CallbackQuery())
-    async def on_callback(event):
-        """هندلر دکمه‌های inline — فقط برای نجوا"""
-        try:
-            data = event.data.decode("utf-8") if event.data else ""
-            if data.startswith("najwa:"):
-                # فرمت: najwa:{owner_id}:{najwa_id}
-                parts = data.split(":", 2)
-                if len(parts) != 3:
-                    await event.answer("❌ نجوای نامعتبر", alert=True)
-                    return
-                oid = int(parts[1])
-                najwa_id = parts[2]
-                najwa = _najwa_get(oid, najwa_id)
-                if not najwa:
-                    await event.answer("⏳ این نجوا منقضی شده (بیش از ۱۲ ساعت)", alert=True)
-                    return
-                # فقط کاربر هدف می‌تونه ببینه
-                if event.sender_id != najwa["target_id"]:
-                    await event.answer("🔒 این نجوا برای شما نیست", alert=True)
-                    return
-                najwa_preview = "📨 نجوا:\n\n" + najwa["text"]
-                await event.answer(najwa_preview, alert=True)
-        except Exception as e:
-            print(f"❌ خطا در on_callback نجوا: {e}")
-            try:
-                await event.answer("❌ خطا", alert=True)
-            except Exception:
-                pass
+    # CallbackQuery نجوا دیگه اینجا نیست — در telegram_bot.py هندل می‌شه
 
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
@@ -995,26 +967,31 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
                     # ساخت نجوا و ذخیره
                     najwa_id = _najwa_new(owner_id, target_id, najwa_text)
-                    cb_data = f"najwa:{owner_id}:{najwa_id}".encode("utf-8")
 
-                    # ارسال پیام در گروه با دکمه
+                    # ارسال پیام با دکمه توسط بات کمکی
                     chat = await event.get_chat()
-                    from telethon.tl.types import (
-                        ReplyInlineMarkup, KeyboardButtonCallback, KeyboardButtonRow
-                    )
-                    buttons = ReplyInlineMarkup(rows=[
-                        KeyboardButtonRow(buttons=[
-                            KeyboardButtonCallback(
-                                text=f"📨 مشاهده نجوا — فقط برای {target_name}",
-                                data=cb_data
+                    try:
+                        import telegram_bot as _tb
+                        sent = _tb.send_najwa_message(
+                            chat_id=chat.id,
+                            owner_id=owner_id,
+                            najwa_id=najwa_id,
+                            target_name=target_name,
+                        )
+                        if not sent:
+                            # fallback: بدون دکمه
+                            await cl.send_message(
+                                chat.id,
+                                f"📬 یک نجوا برای **{target_name}** ارسال شد\n"
+                                f"_(بات کمکی در دسترس نیست — دکمه نمایش داده نشد)_"
                             )
-                        ])
-                    ])
-                    await cl.send_message(
-                        chat.id,
-                        f"📬 یک نجوا برای **{target_name}** ارسال شد",
-                        buttons=buttons
-                    )
+                    except Exception as e:
+                        print(f"⚠️ خطا در ارسال نجوا از طریق بات: {e}")
+                        await cl.send_message(
+                            chat.id,
+                            f"📬 یک نجوا برای **{target_name}** ارسال شد\n_(بدون دکمه)_"
+                        )
+
                     # حذف پیام اصلی (دستور فرستنده)
                     try:
                         await msg.delete()
