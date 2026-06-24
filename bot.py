@@ -487,6 +487,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "وضعیت", "راهنما", "help",
             "حذف بعد ",
             "سیو کانال", "توقف سیو",
+            "آخرین بازدید ", "اخرین بازدید ", "گروه های ", "گروه‌های ",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -816,6 +817,99 @@ async def _handle_command(cl, event, text, owner_id, entry):
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
+
+    # ─── آخرین بازدید ────────────────────────────────────────────────────────
+    elif text.startswith("آخرین بازدید ") or text.startswith("اخرین بازدید "):
+        raw = text.split(" ", 2)[2].strip()
+        try:
+            from telethon.tl.functions.users import GetFullUserRequest
+            from telethon.tl.types import (
+                UserStatusOnline, UserStatusOffline, UserStatusRecently,
+                UserStatusLastWeek, UserStatusLastMonth, UserStatusEmpty
+            )
+            # resolve user
+            if raw.lstrip("-").isdigit():
+                entity = await cl.get_entity(int(raw))
+            elif raw.startswith("@"):
+                entity = await cl.get_entity(raw)
+            else:
+                entity = await cl.get_entity(raw)
+
+            full = await cl(GetFullUserRequest(entity))
+            user = full.users[0]
+
+            name = (user.first_name or "") + (" " + user.last_name if user.last_name else "")
+            name = name.strip() or str(user.id)
+            uname = f"@{user.username}" if user.username else "—"
+
+            status = user.status
+            if status is None or isinstance(status, UserStatusEmpty):
+                last = "❓ اطلاعاتی موجود نیست"
+            elif isinstance(status, UserStatusOnline):
+                last = "🟢 هم‌اکنون آنلاین است"
+            elif isinstance(status, UserStatusOffline):
+                dt = status.was_online
+                if dt:
+                    # تبدیل به تهران UTC+3:30
+                    import datetime as _dt
+                    tehran_offset = _dt.timedelta(hours=3, minutes=30)
+                    local_dt = dt.replace(tzinfo=_dt.timezone.utc) + tehran_offset
+                    last = f"🕐 آخرین بازدید: {local_dt.strftime('%Y/%m/%d — %H:%M')}"
+                else:
+                    last = "🕐 آفلاین (زمان نامشخص)"
+            elif isinstance(status, UserStatusRecently):
+                last = "🕐 اخیراً آنلاین بوده (کمتر از ۷ روز)"
+            elif isinstance(status, UserStatusLastWeek):
+                last = "📅 در هفته گذشته آنلاین بوده"
+            elif isinstance(status, UserStatusLastMonth):
+                last = "📅 در ماه گذشته آنلاین بوده"
+            else:
+                last = "❓ وضعیت نامشخص"
+
+            await edit(
+                f"👤 {name}\n"
+                f"🔗 {uname}\n"
+                f"🆔 {user.id}\n\n"
+                f"{last}"
+            )
+        except Exception as e:
+            await edit(f"❌ خطا: {e}")
+
+    # ─── گروه‌های کاربر ──────────────────────────────────────────────────────
+    elif text.startswith("گروه های ") or text.startswith("گروه‌های "):
+        raw = text.split(" ", 2)[2].strip() if "های " in text else text.split("‌های ", 1)[1].strip()
+        try:
+            from telethon.tl.functions.messages import GetCommonChatsRequest
+
+            if raw.lstrip("-").isdigit():
+                entity = await cl.get_entity(int(raw))
+            elif raw.startswith("@"):
+                entity = await cl.get_entity(raw)
+            else:
+                entity = await cl.get_entity(raw)
+
+            result = await cl(GetCommonChatsRequest(user_id=entity, max_id=0, limit=100))
+            chats = result.chats
+
+            name = (getattr(entity, "first_name", "") or "") + (" " + getattr(entity, "last_name", "") if getattr(entity, "last_name", None) else "")
+            name = name.strip() or str(entity.id)
+            uname = f"@{entity.username}" if getattr(entity, "username", None) else "—"
+
+            if not chats:
+                await edit(f"👤 {name} ({uname})\n\n📭 هیچ گروه مشترکی یافت نشد.")
+            else:
+                lines = [f"👤 {name} ({uname})\n📊 {len(chats)} گروه مشترک:\n"]
+                for i, chat in enumerate(chats, 1):
+                    cname = getattr(chat, "title", str(chat.id))
+                    cusername = getattr(chat, "username", None)
+                    if cusername:
+                        link = f"t.me/{cusername}"
+                    else:
+                        link = "گروه خصوصی"
+                    lines.append(f"{i}. {cname}\n   🔗 {link}")
+                await edit("\n".join(lines))
+        except Exception as e:
+            await edit(f"❌ خطا: {e}")
 
     # ─── ارسال زمان‌بندی شده ─────────────────────────────────────────────────
     elif text.startswith("ارسال زمان‌بندی "):
@@ -1173,6 +1267,10 @@ def _help_text():
             "سیو کانال [لینک پست]  ← ذخیره یک پست",
             "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
             "توقف سیو",
+        ]),
+        ("🔹 اطلاعات کاربر", [
+            "آخرین بازدید @یوزرنیم یا آیدی",
+            "گروه های @یوزرنیم یا آیدی  ← گروه‌های مشترک",
         ]),
         ("🔹 فونت", [
             "فونت [0-8]  ← تغییر فونت",
