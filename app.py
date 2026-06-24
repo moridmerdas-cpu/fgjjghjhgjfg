@@ -517,11 +517,15 @@ def remove_forced_channel(username):
 
 # ─── اجرا ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # استارت ربات توکن
+    # ۱. ایجاد جداول (اگر موجود نیستند)
+    db.init_tables()
+    print("✅ جداول Supabase بررسی/ایجاد شدند")
+    
+    # ۲. استارت ربات توکن
     from telegram_bot import start_token_bot
     start_token_bot()
     
-    # استارت بات برای همه کاربران لاگین‌شده
+    # ۳. استارت بات برای همه کاربران لاگین‌شده
     loop = get_loop()
     for oid in db.get_all_logged_in_users():
         bot_manager.start(oid, loop, check_tokens=False)
