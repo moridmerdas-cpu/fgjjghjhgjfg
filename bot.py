@@ -879,7 +879,8 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text.startswith("گروه های ") or text.startswith("گروه‌های "):
         raw = text.split(" ", 2)[2].strip() if "های " in text else text.split("‌های ", 1)[1].strip()
         try:
-            from telethon.tl.functions.messages import GetCommonChatsRequest
+            from telethon.tl.functions.messages import SearchGlobalRequest
+            from telethon.tl.types import InputMessagesFilterEmpty, Channel, Chat
 
             if raw.lstrip("-").isdigit():
                 entity = await cl.get_entity(int(raw))
@@ -888,26 +889,75 @@ async def _handle_command(cl, event, text, owner_id, entry):
             else:
                 entity = await cl.get_entity(raw)
 
-            result = await cl(GetCommonChatsRequest(user_id=entity, max_id=0, limit=100))
-            chats = result.chats
-
             name = (getattr(entity, "first_name", "") or "") + (" " + getattr(entity, "last_name", "") if getattr(entity, "last_name", None) else "")
             name = name.strip() or str(entity.id)
-            uname = f"@{entity.username}" if getattr(entity, "username", None) else "—"
+            uname_str = f"@{entity.username}" if getattr(entity, "username", None) else "—"
 
-            if not chats:
-                await edit(f"👤 {name} ({uname})\n\n📭 هیچ گروه مشترکی یافت نشد.")
+            await edit(f"🔍 در حال جستجوی گروه‌های {name}...")
+
+            found_groups = {}  # id -> (title, username)
+            offset_id = 0
+            offset_peer = None
+            offset_rate = 0
+            batch = 0
+
+            while batch < 5:  # max 5 batch = ~100 پیام
+                try:
+                    res = await cl(SearchGlobalRequest(
+                        q=f"from:{entity.username}" if getattr(entity, "username", None) else "",
+                        filter=InputMessagesFilterEmpty(),
+                        min_date=None,
+                        max_date=None,
+                        offset_rate=offset_rate,
+                        offset_peer=offset_peer or await cl.get_input_entity("me"),
+                        offset_id=offset_id,
+                        limit=20,
+                        folder_id=None,
+                    ))
+                except Exception:
+                    break
+
+                if not res.messages:
+                    break
+
+                for msg in res.messages:
+                    peer_id = getattr(msg.peer_id, "channel_id", None) or getattr(msg.peer_id, "chat_id", None)
+                    if not peer_id:
+                        continue
+                    # فقط کانال/گروه عمومی
+                    for chat in res.chats:
+                        if chat.id == peer_id:
+                            cuname = getattr(chat, "username", None)
+                            if cuname and chat.id not in found_groups:
+                                found_groups[chat.id] = (getattr(chat, "title", str(chat.id)), cuname)
+                            break
+
+                offset_rate = res.next_rate or 0
+                offset_id = res.messages[-1].id
+                try:
+                    offset_peer = await cl.get_input_entity(res.messages[-1].peer_id)
+                except Exception:
+                    pass
+                batch += 1
+
+                if not res.next_rate:
+                    break
+
+                await asyncio.sleep(1)
+
+            if not found_groups:
+                await edit(
+                    f"👤 {name} ({uname_str})\n\n"
+                    "📭 هیچ گروه عمومی یافت نشد.\n"
+                    "💡 این روش فقط گروه‌هایی که کاربر پیام عمومی داده رو پیدا می‌کنه."
+                )
             else:
-                lines = [f"👤 {name} ({uname})\n📊 {len(chats)} گروه مشترک:\n"]
-                for i, chat in enumerate(chats, 1):
-                    cname = getattr(chat, "title", str(chat.id))
-                    cusername = getattr(chat, "username", None)
-                    if cusername:
-                        link = f"t.me/{cusername}"
-                    else:
-                        link = "گروه خصوصی"
-                    lines.append(f"{i}. {cname}\n   🔗 {link}")
+                lines = [f"👤 {name} ({uname_str})\n📊 {len(found_groups)} گروه عمومی یافت شد:\n"]
+                for i, (gid, (gtitle, gusername)) in enumerate(found_groups.items(), 1):
+                    lines.append(f"{i}. {gtitle}\n   🔗 t.me/{gusername}")
+                lines.append("\n💡 گروه‌هایی که کاربر در آن‌ها پیام داده")
                 await edit("\n".join(lines))
+
         except Exception as e:
             await edit(f"❌ خطا: {e}")
 
