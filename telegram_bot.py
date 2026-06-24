@@ -130,7 +130,6 @@ def _run_tg(coro):
 def _kp_markup(digits, mode="code"):
     prefix = f"reg_kp_{mode}_"
     markup = types.InlineKeyboardMarkup(row_width=3)
-    # ✅ دکمه‌های اعداد با رنگ primary (آبی)
     markup.add(
         types.InlineKeyboardButton("1", callback_data=f"{prefix}1", style="primary"),
         types.InlineKeyboardButton("2", callback_data=f"{prefix}2", style="primary"),
@@ -147,11 +146,11 @@ def _kp_markup(digits, mode="code"):
         types.InlineKeyboardButton("9", callback_data=f"{prefix}9", style="primary"),
     )
     markup.add(
-        types.InlineKeyboardButton("⬅️", callback_data=f"{prefix}del", style="danger"),  # 🔴 قرمز
-        types.InlineKeyboardButton("0", callback_data=f"{prefix}0", style="primary"),   # 🔵 آبی
-        types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm", style="success"),  # 🟢 سبز
+        types.InlineKeyboardButton("⬅️", callback_data=f"{prefix}del", style="danger"),
+        types.InlineKeyboardButton("0", callback_data=f"{prefix}0", style="primary"),
+        types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm", style="success"),
     )
-    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger"))  # 🔴 قرمز
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger"))
     return markup
 
 
@@ -230,9 +229,7 @@ def start_token_bot():
         markup = types.InlineKeyboardMarkup(row_width=1)
         for ch in missing_channels:
             ch_clean = ch.lstrip("@")
-            # 🟢 دکمه عضویت با رنگ primary (آبی)
             markup.add(types.InlineKeyboardButton(f"📢 عضویت در {ch}", url=f"https://t.me/{ch_clean}", style="primary"))
-        # 🟢 دکمه بررسی با رنگ success (سبز)
         markup.add(types.InlineKeyboardButton("✅ بررسی عضویت من", callback_data="check_join", style="success"))
         
         channels_list = "\n".join([f"🔸 {ch}" for ch in missing_channels])
@@ -254,35 +251,43 @@ def start_token_bot():
         return True
 
     def _user_keyboard():
-        # ✅ دکمه‌های پایین صفحه با رنگ‌های مناسب
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        # ✅ دکمه‌های شیشه‌ای (Inline) برای کاربر
+        markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.KeyboardButton("💎 موجودی", style="primary"),      # 🔵 آبی
-            types.KeyboardButton("🎁 هدیه روزانه", style="success")  # 🟢 سبز
+            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary"),
+            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success")
         )
         markup.add(
-            types.KeyboardButton("🔗 رفرال", style="primary"),        # 🔵 آبی
-            types.KeyboardButton("🛒 خرید الماس", style="success")   # 🟢 سبز
+            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary"),
+            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success")
         )
         markup.add(
-            types.KeyboardButton("🎯 ماموریت‌ها", style="primary")    # 🔵 آبی
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary")
         )
         return markup
 
     def _owner_keyboard():
-        # ✅ دکمه‌های پایین صفحه مخصوص ادمین
+        # ✅ دکمه‌های پایین صفحه مخصوص ادمین (دست نخورده)
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton("💎 موجودی", style="primary"),      # 🔵 آبی
-            types.KeyboardButton("🎁 هدیه روزانه", style="success")  # 🟢 سبز
+            types.KeyboardButton("💎 موجودی", style="primary"),
+            types.KeyboardButton("🎁 هدیه روزانه", style="success")
         )
         markup.add(
-            types.KeyboardButton("🔗 رفرال", style="primary"),        # 🔵 آبی
-            types.KeyboardButton("🛒 خرید الماس", style="success")   # 🟢 سبز
+            types.KeyboardButton("🔗 رفرال", style="primary"),
+            types.KeyboardButton("🛒 خرید الماس", style="success")
         )
         markup.add(
-            types.KeyboardButton("🎯 ماموریت‌ها", style="primary"),  # 🔵 آبی
-            types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
+            types.KeyboardButton("🎯 ماموریت‌ها", style="primary"),
+            types.KeyboardButton("📢 مدیریت", style="danger")
+        )
+        return markup
+
+    def _remove_self_keyboard():
+        # ✅ دکمه حذف سلف به صورت KeyboardButton (پایین صفحه)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+        markup.add(
+            types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")
         )
         return markup
 
@@ -290,30 +295,30 @@ def start_token_bot():
         # ✅ دکمه‌های شیشه‌ای پنل مدیریت
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("📢 چنل‌های اجباری", callback_data="admin_channels", style="primary"),   # 🔵 آبی
-            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary")              # 🔵 آبی
+            types.InlineKeyboardButton("📢 چنل‌های اجباری", callback_data="admin_channels", style="primary"),
+            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary")
         )
         markup.add(
-            types.InlineKeyboardButton("🏆 جام جهانی", callback_data="admin_wc", style="success"),              # 🟢 سبز
-            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("🏆 جام جهانی", callback_data="admin_wc", style="success"),
+            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary")
         )
         markup.add(
-            types.InlineKeyboardButton("💎 انتقال الماس", callback_data="admin_transfer", style="primary"),    # 🔵 آبی
-            types.InlineKeyboardButton("💰 دادن الماس", callback_data="admin_give", style="success")           # 🟢 سبز
+            types.InlineKeyboardButton("💎 انتقال الماس", callback_data="admin_transfer", style="primary"),
+            types.InlineKeyboardButton("💰 دادن الماس", callback_data="admin_give", style="success")
         )
         markup.add(
-            types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card", style="primary"), # 🔵 آبی
-            types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments", style="danger")   # 🔴 قرمز
+            types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card", style="primary"),
+            types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments", style="danger")
         )
         markup.add(
-            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")
         )
         markup.add(
-            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary")
         )
         markup.add(
-            types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
+            types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")
         )
         return markup
 
@@ -379,12 +384,11 @@ def start_token_bot():
             payout = round(amount * 2 * (1 - BET_TAX))
 
             markup = types.InlineKeyboardMarkup()
-            # 🟢 دکمه ورود به شرط‌بندی با رنگ success (سبز)
             markup.add(
                 types.InlineKeyboardButton(
                     "⚔️ ورود به شرط‌بندی",
                     callback_data=f"join_bet_{bet_id}",
-                    style="success"  # 🟢 سبز
+                    style="success"
                 )
             )
 
@@ -400,7 +404,6 @@ def start_token_bot():
             )
             db.update_bet_message(bet_id, msg.message_id)
 
-            # تایمر ۵ دقیقه — اگر کسی وارد نشد، لغو و برگشت موجودی
             threading.Timer(300, _auto_cancel_bet, args=[bet_id, message.chat.id, msg.message_id]).start()
 
         except Exception as e:
@@ -413,7 +416,6 @@ def start_token_bot():
         try:
             bet_id = int(call.data.split("_")[2])
 
-            # بررسی حافظه محلی اول (سریع‌تر)
             bet_mem = _active_bets.get(bet_id)
             if bet_mem is None:
                 return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی یافت نشد یا منقضی شده.", show_alert=True)
@@ -428,12 +430,10 @@ def start_token_bot():
             if not account:
                 return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
-            # ورود به دیتابیس (کسر موجودی نفر دوم + آپدیت وضعیت)
             success, msg_txt = db.join_bet(bet_id, account["id"], call.from_user.id)
             if not success:
                 return _bot.answer_callback_query(call.id, msg_txt, show_alert=True)
 
-            # علامت‌گذاری در حافظه
             bet_mem["opponent_tg_id"] = call.from_user.id
 
             opponent_name = (
@@ -446,12 +446,10 @@ def start_token_bot():
             if not bet:
                 return
 
-            # اجرای شرط و انتخاب برنده
             ok, winner, payout = db.finish_bet(bet_id)
             if not ok:
                 return
 
-            # پیدا کردن نام برنده
             winner_tg_id = winner["tg_id"]
             try:
                 winner_chat = _bot.get_chat(winner_tg_id)
@@ -476,7 +474,6 @@ def start_token_bot():
                 f"💎 <b>جایزه: {payout} الماس</b>"
             )
 
-            # ویرایش پیام اصلی
             try:
                 _bot.edit_message_text(
                     result_text,
@@ -486,7 +483,6 @@ def start_token_bot():
             except Exception:
                 _bot.send_message(call.message.chat.id, result_text)
 
-            # اطلاع به برنده در پیوی
             try:
                 _bot.send_message(
                     winner_tg_id,
@@ -495,7 +491,6 @@ def start_token_bot():
             except Exception:
                 pass
 
-            # اطلاع به بازنده
             loser_tg_id = (
                 bet["creator_tg_id"] if winner_tg_id == bet["opponent_tg_id"]
                 else bet["opponent_tg_id"]
@@ -522,7 +517,7 @@ def start_token_bot():
         try:
             bet_mem = _active_bets.get(bet_id)
             if bet_mem is None or bet_mem["opponent_tg_id"] is not None:
-                return  # شرط تکمیل شده
+                return
 
             db.cancel_bet(bet_id)
             _active_bets.pop(bet_id, None)
@@ -566,7 +561,6 @@ def start_token_bot():
         try:
             parts = message.text.split()
 
-            # ── حالت گروه مدیریت: ریپلای روی پیام کاربر + «انتقال [عدد]» ──────
             if len(parts) == 2 and message.reply_to_message:
                 target_user = message.reply_to_message.from_user
                 if not target_user or target_user.is_bot:
@@ -606,7 +600,6 @@ def start_token_bot():
 
                 return _bot.reply_to(message, msg)
 
-            # ── حالت معمول: «انتقال [یوزرنیم] [عدد]» ─────────────────────────
             if len(parts) < 3:
                 return _bot.reply_to(message, "❗ فرمت: انتقال [یوزرنیم] [تعداد]\nمثال: انتقال @ali 10\nیا روی پیام کاربر ریپلای کنید و بنویسید: انتقال [تعداد]")
             
@@ -653,21 +646,17 @@ def start_token_bot():
     # ⚽ سیستم جام جهانی — football-data.org
     # ══════════════════════════════════════════════════════════════════════════
 
-    # کش محلی نتایج API (برای کاهش مصرف)
     _wc_api_cache = {"matches": [], "results": {}, "last_fetch": 0, "last_result_fetch": 0}
-    # وضعیت انتخاب تیم کاربران: tg_id -> {challenge_id, selected_option}
     _wc_pending_bet = {}
 
     IRAN_TZ = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 
     def _wc_utc_to_iran(dt: datetime.datetime) -> datetime.datetime:
-        """تبدیل datetime (UTC، naive یا aware) به ساعت ایران (UTC+3:30)"""
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=datetime.timezone.utc)
         return dt.astimezone(IRAN_TZ)
 
     def _wc_api_get(endpoint: str) -> dict:
-        """فراخوانی API football-data.org"""
         import urllib.request, urllib.error, json as _json
         api_key = getattr(config, "FOOTBALL_API_KEY", "")
         if not api_key:
@@ -691,7 +680,6 @@ def start_token_bot():
             return {}
 
     def _wc_get_matches() -> list:
-        """دریافت بازی‌های آینده از API (با کش ۱۰ دقیقه)"""
         now = time.time()
         if now - _wc_api_cache["last_fetch"] < 600 and _wc_api_cache["matches"]:
             return _wc_api_cache["matches"]
@@ -703,14 +691,12 @@ def start_token_bot():
         return matches
 
     def _wc_get_today_matches() -> list:
-        """دریافت بازی‌های امروز (هر وضعیتی) — بدون کش، برای دکمه «بازی‌های امروز»"""
         comp = getattr(config, "WC_COMPETITION", "WC")
         today_str = datetime.datetime.now(IRAN_TZ).strftime("%Y-%m-%d")
         data = _wc_api_get(f"competitions/{comp}/matches?dateFrom={today_str}&dateTo={today_str}")
         return data.get("matches", [])
 
     def _wc_get_finished_matches() -> list:
-        """دریافت بازی‌های تمام‌شده (با کش ۵ دقیقه)"""
         now = time.time()
         if now - _wc_api_cache["last_result_fetch"] < 300:
             return _wc_api_cache.get("finished", [])
@@ -722,9 +708,8 @@ def start_token_bot():
         return finished
 
     def _wc_determine_winner(match: dict) -> str:
-        """تعیین برنده از نتیجه بازی"""
         score = match.get("score", {})
-        winner = score.get("winner")  # HOME_TEAM / AWAY_TEAM / DRAW
+        winner = score.get("winner")
         if winner == "HOME_TEAM":
             return "team1"
         elif winner == "AWAY_TEAM":
@@ -734,12 +719,10 @@ def start_token_bot():
         return ""
 
     def _wc_send_challenge_to_channel(challenge_id: int, team1: str, team2: str, match_time_str: str):
-        """ارسال چالش به کانال"""
         channel = getattr(config, "WC_CHANNEL_ID", "")
         if not channel:
             print("⚠️ WC_CHANNEL_ID تنظیم نشده! چالش جام جهانی به هیچ کانالی ارسال نمی‌شود.")
             return
-        # اگر آیدی کانال به‌صورت عددی (مثل -1001234567) ست شده، به int تبدیل می‌کنیم
         chat_target = channel
         if isinstance(channel, str) and channel.lstrip("-").isdigit():
             chat_target = int(channel)
@@ -747,15 +730,12 @@ def start_token_bot():
         min_bet = getattr(config, "WC_MIN_BET", 10)
         max_bet = getattr(config, "WC_MAX_BET", 5000)
         markup = types.InlineKeyboardMarkup(row_width=1)
-        # 🔵 دکمه تیم اول با رنگ primary (آبی)
         markup.add(
             types.InlineKeyboardButton(f"🔵 {team1}", callback_data=f"wc_pick_{challenge_id}_team1", style="primary")
         )
-        # 🟢 دکمه مساوی با رنگ success (سبز)
         markup.add(
             types.InlineKeyboardButton("🤝 مساوی", callback_data=f"wc_pick_{challenge_id}_draw", style="success")
         )
-        # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
         markup.add(
             types.InlineKeyboardButton(f"🔴 {team2}", callback_data=f"wc_pick_{challenge_id}_team2", style="danger")
         )
@@ -778,7 +758,6 @@ def start_token_bot():
                   f"   بررسی کنید که ربات ادمین کانال باشد و WC_CHANNEL_ID درست تنظیم شده باشد (مثل @channel یا -100xxxxxxxxxx).")
 
     def _wc_auto_fetch_and_create():
-        """بررسی بازی‌های جدید و ساخت چالش خودکار"""
         try:
             matches = _wc_get_matches()
             for m in matches:
@@ -789,18 +768,15 @@ def start_token_bot():
                 home_team = m.get("homeTeam", {})
                 away_team = m.get("awayTeam", {})
 
-                # نام تیم را از چند فیلد مختلف امتحان می‌کنیم
                 home = (home_team.get("shortName") or home_team.get("name") or "").strip()
                 away = (away_team.get("shortName") or away_team.get("name") or "").strip()
 
-                # اگر هنوز تیم‌ها مشخص نشده‌اند (مرحله حذفی) رد می‌کنیم
                 if not home or not away:
                     continue
 
                 utc_date = m.get("utcDate", "")
                 try:
                     dt = datetime.datetime.strptime(utc_date, "%Y-%m-%dT%H:%M:%SZ")
-                    # فقط بازی‌هایی که حداقل ۳۰ دقیقه دیگر شروع می‌شوند
                     if dt < datetime.datetime.utcnow() + datetime.timedelta(minutes=30):
                         continue
                     dt_iran = _wc_utc_to_iran(dt)
@@ -813,12 +789,11 @@ def start_token_bot():
                 if challenge_id:
                     _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
                     print(f"✅ چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
-                    time.sleep(0.3)  # جلوگیری از flood در ارسال به کانال
+                    time.sleep(0.3)
         except Exception as e:
             print(f"❌ _wc_auto_fetch_and_create: {e}")
 
     def _wc_auto_check_results():
-        """بررسی نتایج بازی‌های تمام‌شده و اعلام برنده"""
         try:
             pending = db.get_pending_wc_challenges()
             if not pending:
@@ -854,7 +829,6 @@ def start_token_bot():
                         except Exception:
                             pass
 
-                # اطلاع رسانی به برندگان در پیوی
                 for winner in paid:
                     try:
                         _bot.send_message(
@@ -868,18 +842,11 @@ def start_token_bot():
             print(f"❌ _wc_auto_check_results: {e}")
 
     def _wc_scheduler():
-        """
-        حلقه زمانی:
-        - هر ۱۵ دقیقه بازی‌های آینده چک می‌شوند
-        - اگه بازی ۱ ساعت دیگه شروع بشه و چالشش ارسال نشده → همون لحظه می‌فرسته
-        - نتایج بازی‌های تموم‌شده هم چک می‌شه
-        """
-        POLL = 900  # 15 دقیقه
-        SEND_BEFORE_SECONDS = 3600  # 1 ساعت قبل از شروع
+        POLL = 900
+        SEND_BEFORE_SECONDS = 3600
 
         while True:
             try:
-                # ─── چک بازی‌های آینده برای ارسال ۱ ساعت قبل ─────────────
                 comp = getattr(config, "WC_COMPETITION", "WC")
                 data = _wc_api_get(f"competitions/{comp}/matches?status=SCHEDULED,TIMED")
                 matches = data.get("matches", [])
@@ -898,12 +865,11 @@ def start_token_bot():
 
                     seconds_until = (dt - now_utc).total_seconds()
 
-                    # فقط بازی‌هایی که ۱ ساعت مانده تا شروعشون (با تلرانس ۱۵ دقیقه)
                     if not (0 < seconds_until <= SEND_BEFORE_SECONDS + POLL):
                         continue
 
                     if db.wc_challenge_exists(match_id):
-                        continue  # قبلاً ارسال شده
+                        continue
 
                     home = (m.get("homeTeam", {}).get("shortName") or
                             m.get("homeTeam", {}).get("name") or "").strip()
@@ -911,7 +877,7 @@ def start_token_bot():
                             m.get("awayTeam", {}).get("name") or "").strip()
 
                     if not home or not away:
-                        continue  # تیم مشخص نشده
+                        continue
 
                     try:
                         dt_tehran = _wc_utc_to_iran(dt)
@@ -925,18 +891,15 @@ def start_token_bot():
                         print(f"✅ چالش ۱ ساعت قبل ارسال شد: {home} vs {away}")
                     time.sleep(0.5)
 
-                # ─── چک نتایج بازی‌های تموم‌شده ─────────────────────────────
                 _wc_auto_check_results()
 
             except Exception as e:
                 print(f"❌ _wc_scheduler: {e}")
             time.sleep(POLL)
 
-    # اجرای scheduler در Thread جداگانه
     _wc_thread = threading.Thread(target=_wc_scheduler, daemon=True)
     _wc_thread.start()
 
-    # ── تست اولیه دسترسی به کانال جام جهانی ─────────────────────────────────
     _wc_channel_cfg = getattr(config, "WC_CHANNEL_ID", "")
     if not _wc_channel_cfg:
         print("⚠️ WC_CHANNEL_ID تنظیم نشده — چالش‌های جام جهانی به هیچ کانالی ارسال نمی‌شوند.")
@@ -955,7 +918,6 @@ def start_token_bot():
     if not getattr(config, "FOOTBALL_API_KEY", ""):
         print("⚠️ FOOTBALL_API_KEY تنظیم نشده — هیچ بازی‌ای از Football API دریافت نمی‌شود.")
 
-    # ── Callback: کاربر روی تیم کلیک کرد ────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("wc_pick_"))
     def callback_wc_pick(call):
         try:
@@ -973,7 +935,6 @@ def start_token_bot():
             max_bet = getattr(config, "WC_MAX_BET", 5000)
             option_fa = {"team1": challenge["team1"], "team2": challenge["team2"], "draw": "مساوی"}.get(option, option)
 
-            # ذخیره انتخاب موقت
             _wc_pending_bet[call.from_user.id] = {
                 "challenge_id": challenge_id,
                 "selected_option": option,
@@ -989,7 +950,6 @@ def start_token_bot():
                     f"مثال: <code>شرکت 200</code>"
                 )
             except Exception:
-                # اگر چت خصوصی باز نیست
                 _bot.answer_callback_query(
                     call.id,
                     f"✅ انتخاب: {option_fa}\n\n"
@@ -999,7 +959,6 @@ def start_token_bot():
         except Exception as e:
             print(f"❌ callback_wc_pick: {e}")
 
-    # ── Handler: کاربر مبلغ شرط را وارد کرد ────────────────────────────────
     @_bot.message_handler(func=lambda m: m.text and m.text.strip().startswith("شرکت ") and m.chat.type == "private")
     def cmd_wc_join(message):
         try:
@@ -1051,7 +1010,6 @@ def start_token_bot():
             print(f"❌ cmd_wc_join: {e}")
             _bot.reply_to(message, f"❌ خطا: {e}")
 
-    # ── Callback قدیمی bet_wc_ (سازگاری) ────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("bet_wc_"))
     def callback_bet_wc(call):
         try:
@@ -1077,11 +1035,10 @@ def start_token_bot():
     # /start
     # ══════════════════════════════════════════════════════════════════════════
     def _grant_free_trial(account_id: int, tg_id: int):
-        """یک روز سلف رایگان برای کاربران جدید"""
         try:
             existing = db.get_subscription(account_id)
             if existing:
-                return  # قبلاً اشتراک داشته
+                return
             expires = db.set_subscription(account_id, "free_trial", 1)
             if expires:
                 exp_str = _fmt_tehran(expires)
@@ -1094,13 +1051,11 @@ def start_token_bot():
                     )
                 except Exception:
                     pass
-                # تایمر اطلاع‌رسانی انقضا
                 threading.Timer(86400, _notify_subscription_expired, args=[account_id, tg_id]).start()
         except Exception as e:
             print(f"❌ _grant_free_trial: {e}")
 
     def _notify_subscription_expired(account_id: int, tg_id: int):
-        """اطلاع‌رسانی پایان اشتراک"""
         try:
             sub = db.get_subscription(account_id)
             if not sub:
@@ -1111,13 +1066,11 @@ def start_token_bot():
             if exp.tzinfo is None:
                 exp = exp.replace(tzinfo=datetime.timezone.utc)
             if exp > datetime.datetime.now(datetime.timezone.utc):
-                return  # هنوز فعاله
+                return
             site_url = getattr(config, "SITE_URL", "")
             markup = types.InlineKeyboardMarkup()
-            # 🟢 دکمه تمدید با رنگ success (سبز)
             markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
             if site_url:
-                # 🔵 دکمه وب‌سایت با رنگ primary (آبی)
                 markup.add(types.InlineKeyboardButton("🌐 پنل وب", url=site_url, style="primary"))
             try:
                 _bot.send_message(
@@ -1132,11 +1085,10 @@ def start_token_bot():
             print(f"❌ _notify_subscription_expired: {e}")
 
     def _start_subscription_checker():
-        """هر ۳۰ دقیقه اشتراک‌های نزدیک به انقضا رو چک می‌کنه"""
         def _checker():
             while True:
                 try:
-                    time.sleep(1800)  # 30 دقیقه
+                    time.sleep(1800)
                     _check_expiring_subscriptions()
                 except Exception as e:
                     print(f"❌ subscription checker: {e}")
@@ -1161,7 +1113,6 @@ def start_token_bot():
                 remaining = _remaining_str(exp)
                 try:
                     markup = types.InlineKeyboardMarkup()
-                    # 🟢 دکمه تمدید با رنگ success (سبز)
                     markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
                     _bot.send_message(
                         tg_id,
@@ -1185,7 +1136,6 @@ def start_token_bot():
     # 🆕 ساخت اکانت از طریق ربات — فلوی کامل Telethon
     # ══════════════════════════════════════════════════════════════════════════
 
-    # ── مرحله ۱: کاربر «ساخت اکانت با ربات» را می‌زند → شماره بخواه ─────────
     @_bot.callback_query_handler(func=lambda call: call.data == "reg_start")
     def callback_reg_start(call):
         tg_id = call.from_user.id
@@ -1196,7 +1146,6 @@ def start_token_bot():
         }
         _bot.answer_callback_query(call.id)
         try:
-            # 🔴 دکمه لغو با رنگ danger (قرمز)
             _bot.edit_message_text(
                 "📱 <b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
                 "شماره تلفن خود را با کد کشور وارد کنید:\n"
@@ -1205,13 +1154,12 @@ def start_token_bot():
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger")  # 🔴 قرمز
+                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger")
                 ),
             )
         except Exception:
             pass
 
-    # ── مرحله ۱b: دریافت شماره به صورت متن ──────────────────────────────────
     @_bot.message_handler(
         func=lambda m: m.chat.type == "private"
         and m.from_user.id in _reg_sessions
@@ -1272,7 +1220,6 @@ def start_token_bot():
                 pass
             _bot.reply_to(message, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
 
-    # ── مرحله ۲ & ۳: کیپد (code / 2fa / pw) ────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("reg_kp_"))
     def callback_reg_kp(call):
         tg_id = call.from_user.id
@@ -1287,8 +1234,7 @@ def start_token_bot():
             return
 
         session = _reg_sessions[tg_id]
-        # parse: reg_kp_{mode}_{action}
-        parts = call.data.split("_", 3)   # ["reg","kp",mode,action]
+        parts = call.data.split("_", 3)
         mode = parts[2]
         action = parts[3]
 
@@ -1330,14 +1276,12 @@ def start_token_bot():
         _bot.answer_callback_query(call.id)
 
     def _process_reg_confirm(call, tg_id, session, mode, digits):
-        """پردازش تأیید در هر مرحله"""
         if not digits:
             _bot.answer_callback_query(call.id, "❗ چیزی وارد نکردید!", show_alert=True)
             return
 
         _bot.answer_callback_query(call.id, "⏳ در حال بررسی...")
 
-        # ── تأیید کد تلگرام ──────────────────────────────────────────────────
         if mode == "code":
             try:
                 from telethon import TelegramClient
@@ -1359,7 +1303,6 @@ def start_token_bot():
 
                 try:
                     sess, me = _run_tg(_verify_code())
-                    # کد درسته — ذخیره session موقت و رفتن به مرحله pw
                     session["saved_session"] = sess
                     session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
                     session["step"] = "pw"
@@ -1382,7 +1325,6 @@ def start_token_bot():
                 except Exception as e:
                     err_str = str(e)
                     if "SessionPasswordNeeded" in err_str or "password" in err_str.lower():
-                        # نیاز به ۲FA
                         session["step"] = "2fa"
                         session["digits"] = ""
                         session["expires"] = time.time() + _REG_TIMEOUT
@@ -1438,7 +1380,6 @@ def start_token_bot():
                 except Exception:
                     pass
 
-        # ── تأیید ۲FA ────────────────────────────────────────────────────────
         elif mode == "2fa":
             try:
                 from telethon import TelegramClient
@@ -1494,7 +1435,6 @@ def start_token_bot():
                 except Exception:
                     pass
 
-        # ── ثبت رمز عبور پنل و ساخت اکانت ──────────────────────────────────
         elif mode == "pw":
             if len(digits) < 4:
                 _bot.answer_callback_query(call.id, "❗ رمز باید حداقل ۴ رقم باشد!", show_alert=True)
@@ -1505,14 +1445,8 @@ def start_token_bot():
                 saved_session = session["saved_session"]
                 tg_id_val = tg_user["id"]
 
-                # بررسی اکانت تکراری — اول بر اساس همین کاربری که با ربات چت می‌کند
-                # (مثلاً بعد از «حذف سلف») و در غیر این صورت بر اساس اکانت تلگرامی
-                # که الان واردش شده. این کار باعث می‌شود اگر کاربر اکانت قبلی خودش
-                # را داشته باشد، حتی با لاگین یک اکانت تلگرام دیگر، یوزرنیم/دارایی‌های
-                # قبلی‌اش حفظ شود و یوزرنیم جدید ساخته نشود.
                 existing = db.get_account_by_tg_id(tg_id) or db.get_account_by_tg_id(tg_id_val)
                 if existing:
-                    # اکانت قبلاً وجود دارد — فقط session رو آپدیت کن
                     db.set_setting(existing["id"], "session_data", saved_session)
                     db.set_setting(existing["id"], "logged_in", "1")
                     db.save_telegram_user_id(existing["id"], tg_id)
@@ -1538,18 +1472,15 @@ def start_token_bot():
                         pass
                     return
 
-                # ساخت یوزرنیم از نام یا username تلگرام
                 base_username = (tg_user.get("username") or tg_user["name"] or f"user{tg_id_val}").lower()
                 base_username = "".join(c for c in base_username if c.isalnum() or c == "_")[:20] or f"user{tg_id_val}"
 
-                # بررسی تکراری بودن username
                 candidate = base_username
                 suffix = 1
                 while db.get_account_by_username(candidate):
                     candidate = f"{base_username}{suffix}"
                     suffix += 1
 
-                # ساخت اکانت
                 new_id = db.create_account(candidate, digits)
                 if not new_id:
                     _reg_clear(tg_id)
@@ -1564,7 +1495,6 @@ def start_token_bot():
                 db.set_setting(new_id, "logged_in", "1")
                 db.save_telegram_user_id(new_id, tg_id)
 
-                # هدیه خوش‌آمد
                 db.add_tokens(new_id, config.WELCOME_TOKENS)
 
                 _reg_clear(tg_id)
@@ -1579,7 +1509,6 @@ def start_token_bot():
                 site_url = getattr(config, "SITE_URL", "")
                 markup_done = types.InlineKeyboardMarkup()
                 if site_url:
-                    # 🔵 دکمه ورود با رنگ primary (آبی)
                     markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
 
                 try:
@@ -1597,7 +1526,6 @@ def start_token_bot():
                 except Exception:
                     pass
 
-                # رفرال
                 ref_tg_id = session.get("referrer_tg_id")
                 if ref_tg_id:
                     threading.Thread(target=_process_referral_async, args=(ref_tg_id, tg_id_val), daemon=True).start()
@@ -1609,7 +1537,6 @@ def start_token_bot():
                 except Exception:
                     pass
 
-    # ── لغو فرایند ───────────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data == "reg_cancel")
     def callback_reg_cancel(call):
         tg_id = call.from_user.id
@@ -1624,7 +1551,6 @@ def start_token_bot():
     # 🗑 حذف سلف از اکانت تلگرام (بدون از دست رفتن دارایی‌ها)
     # ══════════════════════════════════════════════════════════════════════════
     def _logout_telegram_session(session_data):
-        """سعی می‌کند سشن تلگرام را به‌صورت کامل خارج (logout) کند تا واقعاً از اکانت بیرون بیاد"""
         if not session_data:
             return
         try:
@@ -1647,20 +1573,16 @@ def start_token_bot():
             print(f"⚠️ خطا در خروج سشن تلگرام: {e}")
 
     def _remove_self_from_account(account_id: int):
-        """سلف را از اکانت تلگرام فعلی خارج می‌کند ولی دارایی‌ها (الماس، یوزرنیم و ...) را حفظ می‌کند"""
         session_data = db.get_setting(account_id, "session_data", "")
 
-        # ۱) متوقف کردن کلاینت در حال اجرا
         try:
             from bot import bot_manager
             bot_manager.stop(account_id)
         except Exception as e:
             print(f"⚠️ خطا در توقف سلف: {e}")
 
-        # ۲) خروج واقعی سشن از اکانت تلگرام (revoke)
         _logout_telegram_session(session_data)
 
-        # ۳) پاک‌سازی session در دیتابیس — اکانت/دارایی‌ها دست‌نخورده باقی می‌مانند
         db.set_setting(account_id, "session_data", "")
         db.set_setting(account_id, "logged_in", "0")
 
@@ -1674,10 +1596,9 @@ def start_token_bot():
                 return _bot.answer_callback_query(call.id, "⚠️ سلف فعالی برای حذف وجود ندارد.", show_alert=True)
 
             markup = types.InlineKeyboardMarkup(row_width=2)
-            # 🟢 دکمه تأیید با رنگ success (سبز)
             markup.add(
                 types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
-                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
+                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")
             )
             _bot.answer_callback_query(call.id)
             try:
@@ -1720,7 +1641,6 @@ def start_token_bot():
             cache.invalidate(f"account_{call.from_user.id}")
 
             markup = types.InlineKeyboardMarkup(row_width=1)
-            # 🟢 دکمه وصل کردن مجدد با رنگ success (سبز)
             markup.add(types.InlineKeyboardButton("🤖 وصل کردن دوباره سلف", callback_data="reg_start", style="success"))
 
             try:
@@ -1764,7 +1684,6 @@ def start_token_bot():
             site_url = getattr(config, "SITE_URL", "")
 
             if not account:
-                # ذخیره کد رفرال در سشن در صورت وجود
                 if ref_code and ref_code.startswith("ref_"):
                     try:
                         referrer_tg = int(ref_code[4:])
@@ -1774,12 +1693,10 @@ def start_token_bot():
                         pass
 
                 markup = types.InlineKeyboardMarkup(row_width=1)
-                # 🟢 دکمه ساخت اکانت با ربات با رنگ success (سبز)
                 markup.add(
                     types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start", style="success")
                 )
                 if site_url:
-                    # 🔵 دکمه ساخت با وب‌سایت با رنگ primary (آبی)
                     markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"))
                 _bot.reply_to(
                     message,
@@ -1791,7 +1708,6 @@ def start_token_bot():
                 )
                 return
 
-            # سلف رایگان برای کاربر جدید
             threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
 
             stats = db.get_token_stats(account["id"])
@@ -1799,7 +1715,6 @@ def start_token_bot():
 
             now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
 
-            # وضعیت اشتراک
             if sub:
                 sub_exp = sub.get("expires_at")
                 plan_fa = {"weekly": "هفتگی", "monthly": "ماهانه", "bimonthly": "دو ماهه", "free_trial": "رایگان"}.get(sub.get("plan", ""), sub.get("plan", ""))
@@ -1819,6 +1734,8 @@ def start_token_bot():
                 sub_status = "❌ اشتراک ندارید"
 
             if message.chat.type == 'private':
+                # کاربران عادی: دکمه‌های Inline
+                # ادمین: دکمه‌های Keyboard (دست نخورده)
                 markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
             else:
                 markup = None
@@ -1833,11 +1750,9 @@ def start_token_bot():
                 reply_markup=markup
             )
 
-            # ── دکمه حذف سلف (در صورت لاگین بودن سلف) ───────────────────────
+            # ── دکمه حذف سلف به صورت KeyboardButton (پایین صفحه) ────────────
             if message.chat.type == 'private' and db.get_setting(account["id"], "logged_in", "0") == "1":
-                self_markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه حذف سلف با رنگ danger (قرمز)
-                self_markup.add(types.InlineKeyboardButton("🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
+                self_markup = _remove_self_keyboard()
                 try:
                     _bot.send_message(
                         message.chat.id,
@@ -1892,7 +1807,163 @@ def start_token_bot():
             print(f"❌ خطا در callback_check_join: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # دکمه‌های منوی اصلی
+    # 🎯 منوی کاربر با دکمه‌های Inline
+    # ══════════════════════════════════════════════════════════════════════════
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("menu_"))
+    def callback_menu(call):
+        try:
+            if not require_membership(call.message):
+                return
+
+            data = call.data
+            tg_id = call.from_user.id
+            account = _get_account_cached(tg_id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+
+            if data == "menu_balance":
+                stats = db.get_token_stats(account["id"])
+                ref_count = db.get_referral_count(account["id"])
+                token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
+                _bot.edit_message_text(
+                    f"💎 <b>موجودی الماس</b>\n\n"
+                    f"💰 فعلی: <b>{stats['balance']}</b>\n"
+                    f"📊 کل: <b>{stats['total_earned']}</b>\n"
+                    f"👥 رفرال: <b>{ref_count}</b> نفر\n"
+                    f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=_user_keyboard() if tg_id != OWNER_TG_ID else _owner_keyboard()
+                )
+                _bot.answer_callback_query(call.id)
+
+            elif data == "menu_daily":
+                success, msg = db.claim_daily_token(account["id"])
+                cache.invalidate(f"account_{tg_id}")
+                if success:
+                    stats = db.get_token_stats(account["id"])
+                    _bot.edit_message_text(
+                        f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>",
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=_user_keyboard() if tg_id != OWNER_TG_ID else _owner_keyboard()
+                    )
+                else:
+                    _bot.edit_message_text(
+                        msg,
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=_user_keyboard() if tg_id != OWNER_TG_ID else _owner_keyboard()
+                    )
+                _bot.answer_callback_query(call.id)
+
+            elif data == "menu_referral":
+                link = f"https://t.me/{BOT_USERNAME}?start=ref_{account['id']}"
+                ref_count = db.get_referral_count(account["id"])
+                token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
+                referral_value = config.REFERRAL_TOKENS * token_price
+                _bot.edit_message_text(
+                    f"🔗 <b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
+                    f"👥 تعداد: <b>{ref_count}</b>\n"
+                    f"🎁 پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=_user_keyboard() if tg_id != OWNER_TG_ID else _owner_keyboard()
+                )
+                _bot.answer_callback_query(call.id)
+
+            elif data == "menu_buy":
+                balance = db.get_token_balance(account["id"])
+                _bot.edit_message_text(
+                    f"🛒 <b>منوی خرید</b>\n\n"
+                    f"💎 موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
+                    f"یکی از گزینه‌های زیر را انتخاب کنید:",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=_purchase_main_keyboard()
+                )
+                _bot.answer_callback_query(call.id)
+
+            elif data == "menu_missions":
+                missions = db.get_active_missions()
+                if not missions:
+                    _bot.edit_message_text(
+                        "📭 در حال حاضر ماموریت فعالی وجود ندارد.",
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=_user_keyboard() if tg_id != OWNER_TG_ID else _owner_keyboard()
+                    )
+                    _bot.answer_callback_query(call.id)
+                    return
+
+                completed_ids = db.get_completed_mission_ids(account["id"])
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                lines = ["🎯 <b>ماموریت‌ها</b>\n\nبرای دریافت جایزه، در کانال‌های زیر عضو شوید:\n"]
+                for m in missions:
+                    done = m["id"] in completed_ids
+                    status = "✅" if done else "⏳"
+                    ch_clean = m["channel_username"].lstrip("@")
+                    lines.append(f"{status} {m['channel_username']} — 💎{m['reward']} الماس")
+                    if not done:
+                        markup.add(types.InlineKeyboardButton(
+                            f"🔗 عضویت در {m['channel_username']}",
+                            url=f"https://t.me/{ch_clean}",
+                            style="primary"
+                        ))
+                markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="menu_back", style="danger"))
+                _bot.edit_message_text(
+                    "\n".join(lines),
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+
+            elif data == "menu_back":
+                markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
+                _bot.edit_message_text(
+                    "🔙 <b>بازگشت به منوی اصلی</b>",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+
+        except Exception as e:
+            print(f"❌ خطا در callback_menu: {e}")
+            _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
+
+    # ── Handler: دکمه حذف سلف (KeyboardButton) ──────────────────────────────
+    @_bot.message_handler(func=lambda m: m.text == "🗑 حذف سلف از اکانت تلگرام", chat_types=['private'])
+    def cmd_remove_self(message):
+        try:
+            account = _get_account_cached(message.from_user.id)
+            if not account:
+                return _bot.reply_to(message, "❌ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_remove_self_keyboard())
+            
+            if db.get_setting(account["id"], "logged_in", "0") != "1":
+                return _bot.reply_to(message, "⚠️ سلف فعالی برای حذف وجود ندارد.", reply_markup=_remove_self_keyboard())
+
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
+                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")
+            )
+            _bot.reply_to(
+                message,
+                "⚠️ <b>مطمئن هستید؟</b>\n\n"
+                "با تأیید، سلف از اکانت تلگرامی که الان به آن وصل است خارج می‌شود.\n"
+                "💎 الماس‌ها و یوزرنیم پنل شما <b>حفظ می‌شوند</b>.\n\n"
+                "بعد از خروج می‌توانید دوباره با همین اکانت یا یک اکانت تلگرام دیگر، سلف را وصل کنید — بدون نیاز به ساخت اکانت جدید.",
+                reply_markup=markup
+            )
+        except Exception as e:
+            print(f"❌ خطا در cmd_remove_self: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # دکمه‌های منوی ادمین (دست نخورده - به صورت KeyboardButton)
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: m.text == "💎 موجودی", chat_types=['private'])
     def cmd_balance(message):
@@ -1901,7 +1972,7 @@ def start_token_bot():
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
             
             stats = db.get_token_stats(account["id"])
             ref_count = db.get_referral_count(account["id"])
@@ -1924,16 +1995,16 @@ def start_token_bot():
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
             
             success, msg = db.claim_daily_token(account["id"])
             cache.invalidate(f"account_{message.from_user.id}")
             
             if success:
                 stats = db.get_token_stats(account["id"])
-                _bot.reply_to(message, f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>", reply_markup=_user_keyboard())
+                _bot.reply_to(message, f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
             else:
-                _bot.reply_to(message, msg, reply_markup=_user_keyboard())
+                _bot.reply_to(message, msg, reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
         except Exception as e:
             print(f"❌ خطا در cmd_daily: {e}")
 
@@ -1944,7 +2015,7 @@ def start_token_bot():
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
             
             link = f"https://t.me/{BOT_USERNAME}?start=ref_{account['id']}"
             ref_count = db.get_referral_count(account["id"])
@@ -1955,67 +2026,18 @@ def start_token_bot():
                 f"🔗 <b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
                 f"👥 تعداد: <b>{ref_count}</b>\n"
                 f"🎁 پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
-                reply_markup=_user_keyboard())
+                reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
         except Exception as e:
             print(f"❌ خطا در cmd_referral: {e}")
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 🛒 سیستم خرید و اشتراک
-    # ══════════════════════════════════════════════════════════════════════════
-
-    # ── تعریف پلن‌ها ──────────────────────────────────────────────────────────
-    MONTHLY_TOMAN   = 90_000
-    PLANS = {
-        "weekly":    {"fa": "هفتگی",    "days": 7,  "toman": MONTHLY_TOMAN // 4,  "diamonds": 100},
-        "monthly":   {"fa": "ماهانه",   "days": 30, "toman": MONTHLY_TOMAN,        "diamonds": 360},
-        "bimonthly": {"fa": "دو ماهه",  "days": 60, "toman": MONTHLY_TOMAN * 2,   "diamonds": 700},
-    }
-    DIAMOND_RATE    = 250   # هر الماس = ۲۵۰ تومان (۱۰۰ الماس = ۲۵,۰۰۰ تومان)
-    DIAMOND_MIN_BUY = 100   # حداقل خرید الماس
-
-    # وضعیت موقت کاربران برای خرید
-    _purchase_states = {}  # tg_id -> {step, data}
-
-    def _get_card_number():
-        return db.get_global_setting("card_number", "----")
-
-    def _purchase_main_keyboard():
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        # 🟢 دکمه‌های خرید با رنگ success (سبز)
-        markup.add(
-            types.InlineKeyboardButton("💎 خرید اشتراک با الماس", callback_data="pur_sub_diamond", style="success"),
-        )
-        # 🔵 دکمه‌های خرید با کارت با رنگ primary (آبی)
-        markup.add(
-            types.InlineKeyboardButton("💳 خرید اشتراک با کارت", callback_data="pur_sub_card", style="primary"),
-        )
-        # 🟢 دکمه خرید الماس با رنگ success (سبز)
-        markup.add(
-            types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"),
-        )
-        return markup
-
-    def _plans_keyboard(prefix: str):
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        for key, p in PLANS.items():
-            # 🔵 دکمه‌های پلن با رنگ primary (آبی)
-            markup.add(types.InlineKeyboardButton(
-                f"{p['fa']} — {p['toman']:,} تومان / {p['diamonds']} الماس",
-                callback_data=f"{prefix}_{key}",
-                style="primary"
-            ))
-        # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
-        return markup
-
-    @_bot.message_handler(func=lambda m: m.text and m.text.strip() in ("🛒 خرید الماس", "🛒 خرید"), chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "🛒 خرید الماس", chat_types=['private'])
     def cmd_buy(message):
         try:
             if not require_membership(message):
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "❌ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "❌ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
             balance = db.get_token_balance(account["id"])
             _bot.reply_to(message,
                 f"🛒 <b>منوی خرید</b>\n\n"
@@ -2025,7 +2047,80 @@ def start_token_bot():
         except Exception as e:
             print(f"❌ خطا در cmd_buy: {e}")
 
-    # ── Callback اصلی خرید ────────────────────────────────────────────────────
+    @_bot.message_handler(func=lambda m: m.text == "🎯 ماموریت‌ها", chat_types=['private'])
+    def cmd_missions(message):
+        try:
+            if not require_membership(message):
+                return
+            account = _get_account_cached(message.from_user.id)
+            if not account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
+
+            missions = db.get_active_missions()
+            if not missions:
+                return _bot.reply_to(message, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
+
+            completed_ids = db.get_completed_mission_ids(account["id"])
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            lines = ["🎯 <b>ماموریت‌ها</b>\n\nبرای دریافت جایزه، در کانال‌های زیر عضو شوید:\n"]
+            for m in missions:
+                done = m["id"] in completed_ids
+                status = "✅" if done else "⏳"
+                ch_clean = m["channel_username"].lstrip("@")
+                lines.append(f"{status} {m['channel_username']} — 💎{m['reward']} الماس")
+                if not done:
+                    markup.add(types.InlineKeyboardButton(
+                        f"🔗 عضویت در {m['channel_username']}",
+                        url=f"https://t.me/{ch_clean}",
+                        style="primary"
+                    ))
+            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
+            _bot.reply_to(message, "\n".join(lines), reply_markup=markup)
+        except Exception as e:
+            print(f"❌ خطا در cmd_missions: {e}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🛒 سیستم خرید و اشتراک
+    # ══════════════════════════════════════════════════════════════════════════
+
+    MONTHLY_TOMAN   = 90_000
+    PLANS = {
+        "weekly":    {"fa": "هفتگی",    "days": 7,  "toman": MONTHLY_TOMAN // 4,  "diamonds": 100},
+        "monthly":   {"fa": "ماهانه",   "days": 30, "toman": MONTHLY_TOMAN,        "diamonds": 360},
+        "bimonthly": {"fa": "دو ماهه",  "days": 60, "toman": MONTHLY_TOMAN * 2,   "diamonds": 700},
+    }
+    DIAMOND_RATE    = 250
+    DIAMOND_MIN_BUY = 100
+
+    _purchase_states = {}
+
+    def _get_card_number():
+        return db.get_global_setting("card_number", "----")
+
+    def _purchase_main_keyboard():
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("💎 خرید اشتراک با الماس", callback_data="pur_sub_diamond", style="success"),
+        )
+        markup.add(
+            types.InlineKeyboardButton("💳 خرید اشتراک با کارت", callback_data="pur_sub_card", style="primary"),
+        )
+        markup.add(
+            types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"),
+        )
+        return markup
+
+    def _plans_keyboard(prefix: str):
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        for key, p in PLANS.items():
+            markup.add(types.InlineKeyboardButton(
+                f"{p['fa']} — {p['toman']:,} تومان / {p['diamonds']} الماس",
+                callback_data=f"{prefix}_{key}",
+                style="primary"
+            ))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
+        return markup
+
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("pur_"))
     def callback_purchase(call):
         try:
@@ -2035,7 +2130,6 @@ def start_token_bot():
             if not account:
                 return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
-            # ── بازگشت ──────────────────────────────────────────────────────
             if data == "pur_back":
                 balance = db.get_token_balance(account["id"])
                 _purchase_states.pop(tg_id, None)
@@ -2045,7 +2139,6 @@ def start_token_bot():
                     reply_markup=_purchase_main_keyboard()
                 )
 
-            # ── اشتراک با الماس ─────────────────────────────────────────────
             elif data == "pur_sub_diamond":
                 balance = db.get_token_balance(account["id"])
                 text = (
@@ -2068,9 +2161,7 @@ def start_token_bot():
                 if balance < cost:
                     need = cost - balance
                     markup = types.InlineKeyboardMarkup()
-                    # 🟢 دکمه خرید الماس با رنگ success (سبز)
                     markup.add(types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"))
-                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_diamond", style="danger"))
                     return _bot.edit_message_text(
                         f"❌ <b>موجودی کافی نیست!</b>\n\n"
@@ -2084,7 +2175,6 @@ def start_token_bot():
                         chat_id=call.message.chat.id, message_id=call.message.message_id,
                         reply_markup=markup
                     )
-                # کسر الماس و فعال‌سازی
                 db.deduct_tokens(account["id"], cost)
                 expires = db.set_subscription(account["id"], plan_key, plan["days"])
                 exp_str = expires.strftime("%Y-%m-%d") if expires else "نامشخص"
@@ -2096,7 +2186,6 @@ def start_token_bot():
                 )
                 _bot.answer_callback_query(call.id, f"✅ اشتراک {plan['fa']} فعال شد!", show_alert=True)
 
-            # ── اشتراک با کارت ──────────────────────────────────────────────
             elif data == "pur_sub_card":
                 _bot.edit_message_text(
                     "💳 <b>خرید اشتراک با کارت</b>\n\nیک پلن را انتخاب کنید:",
@@ -2117,7 +2206,6 @@ def start_token_bot():
                 )
                 _purchase_states[tg_id] = {"step": "waiting_receipt_sub", "payment_id": payment_id}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_card", style="danger"))
                 _bot.edit_message_text(
                     f"💳 <b>پرداخت اشتراک {plan['fa']}</b>\n\n"
@@ -2130,12 +2218,10 @@ def start_token_bot():
                 )
                 _bot.answer_callback_query(call.id)
 
-            # ── خرید الماس ──────────────────────────────────────────────────
             elif data == "pur_buy_diamond":
                 card = _get_card_number()
                 _purchase_states[tg_id] = {"step": "waiting_diamond_amount"}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
                 _bot.edit_message_text(
                     f"🛍 <b>خرید الماس</b>\n\n"
@@ -2148,7 +2234,6 @@ def start_token_bot():
                 )
                 _bot.answer_callback_query(call.id)
 
-            # ── تأیید/رد پرداخت توسط ادمین ─────────────────────────────────
             elif data.startswith("pur_approve_") or data.startswith("pur_reject_"):
                 if tg_id != OWNER_TG_ID:
                     return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
@@ -2189,7 +2274,6 @@ def start_token_bot():
                             )
                         except Exception: pass
 
-                    # 🟢 دکمه تأیید با رنگ success (سبز)
                     _bot.edit_message_reply_markup(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
@@ -2199,7 +2283,7 @@ def start_token_bot():
                     )
                     _bot.answer_callback_query(call.id, "✅ پرداخت تأیید شد!", show_alert=True)
 
-                else:  # reject
+                else:
                     db.update_payment(payment_id, status="rejected")
                     try:
                         _bot.send_message(
@@ -2207,7 +2291,6 @@ def start_token_bot():
                             "❌ <b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید."
                         )
                     except Exception: pass
-                    # 🔴 دکمه رد با رنگ danger (قرمز)
                     _bot.edit_message_reply_markup(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
@@ -2224,7 +2307,6 @@ def start_token_bot():
             print(f"❌ خطا در callback_purchase: {e}")
             _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
 
-    # ── دریافت پیام‌های مرتبط با خرید (مبلغ الماس + رسید) ───────────────────
     @_bot.message_handler(
         func=lambda m: m.from_user.id in _purchase_states and m.chat.type == "private",
         content_types=["text", "photo", "document"]
@@ -2238,7 +2320,6 @@ def start_token_bot():
             if not account:
                 return
 
-            # ── کاربر تعداد الماس رو نوشت ───────────────────────────────
             if step == "waiting_diamond_amount":
                 try:
                     amount = int(message.text.strip())
@@ -2254,7 +2335,6 @@ def start_token_bot():
                 )
                 _purchase_states[tg_id] = {"step": "waiting_receipt_diamond", "payment_id": payment_id}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="pur_back", style="danger"))
                 _bot.reply_to(message,
                     f"🛍 <b>خرید {amount} الماس</b>\n\n"
@@ -2265,13 +2345,11 @@ def start_token_bot():
                     reply_markup=markup
                 )
 
-            # ── کاربر رسید فرستاد ────────────────────────────────────────
             elif step in ("waiting_receipt_sub", "waiting_receipt_diamond"):
                 payment_id = state.get("payment_id")
                 if not payment_id:
                     return
 
-                # دریافت file_id
                 file_id = None
                 if message.photo:
                     file_id = message.photo[-1].file_id
@@ -2283,7 +2361,6 @@ def start_token_bot():
                 db.update_payment(payment_id, receipt_file_id=file_id)
                 payment = db.get_payment(payment_id)
 
-                # ارسال به ادمین
                 username = message.from_user.username
                 user_display = f"@{username}" if username else str(tg_id)
 
@@ -2301,11 +2378,9 @@ def start_token_bot():
                     f"🔢 شناسه پرداخت: <code>{payment_id}</code>"
                 )
                 admin_markup = types.InlineKeyboardMarkup(row_width=2)
-                # 🟢 دکمه تأیید با رنگ success (سبز)
                 admin_markup.add(
                     types.InlineKeyboardButton("✅ تأیید", callback_data=f"pur_approve_{payment_id}", style="success"),
                 )
-                # 🔴 دکمه رد با رنگ danger (قرمز)
                 admin_markup.add(
                     types.InlineKeyboardButton("❌ رد", callback_data=f"pur_reject_{payment_id}", style="danger")
                 )
@@ -2330,7 +2405,7 @@ def start_token_bot():
             print(f"❌ خطا در handle_purchase_state: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 📢 پنل مدیریت مالک
+    # 📢 پنل مدیریت مالک (دست نخورده)
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: m.text == "📢 مدیریت", chat_types=['private'])
     def cmd_admin_panel(message):
@@ -2340,9 +2415,6 @@ def start_token_bot():
             "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
             reply_markup=_admin_panel_keyboard())
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # 🎯 Callback handler پنل مدیریت
-    # ══════════════════════════════════════════════════════════════════════════
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt")
     def callback_admin(call):
         if call.from_user.id != OWNER_TG_ID:
@@ -2369,14 +2441,11 @@ def start_token_bot():
                     for ch in channels:
                         text += f"🔸 <code>{ch}</code>\n"
                         ch_clean = ch.lstrip("@")
-                        # 🔴 دکمه حذف با رنگ danger (قرمز)
                         markup.add(types.InlineKeyboardButton(f"❌ حذف {ch}", callback_data=f"rmch_{ch_clean}", style="danger"))
                 else:
                     text = "📋 لیست چنل‌ها خالی است.\n\n"
                 text += "\nبرای افزودن چنل جدید از دکمه زیر استفاده کنید:"
-                # 🟢 دکمه افزودن با رنگ success (سبز)
                 markup.add(types.InlineKeyboardButton("➕ افزودن چنل جدید", callback_data="addch_prompt", style="success"))
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
@@ -2403,7 +2472,6 @@ def start_token_bot():
             elif data == "addch_prompt":
                 _owner_states[call.from_user.id] = {"state": "waiting_channel"}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "📝 آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
@@ -2425,7 +2493,6 @@ def start_token_bot():
                         lines.append(f"• <b>{acc['username']}</b> — 💎{bal}")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
@@ -2438,11 +2505,8 @@ def start_token_bot():
             
             elif data == "admin_wc":
                 markup = types.InlineKeyboardMarkup(row_width=1)
-                # 🟢 دکمه ایجاد چالش با رنگ success (سبز)
                 markup.add(types.InlineKeyboardButton("➕ ایجاد چالش جدید", callback_data="wc_new", style="success"))
-                # 🔵 دکمه چالش‌های فعال با رنگ primary (آبی)
                 markup.add(types.InlineKeyboardButton("📋 چالش‌های فعال", callback_data="wc_list", style="primary"))
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "🏆 <b>مدیریت چالش‌های جام جهانی</b>\n\nیک گزینه را انتخاب کنید:",
@@ -2456,7 +2520,6 @@ def start_token_bot():
             elif data == "wc_new":
                 _owner_states[call.from_user.id] = {"state": "wc_team1", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc", style="danger"))
                 _bot.edit_message_text(
                     "🏆 <b>ایجاد چالش جدید</b>\n\n"
@@ -2473,7 +2536,6 @@ def start_token_bot():
                 if not challenges:
                     text = "📋 هیچ چالش فعالی وجود ندارد."
                     markup = types.InlineKeyboardMarkup()
-                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc", style="danger"))
                 else:
                     text = "🏆 <b>چالش‌های فعال:</b>\n\n"
@@ -2481,12 +2543,10 @@ def start_token_bot():
                     for c in challenges:
                         text += f"<b>ID {c['id']}:</b> {c['team1']} vs {c['team2']}\n"
                         text += f"⏰ {c['match_time']} | 💎 {c['bet_amount']}\n\n"
-                        # 🟢 دکمه‌های تعیین برنده با رنگ success (سبز)
                         markup.add(
                             types.InlineKeyboardButton(f"✅ {c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}", style="success"),
                             types.InlineKeyboardButton(f"✅ {c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}", style="success")
                         )
-                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc", style="danger"))
                 _bot.edit_message_text(
                     text,
@@ -2528,7 +2588,6 @@ def start_token_bot():
                 if today_matches is None:
                     text = "❌ خطا در ارتباط با Football API.\nلاگ سرور را بررسی کنید."
                     markup = types.InlineKeyboardMarkup()
-                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     try:
                         _bot.edit_message_text(text, chat_id=call.message.chat.id,
@@ -2540,7 +2599,6 @@ def start_token_bot():
                 if not getattr(config, "FOOTBALL_API_KEY", ""):
                     text = "⚠️ FOOTBALL_API_KEY تنظیم نشده است."
                     markup = types.InlineKeyboardMarkup()
-                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
@@ -2549,13 +2607,11 @@ def start_token_bot():
                 if not today_matches:
                     text = "📭 امروز بازی‌ای ثبت نشده."
                     markup = types.InlineKeyboardMarkup()
-                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
                     return
 
-                # ساخت لیست بازی‌ها با دکمه ارسال برای هر کدام
                 status_fa = {
                     "SCHEDULED": "⏳", "TIMED": "⏳",
                     "LIVE": "🔴", "IN_PLAY": "🔴", "PAUSED": "⏸️",
@@ -2580,12 +2636,10 @@ def start_token_bot():
                     except Exception:
                         pass
 
-                    # نشون می‌ده چالش قبلاً ساخته شده یا نه
                     already = db.wc_challenge_exists(match_id)
                     sent_icon = "📤" if already else "📨"
 
                     lines.append(f"{st} <b>{home}</b> vs <b>{away}</b> — ⏰{time_str}")
-                    # 🟢 دکمه ارسال چالش با رنگ success (سبز)
                     markup.add(
                         types.InlineKeyboardButton(
                             f"{sent_icon} ارسال چالش: {home} vs {away}",
@@ -2594,7 +2648,6 @@ def start_token_bot():
                         )
                     )
 
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 text = "\n".join(lines)
 
@@ -2606,7 +2659,6 @@ def start_token_bot():
                 return
 
             elif data.startswith("wc_sendnow_"):
-                # ادمین دستی روی دکمه ارسال چالش زد
                 match_id = data[len("wc_sendnow_"):]
                 _bot.answer_callback_query(call.id, "⏳ در حال ارسال چالش...")
                 try:
@@ -2631,9 +2683,7 @@ def start_token_bot():
                         dt = utc_date
                         match_time_str = utc_date
 
-                    # اگه قبلاً ساخته شده فقط دوباره بفرسته
                     if db.wc_challenge_exists(match_id):
-                        # چالش موجوده — فقط مجدد به کانال بفرست
                         from database_supabase import execute_query
                         row = execute_query(
                             "SELECT * FROM worldcup_challenges WHERE match_id=%s",
@@ -2658,7 +2708,6 @@ def start_token_bot():
             elif data == "admin_transfer":
                 _owner_states[call.from_user.id] = {"state": "transfer_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "💎 <b>انتقال الماس (از طرف سیستم)</b>\n\n"
@@ -2673,7 +2722,6 @@ def start_token_bot():
             elif data == "admin_give":
                 _owner_states[call.from_user.id] = {"state": "give_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "💰 <b>دادن الماس به کاربر</b>\n\n"
@@ -2689,7 +2737,6 @@ def start_token_bot():
                 cur_card = db.get_global_setting("card_number", "تنظیم نشده")
                 _owner_states[call.from_user.id] = {"state": "set_card"}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     f"💳 <b>تنظیم شماره کارت</b>\n\n"
@@ -2718,7 +2765,6 @@ def start_token_bot():
             elif data == "admin_broadcast":
                 _owner_states[call.from_user.id] = {"state": "broadcast_msg"}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "📣 <b>ارسال پیام عمومی</b>\n\n"
@@ -2742,7 +2788,6 @@ def start_token_bot():
                         lines.append(f"{i}. <b>{uname}</b> — 🎯{p['bet_count']} شرط | 💎{p['total_bet']} الماس")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
@@ -2756,13 +2801,10 @@ def start_token_bot():
                     text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
                         text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
-                        # 🔴 دکمه حذف با رنگ danger (قرمز)
                         markup.add(types.InlineKeyboardButton(f"❌ حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}", style="danger"))
                 else:
                     text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
-                # 🟢 دکمه افزودن ماموریت با رنگ success (سبز)
                 markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="add_mission_prompt", style="success"))
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
@@ -2780,7 +2822,6 @@ def start_token_bot():
             elif data == "add_mission_prompt":
                 _owner_states[call.from_user.id] = {"state": "mission_channel"}
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions", style="danger"))
                 _bot.edit_message_text(
                     "🎯 <b>افزودن ماموریت</b>\n\nآیدی کانال را ارسال کنید (با @):\nمثال: <code>@mychannel</code>",
@@ -2800,7 +2841,7 @@ def start_token_bot():
                 pass
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 📨 State handler
+    # 📨 State handler (دست نخورده)
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: m.from_user.id == OWNER_TG_ID and m.from_user.id in _owner_states, chat_types=['private'],
                           content_types=["text", "photo", "document"])
@@ -2810,7 +2851,6 @@ def start_token_bot():
             state = state_data["state"]
             text = (message.text or "").strip()
 
-            # ── پیام عمومی ─────────────────────────────────────────────────────
             if state == "broadcast_msg":
                 _owner_states.pop(message.from_user.id, None)
                 tg_ids = db.get_all_telegram_ids()
@@ -2868,11 +2908,9 @@ def start_token_bot():
                 
                 group = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
                 markup = types.InlineKeyboardMarkup(row_width=2)
-                # 🔵 دکمه تیم اول با رنگ primary (آبی)
                 markup.add(
                     types.InlineKeyboardButton(f"🔵 {data['team1']}", callback_data=f"bet_wc_{challenge_id}_{data['team1']}", style="primary")
                 )
-                # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
                 markup.add(
                     types.InlineKeyboardButton(f"🔴 {data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}", style="danger")
                 )
@@ -3013,42 +3051,8 @@ def start_token_bot():
             reply_markup=_owner_keyboard())
 
     # ══════════════════════════════════════════════════════════════════════════
-    # 🎯 سیستم ماموریت‌ها
+    # 🎯 سیستم ماموریت‌ها (تکمیل شده)
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.text == "🎯 ماموریت‌ها", chat_types=['private'])
-    def cmd_missions(message):
-        try:
-            if not require_membership(message):
-                return
-            account = _get_account_cached(message.from_user.id)
-            if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
-
-            missions = db.get_active_missions()
-            if not missions:
-                return _bot.reply_to(message, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_user_keyboard())
-
-            completed_ids = db.get_completed_mission_ids(account["id"])
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            lines = ["🎯 <b>ماموریت‌ها</b>\n\nبرای دریافت جایزه، در کانال‌های زیر عضو شوید:\n"]
-            for m in missions:
-                done = m["id"] in completed_ids
-                status = "✅" if done else "⏳"
-                ch_clean = m["channel_username"].lstrip("@")
-                lines.append(f"{status} {m['channel_username']} — 💎{m['reward']} الماس")
-                if not done:
-                    # 🔵 دکمه عضویت با رنگ primary (آبی)
-                    markup.add(types.InlineKeyboardButton(
-                        f"🔗 عضویت در {m['channel_username']}",
-                        url=f"https://t.me/{ch_clean}",
-                        style="primary"
-                    ))
-            # 🟢 دکمه بررسی با رنگ success (سبز)
-            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
-            _bot.reply_to(message, "\n".join(lines), reply_markup=markup)
-        except Exception as e:
-            print(f"❌ خطا در cmd_missions: {e}")
-
     @_bot.callback_query_handler(func=lambda call: call.data == "check_missions")
     def callback_check_missions(call):
         try:
@@ -3072,7 +3076,7 @@ def start_token_bot():
                             total_reward += m["reward"]
                             newly_done.append(ch)
                 except Exception:
-                    pass  # کانال پیدا نشد یا خطا
+                    pass
 
             if not newly_done:
                 pending = [m["channel_username"] for m in missions if m["id"] not in completed_ids]
