@@ -254,18 +254,20 @@ def start_token_bot():
         return True
 
     def _user_keyboard(show_remove_self=False):
-        # ✅ دکمه‌های پایین صفحه با رنگ‌های مناسب
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        # ✅ فقط دکمه حذف سلف به‌صورت KeyboardButton — بقیه دکمه‌ها InlineKeyboardButton هستند
+        if not show_remove_self:
+            return types.ReplyKeyboardRemove()
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
         markup.add(
-            types.KeyboardButton("💎 موجودی", style="primary"),      # 🔵 آبی
-            types.KeyboardButton("🎁 هدیه روزانه", style="success")  # 🟢 سبز
+            types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
         )
+        return markup
+
+    def _owner_keyboard(show_remove_self=False):
+        # ✅ دکمه مدیریت + حذف سلف به‌صورت KeyboardButton — بقیه دکمه‌ها InlineKeyboardButton هستند
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
         markup.add(
-            types.KeyboardButton("🔗 رفرال", style="primary"),        # 🔵 آبی
-            types.KeyboardButton("🛒 خرید الماس", style="success")   # 🟢 سبز
-        )
-        markup.add(
-            types.KeyboardButton("🎯 ماموریت‌ها", style="primary")    # 🔵 آبی
+            types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
         )
         if show_remove_self:
             markup.add(
@@ -273,25 +275,20 @@ def start_token_bot():
             )
         return markup
 
-    def _owner_keyboard(show_remove_self=False):
-        # ✅ دکمه‌های پایین صفحه مخصوص ادمین
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    def _main_inline_keyboard():
+        # ✅ دکمه‌های اصلی کاربر به‌صورت InlineKeyboardButton
+        markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.KeyboardButton("💎 موجودی", style="primary"),      # 🔵 آبی
-            types.KeyboardButton("🎁 هدیه روزانه", style="success")  # 🟢 سبز
+            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success")   # 🟢 سبز
         )
         markup.add(
-            types.KeyboardButton("🔗 رفرال", style="primary"),        # 🔵 آبی
-            types.KeyboardButton("🛒 خرید الماس", style="success")   # 🟢 سبز
+            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success")      # 🟢 سبز
         )
         markup.add(
-            types.KeyboardButton("🎯 ماموریت‌ها", style="primary"),  # 🔵 آبی
-            types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary") # 🔵 آبی
         )
-        if show_remove_self:
-            markup.add(
-                types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
-            )
         return markup
 
     def _admin_panel_keyboard():
@@ -1677,7 +1674,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             if db.get_setting(account["id"], "logged_in", "0") != "1":
                 return _bot.reply_to(message, "⚠️ سلف فعالی برای حذف وجود ندارد.")
 
@@ -1854,12 +1851,9 @@ def start_token_bot():
 
             if message.chat.type == 'private':
                 show_remove = db.get_setting(account["id"], "logged_in", "0") == "1"
-                if tg_id == OWNER_TG_ID:
-                    markup = _owner_keyboard(show_remove_self=show_remove)
-                else:
-                    markup = _user_keyboard(show_remove_self=show_remove)
+                kb_markup = _owner_keyboard(show_remove_self=show_remove) if tg_id == OWNER_TG_ID else _user_keyboard(show_remove_self=show_remove)
             else:
-                markup = None
+                kb_markup = None
 
             _bot.reply_to(
                 message,
@@ -1868,8 +1862,10 @@ def start_token_bot():
                 f"💎 موجودی الماس: <b>{stats['balance']}</b>\n"
                 f"📊 کل دریافتی: <b>{stats['total_earned']}</b>\n\n"
                 f"📦 اشتراک سلف:\n{sub_status}",
-                reply_markup=markup
+                reply_markup=kb_markup
             )
+            if message.chat.type == 'private':
+                _bot.send_message(message.chat.id, "📋 منوی اصلی:", reply_markup=_main_inline_keyboard())
 
             if message.chat.type == 'private':
                 sponsors = getattr(config, 'SPONSORS', [])
@@ -1919,67 +1915,102 @@ def start_token_bot():
     @_bot.message_handler(func=lambda m: m.text == "💎 موجودی", chat_types=['private'])
     def cmd_balance(message):
         try:
-            if not require_membership(message): 
+            if not require_membership(message):
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
-            
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             stats = db.get_token_stats(account["id"])
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
-            
             _bot.reply_to(message,
                 f"💎 <b>موجودی الماس</b>\n\n"
                 f"💰 فعلی: <b>{stats['balance']}</b>\n"
                 f"📊 کل: <b>{stats['total_earned']}</b>\n"
                 f"👥 رفرال: <b>{ref_count}</b> نفر\n"
                 f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
-                reply_markup=_owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard())
+                reply_markup=_main_inline_keyboard())
         except Exception as e:
             print(f"❌ خطا در cmd_balance: {e}")
 
+    @_bot.callback_query_handler(func=lambda call: call.data == "menu_balance")
+    def callback_menu_balance(call):
+        try:
+            if call.message.chat.type != 'private':
+                return
+            account = _get_account_cached(call.from_user.id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+            stats = db.get_token_stats(account["id"])
+            ref_count = db.get_referral_count(account["id"])
+            token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
+            _bot.answer_callback_query(call.id)
+            _bot.send_message(call.message.chat.id,
+                f"💎 <b>موجودی الماس</b>\n\n"
+                f"💰 فعلی: <b>{stats['balance']}</b>\n"
+                f"📊 کل: <b>{stats['total_earned']}</b>\n"
+                f"👥 رفرال: <b>{ref_count}</b> نفر\n"
+                f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
+                reply_markup=_main_inline_keyboard())
+        except Exception as e:
+            print(f"❌ خطا در callback_menu_balance: {e}")
+
     @_bot.message_handler(func=lambda m: m.text == "🎁 هدیه روزانه", chat_types=['private'])
     def cmd_daily(message):
+        _do_daily(message.from_user.id, message.chat.id, reply_to=message.message_id)
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "menu_daily")
+    def callback_menu_daily(call):
+        _bot.answer_callback_query(call.id)
+        _do_daily(call.from_user.id, call.message.chat.id)
+
+    def _do_daily(tg_id, chat_id, reply_to=None):
         try:
-            if not require_membership(message): 
-                return
-            account = _get_account_cached(message.from_user.id)
+            account = _get_account_cached(tg_id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
-            
+                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             success, msg = db.claim_daily_token(account["id"])
-            cache.invalidate(f"account_{message.from_user.id}")
-            
+            cache.invalidate(f"account_{tg_id}")
             if success:
                 stats = db.get_token_stats(account["id"])
-                _bot.reply_to(message, f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>", reply_markup=_user_keyboard())
+                text = f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>"
             else:
-                _bot.reply_to(message, msg, reply_markup=_user_keyboard())
+                text = msg
+            kwargs = {"reply_markup": _main_inline_keyboard()}
+            if reply_to:
+                kwargs["reply_to_message_id"] = reply_to
+            _bot.send_message(chat_id, text, **kwargs)
         except Exception as e:
-            print(f"❌ خطا در cmd_daily: {e}")
+            print(f"❌ خطا در _do_daily: {e}")
 
     @_bot.message_handler(func=lambda m: m.text == "🔗 رفرال", chat_types=['private'])
     def cmd_referral(message):
+        _do_referral(message.from_user.id, message.chat.id, reply_to=message.message_id)
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "menu_referral")
+    def callback_menu_referral(call):
+        _bot.answer_callback_query(call.id)
+        _do_referral(call.from_user.id, call.message.chat.id)
+
+    def _do_referral(tg_id, chat_id, reply_to=None):
         try:
-            if not require_membership(message): 
-                return
-            account = _get_account_cached(message.from_user.id)
+            account = _get_account_cached(tg_id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
-            
+                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             link = f"https://t.me/{BOT_USERNAME}?start=ref_{account['id']}"
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
             referral_value = config.REFERRAL_TOKENS * token_price
-            
-            _bot.reply_to(message,
+            kwargs = {"reply_markup": _main_inline_keyboard()}
+            if reply_to:
+                kwargs["reply_to_message_id"] = reply_to
+            _bot.send_message(chat_id,
                 f"🔗 <b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
                 f"👥 تعداد: <b>{ref_count}</b>\n"
                 f"🎁 پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
-                reply_markup=_user_keyboard())
+                **kwargs)
         except Exception as e:
-            print(f"❌ خطا در cmd_referral: {e}")
+            print(f"❌ خطا در _do_referral: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🛒 سیستم خرید و اشتراک
@@ -2032,20 +2063,29 @@ def start_token_bot():
 
     @_bot.message_handler(func=lambda m: m.text and m.text.strip() in ("🛒 خرید الماس", "🛒 خرید"), chat_types=['private'])
     def cmd_buy(message):
+        _do_buy(message.from_user.id, message.chat.id, reply_to=message.message_id)
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "menu_buy")
+    def callback_menu_buy(call):
+        _bot.answer_callback_query(call.id)
+        _do_buy(call.from_user.id, call.message.chat.id)
+
+    def _do_buy(tg_id, chat_id, reply_to=None):
         try:
-            if not require_membership(message):
-                return
-            account = _get_account_cached(message.from_user.id)
+            account = _get_account_cached(tg_id)
             if not account:
-                return _bot.reply_to(message, "❌ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.send_message(chat_id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             balance = db.get_token_balance(account["id"])
-            _bot.reply_to(message,
+            kwargs = {"reply_markup": _purchase_main_keyboard()}
+            if reply_to:
+                kwargs["reply_to_message_id"] = reply_to
+            _bot.send_message(chat_id,
                 f"🛒 <b>منوی خرید</b>\n\n"
                 f"💎 موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
                 f"یکی از گزینه‌های زیر را انتخاب کنید:",
-                reply_markup=_purchase_main_keyboard())
+                **kwargs)
         except Exception as e:
-            print(f"❌ خطا در cmd_buy: {e}")
+            print(f"❌ خطا در _do_buy: {e}")
 
     # ── Callback اصلی خرید ────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("pur_"))
@@ -3042,13 +3082,24 @@ def start_token_bot():
         try:
             if not require_membership(message):
                 return
-            account = _get_account_cached(message.from_user.id)
+            _do_missions(message.from_user.id, message.chat.id)
+        except Exception as e:
+            print(f"❌ خطا در cmd_missions: {e}")
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "menu_missions")
+    def callback_menu_missions(call):
+        _bot.answer_callback_query(call.id)
+        _do_missions(call.from_user.id, call.message.chat.id)
+
+    def _do_missions(tg_id, chat_id):
+        try:
+            account = _get_account_cached(tg_id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
 
             missions = db.get_active_missions()
             if not missions:
-                return _bot.reply_to(message, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_user_keyboard())
+                return _bot.send_message(chat_id, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_main_inline_keyboard())
 
             completed_ids = db.get_completed_mission_ids(account["id"])
             markup = types.InlineKeyboardMarkup(row_width=1)
@@ -3067,10 +3118,9 @@ def start_token_bot():
                     ))
             # 🟢 دکمه بررسی با رنگ success (سبز)
             markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
-            _bot.reply_to(message, "\n".join(lines), reply_markup=markup)
+            _bot.send_message(chat_id, "\n".join(lines), reply_markup=markup)
         except Exception as e:
-            print(f"❌ خطا در cmd_missions: {e}")
-
+            print(f"❌ خطا در _do_missions: {e}")
     @_bot.callback_query_handler(func=lambda call: call.data == "check_missions")
     def callback_check_missions(call):
         try:
@@ -3121,9 +3171,9 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_user_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             
-            kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
+            kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else types.ReplyKeyboardRemove()
             _bot.reply_to(message, "⚠️ دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
         except Exception as e:
             print(f"❌ خطا در cmd_unknown: {e}")
