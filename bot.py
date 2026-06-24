@@ -42,38 +42,6 @@ _last_friend_reply = {}     # {sender_id: timestamp}
 SECRETARY_COOLDOWN = 86400  # 24 ساعت
 FRIEND_COOLDOWN = 3600      # 1 ساعت
 
-# ─── سیستم نجوا ──────────────────────────────────────────────────────────────
-# { owner_id: { najwa_id: {"target_id": int, "text": str, "ts": float} } }
-_najwa_store: dict = {}
-NAJWA_TTL = 43200  # 12 ساعت
-
-def _najwa_cleanup(owner_id: int):
-    """پاک کردن نجواهای منقضی‌شده"""
-    now = time.time()
-    store = _najwa_store.get(owner_id, {})
-    expired = [k for k, v in store.items() if now - v["ts"] > NAJWA_TTL]
-    for k in expired:
-        del store[k]
-
-def _najwa_new(owner_id: int, target_id: int, text: str) -> str:
-    """ساخت یه نجوای جدید و برگردوندن شناسه‌اش"""
-    _najwa_cleanup(owner_id)
-    if owner_id not in _najwa_store:
-        _najwa_store[owner_id] = {}
-    najwa_id = f"{owner_id}_{int(time.time()*1000)}"
-    _najwa_store[owner_id][najwa_id] = {
-        "target_id": target_id,
-        "text": text,
-        "ts": time.time(),
-    }
-    return najwa_id
-
-def _najwa_get(owner_id: int, najwa_id: str):
-    """دریافت نجوا اگه هنوز منقضی نشده"""
-    _najwa_cleanup(owner_id)
-    return _najwa_store.get(owner_id, {}).get(najwa_id)
-
-
 def _convert_font(text, chars):
     result = []
     for ch in text:
@@ -544,8 +512,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-    # CallbackQuery نجوا دیگه اینجا نیست — در telegram_bot.py هندل می‌شه
-
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
         text = event.raw_text.strip()
@@ -593,10 +559,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "وضعیت", "راهنما", "help",
             "حذف بعد ",
             "سیو کانال", "توقف سیو",
-            "آخرین بازدید ", "اخرین بازدید ", "گروه های ", "گروه‌های ",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "ارسال نجوا ",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -947,57 +911,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
             target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
         await edit(await _get_currency_text(target))
 
-    # ─── نجوا ────────────────────────────────────────────────────────────────
-    elif text.startswith("ارسال نجوا "):
-        najwa_text = text[len("ارسال نجوا "):].strip()
-        if not najwa_text:
-            await edit("❗ فرمت: ارسال نجوا [متن پیام]\nروی پیام کاربر هدف ریپلای کن")
-        else:
-            replied = await event.get_reply_message()
-            if not replied:
-                await edit("❗ روی پیام کاربر مورد نظر ریپلای کن سپس بنویس:\nارسال نجوا [متن]")
-            else:
-                target = await replied.get_sender()
-                if not target:
-                    await edit("❌ کاربر هدف پیدا نشد")
-                else:
-                    target_id = target.id
-                    target_name = (getattr(target, "first_name", "") or "") +                                   (" " + getattr(target, "last_name", "") if getattr(target, "last_name", None) else "")
-                    target_name = target_name.strip() or str(target_id)
-
-                    # ساخت نجوا و ذخیره
-                    najwa_id = _najwa_new(owner_id, target_id, najwa_text)
-
-                    # ارسال پیام با دکمه توسط بات کمکی
-                    chat = await event.get_chat()
-                    try:
-                        import telegram_bot as _tb
-                        sent = _tb.send_najwa_message(
-                            chat_id=chat.id,
-                            owner_id=owner_id,
-                            najwa_id=najwa_id,
-                            target_name=target_name,
-                        )
-                        if not sent:
-                            # fallback: بدون دکمه
-                            await cl.send_message(
-                                chat.id,
-                                f"📬 یک نجوا برای **{target_name}** ارسال شد\n"
-                                f"_(بات کمکی در دسترس نیست — دکمه نمایش داده نشد)_"
-                            )
-                    except Exception as e:
-                        print(f"⚠️ خطا در ارسال نجوا از طریق بات: {e}")
-                        await cl.send_message(
-                            chat.id,
-                            f"📬 یک نجوا برای **{target_name}** ارسال شد\n_(بدون دکمه)_"
-                        )
-
-                    # حذف پیام اصلی (دستور فرستنده)
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
-
     # ─── جوین اجباری ─────────────────────────────────────────────────────────
     elif text.startswith("تنظیم کانال "):
         channel_raw = text[len("تنظیم کانال "):].strip()
@@ -1089,149 +1002,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
-
-    # ─── آخرین بازدید ────────────────────────────────────────────────────────
-    elif text.startswith("آخرین بازدید ") or text.startswith("اخرین بازدید "):
-        raw = text.split(" ", 2)[2].strip()
-        try:
-            from telethon.tl.functions.users import GetFullUserRequest
-            from telethon.tl.types import (
-                UserStatusOnline, UserStatusOffline, UserStatusRecently,
-                UserStatusLastWeek, UserStatusLastMonth, UserStatusEmpty
-            )
-            # resolve user
-            if raw.lstrip("-").isdigit():
-                entity = await cl.get_entity(int(raw))
-            elif raw.startswith("@"):
-                entity = await cl.get_entity(raw)
-            else:
-                entity = await cl.get_entity(raw)
-
-            full = await cl(GetFullUserRequest(entity))
-            user = full.users[0]
-
-            name = (user.first_name or "") + (" " + user.last_name if user.last_name else "")
-            name = name.strip() or str(user.id)
-            uname = f"@{user.username}" if user.username else "—"
-
-            status = user.status
-            if status is None or isinstance(status, UserStatusEmpty):
-                last = "❓ اطلاعاتی موجود نیست"
-            elif isinstance(status, UserStatusOnline):
-                last = "🟢 هم‌اکنون آنلاین است"
-            elif isinstance(status, UserStatusOffline):
-                dt = status.was_online
-                if dt:
-                    # تبدیل به تهران UTC+3:30
-                    import datetime as _dt
-                    tehran_offset = _dt.timedelta(hours=3, minutes=30)
-                    local_dt = dt.replace(tzinfo=_dt.timezone.utc) + tehran_offset
-                    last = f"🕐 آخرین بازدید: {local_dt.strftime('%Y/%m/%d — %H:%M')}"
-                else:
-                    last = "🕐 آفلاین (زمان نامشخص)"
-            elif isinstance(status, UserStatusRecently):
-                last = "🕐 اخیراً آنلاین بوده (کمتر از ۷ روز)"
-            elif isinstance(status, UserStatusLastWeek):
-                last = "📅 در هفته گذشته آنلاین بوده"
-            elif isinstance(status, UserStatusLastMonth):
-                last = "📅 در ماه گذشته آنلاین بوده"
-            else:
-                last = "❓ وضعیت نامشخص"
-
-            await edit(
-                f"👤 {name}\n"
-                f"🔗 {uname}\n"
-                f"🆔 {user.id}\n\n"
-                f"{last}"
-            )
-        except Exception as e:
-            await edit(f"❌ خطا: {e}")
-
-    # ─── گروه‌های کاربر ──────────────────────────────────────────────────────
-    elif text.startswith("گروه های ") or text.startswith("گروه‌های "):
-        raw = text.split(" ", 2)[2].strip() if "های " in text else text.split("‌های ", 1)[1].strip()
-        try:
-            from telethon.tl.functions.messages import SearchGlobalRequest
-            from telethon.tl.types import InputMessagesFilterEmpty, Channel, Chat
-
-            if raw.lstrip("-").isdigit():
-                entity = await cl.get_entity(int(raw))
-            elif raw.startswith("@"):
-                entity = await cl.get_entity(raw)
-            else:
-                entity = await cl.get_entity(raw)
-
-            name = (getattr(entity, "first_name", "") or "") + (" " + getattr(entity, "last_name", "") if getattr(entity, "last_name", None) else "")
-            name = name.strip() or str(entity.id)
-            uname_str = f"@{entity.username}" if getattr(entity, "username", None) else "—"
-
-            await edit(f"🔍 در حال جستجوی گروه‌های {name}...")
-
-            found_groups = {}  # id -> (title, username)
-            offset_id = 0
-            offset_peer = None
-            offset_rate = 0
-            batch = 0
-
-            while batch < 5:  # max 5 batch = ~100 پیام
-                try:
-                    res = await cl(SearchGlobalRequest(
-                        q=f"from:{entity.username}" if getattr(entity, "username", None) else "",
-                        filter=InputMessagesFilterEmpty(),
-                        min_date=None,
-                        max_date=None,
-                        offset_rate=offset_rate,
-                        offset_peer=offset_peer or await cl.get_input_entity("me"),
-                        offset_id=offset_id,
-                        limit=20,
-                        folder_id=None,
-                    ))
-                except Exception:
-                    break
-
-                if not res.messages:
-                    break
-
-                for msg in res.messages:
-                    peer_id = getattr(msg.peer_id, "channel_id", None) or getattr(msg.peer_id, "chat_id", None)
-                    if not peer_id:
-                        continue
-                    # فقط کانال/گروه عمومی
-                    for chat in res.chats:
-                        if chat.id == peer_id:
-                            cuname = getattr(chat, "username", None)
-                            if cuname and chat.id not in found_groups:
-                                found_groups[chat.id] = (getattr(chat, "title", str(chat.id)), cuname)
-                            break
-
-                offset_rate = res.next_rate or 0
-                offset_id = res.messages[-1].id
-                try:
-                    offset_peer = await cl.get_input_entity(res.messages[-1].peer_id)
-                except Exception:
-                    pass
-                batch += 1
-
-                if not res.next_rate:
-                    break
-
-                await asyncio.sleep(1)
-
-            if not found_groups:
-                await edit(
-                    f"👤 {name} ({uname_str})\n\n"
-                    "📭 هیچ گروه عمومی یافت نشد.\n"
-                    "💡 این روش فقط گروه‌هایی که کاربر پیام عمومی داده رو پیدا می‌کنه."
-                )
-            else:
-                lines = [f"👤 {name} ({uname_str})\n📊 {len(found_groups)} گروه عمومی یافت شد:\n"]
-                for i, (gid, (gtitle, gusername)) in enumerate(found_groups.items(), 1):
-                    lines.append(f"{i}. {gtitle}\n   🔗 t.me/{gusername}")
-                lines.append("\n💡 گروه‌هایی که کاربر در آن‌ها پیام داده")
-                await edit("\n".join(lines))
-
-        except Exception as e:
-            await edit(f"❌ خطا: {e}")
 
     # ─── ارسال زمان‌بندی شده ─────────────────────────────────────────────────
     elif text.startswith("ارسال زمان‌بندی "):
@@ -1585,12 +1355,6 @@ def _help_text():
             "حذف کانال اجباری",
             "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
         ]),
-        ("🔹 نجوا", [
-            "ارسال نجوا [متن]  ← ریپلای روی پیام کاربر هدف",
-            "💡 پیام توی گروه با دکمه نشون داده میشه",
-            "💡 فقط کاربر هدف می‌تونه متن رو ببینه",
-            "💡 نجواها بعد از ۱۲ ساعت پاک می‌شن",
-        ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
             "سین خودکار خاموش",
@@ -1625,10 +1389,6 @@ def _help_text():
             "سیو کانال [لینک پست]  ← ذخیره یک پست",
             "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
             "توقف سیو",
-        ]),
-        ("🔹 اطلاعات کاربر", [
-            "آخرین بازدید @یوزرنیم یا آیدی",
-            "گروه های @یوزرنیم یا آیدی  ← گروه‌های مشترک",
         ]),
         ("🔹 فونت", [
             "فونت [0-8]  ← انتخاب فونت",

@@ -174,36 +174,6 @@ def get_bot():
     return _bot
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 📨 سیستم نجوا — ارسال پیام با دکمه از طریق بات کمکی
-# ══════════════════════════════════════════════════════════════════════════════
-
-def send_najwa_message(chat_id: int, owner_id: int, najwa_id: str, target_name: str) -> bool:
-    """
-    پیام نجوا با دکمه inline رو از طریق بات کمکی می‌فرسته.
-    سلف‌بات این تابع رو صدا می‌زنه — بات رسمی دکمه رو ارسال می‌کنه.
-    Returns True اگه موفق بود، False در غیر این صورت.
-    """
-    if not _bot:
-        return False
-    try:
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(
-            text=f"📨 مشاهده نجوا — فقط برای {target_name}",
-            callback_data=f"najwa:{owner_id}:{najwa_id}"
-        ))
-        _bot.send_message(
-            chat_id,
-            f"📬 یک نجوا برای <b>{target_name}</b> ارسال شد",
-            reply_markup=markup,
-            parse_mode="HTML"
-        )
-        return True
-    except Exception as e:
-        print(f"⚠️ send_najwa_message خطا: {e}")
-        return False
-
-
 def _check_membership_cached(user_id):
     cache_key = f"membership_{user_id}"
     cached = cache.get(cache_key)
@@ -3301,38 +3271,6 @@ def start_token_bot():
         except Exception as e:
             print(f"❌ خطا در callback_check_missions: {e}")
             _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # 📨 نجوا — هندلر دکمه (بات کمکی)
-    # ══════════════════════════════════════════════════════════════════════════
-    @_bot.callback_query_handler(func=lambda call: call.data.startswith("najwa:"))
-    def callback_najwa(call):
-        try:
-            # فرمت: najwa:{owner_id}:{najwa_id}
-            parts = call.data.split(":", 2)
-            if len(parts) != 3:
-                return _bot.answer_callback_query(call.id, "❌ نجوای نامعتبر", show_alert=True)
-
-            from bot import _najwa_get
-            owner_id = int(parts[1])
-            najwa_id = parts[2]
-            najwa = _najwa_get(owner_id, najwa_id)
-
-            if not najwa:
-                return _bot.answer_callback_query(call.id, "⏳ این نجوا منقضی شده (بیش از ۱۲ ساعت)", show_alert=True)
-
-            # فقط کاربر هدف می‌تونه ببینه
-            if call.from_user.id != najwa["target_id"]:
-                return _bot.answer_callback_query(call.id, "🔒 این نجوا برای شما نیست", show_alert=True)
-
-            _bot.answer_callback_query(call.id, f"📨 نجوا:\n\n{najwa['text']}", show_alert=True)
-
-        except Exception as e:
-            print(f"❌ خطا در callback_najwa: {e}")
-            try:
-                _bot.answer_callback_query(call.id, "❌ خطا در دریافت نجوا", show_alert=True)
-            except Exception:
-                pass
 
     # ══════════════════════════════════════════════════════════════════════════
     # ✅ پیام‌های ناشناخته
