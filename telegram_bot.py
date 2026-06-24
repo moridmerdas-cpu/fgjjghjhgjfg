@@ -1277,7 +1277,79 @@ def start_token_bot():
                 pass
             _bot.reply_to(message, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
 
-    # ── مرحله ۲ & ۳: کیپد (code / 2fa / pw) ────────────────────────────────
+    # ── مرحله ۲fa: دریافت رمز دومرحله‌ای به صورت متن ────────────────────────
+    @_bot.message_handler(
+        func=lambda m: m.chat.type == "private"
+        and m.from_user.id in _reg_sessions
+        and _reg_sessions[m.from_user.id].get("step") == "2fa"
+        and not _reg_expired(m.from_user.id)
+    )
+    def handle_reg_2fa_text(message):
+        tg_id = message.from_user.id
+        session = _reg_sessions[tg_id]
+        password = message.text.strip()
+
+        if not password:
+            _bot.reply_to(message, "❗ رمز نمی‌تواند خالی باشد. دوباره تایپ کنید:")
+            return
+
+        try:
+            _bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            pass
+
+        wait_msg = _bot.send_message(tg_id, "⏳ در حال تأیید رمز دو مرحله‌ای...")
+
+        try:
+            from telethon import TelegramClient
+            from telethon.sessions import StringSession
+
+            partial_sess = session["partial_session"]
+
+            async def _verify_2fa():
+                cl = TelegramClient(StringSession(partial_sess), config.API_ID, config.API_HASH)
+                await cl.connect()
+                await cl.sign_in(password=password)
+                me = await cl.get_me()
+                sess = cl.session.save()
+                await cl.disconnect()
+                return sess, me
+
+            sess, me = _run_tg(_verify_2fa())
+            session["saved_session"] = sess
+            session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
+            session["step"] = "pw"
+            session["digits"] = ""
+            session["expires"] = time.time() + _REG_TIMEOUT
+
+            try:
+                _bot.delete_message(tg_id, wait_msg.message_id)
+            except Exception:
+                pass
+
+            sent = _bot.send_message(
+                tg_id,
+                "✅ رمز دو مرحله‌ای تأیید شد!\n\n"
+                "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
+                "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
+                f"(حداقل ۴ رقم)\n\n"
+                f"<code>{_kp_display('', 'pw')}</code>",
+                reply_markup=_kp_markup("", "pw"),
+            )
+            session["msg_id"] = sent.message_id
+
+        except Exception as e:
+            try:
+                _bot.delete_message(tg_id, wait_msg.message_id)
+            except Exception:
+                pass
+            session["digits"] = ""
+            _bot.send_message(
+                tg_id,
+                "❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره رمز را تایپ کنید و بفرستید:",
+            )
+
+    # ── مرحله ۲ & ۳: کیپد (code / pw) ──────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("reg_kp_"))
     def callback_reg_kp(call):
         tg_id = call.from_user.id
@@ -1395,11 +1467,9 @@ def start_token_bot():
                             _bot.edit_message_text(
                                 "🔒 <b>رمز دو مرحله‌ای</b>\n\n"
                                 "حساب شما رمز دو مرحله‌ای دارد.\n"
-                                "آن را با کیپد وارد کنید:\n\n"
-                                f"<code>{_kp_display('', '2fa')}</code>",
+                                "رمز را تایپ کنید و بفرستید:",
                                 chat_id=call.message.chat.id,
                                 message_id=call.message.message_id,
-                                reply_markup=_kp_markup("", "2fa"),
                             )
                         except Exception:
                             pass
@@ -1483,11 +1553,9 @@ def start_token_bot():
                 except Exception as e:
                     session["digits"] = ""
                     try:
-                        _bot.edit_message_text(
-                            f"❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره وارد کنید:\n\n<code>{_kp_display('', '2fa')}</code>",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=_kp_markup("", "2fa"),
+                        _bot.send_message(
+                            call.message.chat.id,
+                            "❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره رمز را تایپ کنید و بفرستید:",
                         )
                     except Exception:
                         pass
