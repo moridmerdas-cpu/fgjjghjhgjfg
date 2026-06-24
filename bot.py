@@ -398,6 +398,42 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
+        # ✅ جوین اجباری (فقط پیوی)
+        if event.is_private and db.get_setting(owner_id, "force_join_active") == "1":
+            channel_id = db.get_setting(owner_id, "force_join_channel", "")
+            if channel_id:
+                is_member = False
+                try:
+                    from telethon.tl.functions.channels import GetParticipantRequest
+                    from telethon.errors import UserNotParticipantError, ChannelPrivateError
+                    try:
+                        channel_entity = await cl.get_entity(int(channel_id) if channel_id.lstrip("-").isdigit() else channel_id)
+                        await cl(GetParticipantRequest(channel_entity, sender_id))
+                        is_member = True
+                    except (UserNotParticipantError, KeyError):
+                        is_member = False
+                    except ChannelPrivateError:
+                        is_member = True  # کانال خصوصی — نمی‌تونیم چک کنیم، رد می‌کنیم
+                    except Exception:
+                        is_member = True  # خطای ناشناخته — رد می‌کنیم تا اشتباهاً بلاک نشه
+                except Exception:
+                    is_member = True
+
+                if not is_member:
+                    # پیام رو حذف کن
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                    # پیام هشدار بفرست
+                    join_msg = db.get_setting(owner_id, "force_join_message",
+                        "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
+                    try:
+                        await cl.send_message(sender_id, join_msg)
+                    except Exception:
+                        pass
+                    return
+
         # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت)
         if db.get_setting(owner_id, "secretary_active") == "1" and event.is_private:
             now = time.time()
@@ -509,6 +545,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "حذف بعد ",
             "سیو کانال", "توقف سیو",
             "آخرین بازدید ", "اخرین بازدید ", "گروه های ", "گروه‌های ",
+            "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
+            "پیام جوین ",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -771,16 +809,18 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     # ─── اسپم ────────────────────────────────────────────────────────────────
     elif text.startswith("اسپم "):
+        # فرمت دقیق: "اسپم [عدد] [متن]"
+        # اگه دقیقاً این فرمت نباشه (مثلاً "اسپمش کردم") جوابی نده
         parts = text.split(" ", 2)
-        if len(parts) >= 3 and parts[1].isdigit():
-            count = min(int(parts[1]), 50)
+        if len(parts) >= 3 and parts[1].isdigit() and len(parts[2].strip()) > 0:
+            count = int(parts[1])          # نامحدود — هر عددی قبول می‌شه
             spam_text = parts[2]
             ss("spam_active", "1")
-            await edit(f"💣 اسپم شروع شد — {count} بار")
+            label = f"{count} بار" if count <= 9999 else "نامحدود"
+            await edit(f"💣 اسپم شروع شد — {label}\nبرای توقف: توقف اسپم")
             chat = await event.get_chat()
             asyncio.ensure_future(_do_spam(cl, owner_id, chat.id, spam_text, count))
-        else:
-            await edit("❗ فرمت: اسپم [تعداد] [متن]")
+        # اگه فرمت درست نیست → هیچ کاری نکن (بی‌صدا)
     elif text == "توقف اسپم":
         ss("spam_active", "0"); await edit("🛑 اسپم متوقف شد.")
 
@@ -857,6 +897,59 @@ async def _handle_command(cl, event, text, owner_id, entry):
             target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
         await edit(await _get_currency_text(target))
 
+    # ─── جوین اجباری ─────────────────────────────────────────────────────────
+    elif text.startswith("تنظیم کانال "):
+        channel_raw = text[len("تنظیم کانال "):].strip()
+        if not channel_raw:
+            await edit("❗ فرمت: تنظیم کانال [آیدی یا @یوزرنیم]")
+        else:
+            # نرمال‌سازی: آیدی عددی یا @username
+            channel_input = channel_raw
+            try:
+                entity = await cl.get_entity(
+                    int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
+                    if channel_input.lstrip("-").isdigit() else channel_input
+                )
+                # ذخیره آیدی عددی برای دقت بیشتر
+                real_id = str(entity.id)
+                title = getattr(entity, "title", channel_input)
+                ss("force_join_channel", real_id)
+                ss("force_join_active", "1")
+                await edit(
+                    f"✅ کانال جوین اجباری تنظیم شد:\n"
+                    f"📢 {title} (ID: {real_id})\n\n"
+                    f"💡 دستورات:\n"
+                    f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
+                    f"> `پیام جوین [متن]` — تغییر پیام هشدار"
+                )
+            except Exception as e:
+                await edit(f"❌ کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
+
+    elif text == "حذف کانال اجباری":
+        ss("force_join_channel", "")
+        ss("force_join_active", "0")
+        await edit("🗑️ کانال جوین اجباری حذف شد.")
+
+    elif text == "جوین اجباری روشن":
+        channel_id = gs("force_join_channel", "")
+        if not channel_id:
+            await edit("❗ اول کانال رو تنظیم کن: `تنظیم کانال [آیدی]`")
+        else:
+            ss("force_join_active", "1")
+            await edit("✅ جوین اجباری روشن شد.")
+
+    elif text == "جوین اجباری خاموش":
+        ss("force_join_active", "0")
+        await edit("❌ جوین اجباری خاموش شد.")
+
+    elif text.startswith("پیام جوین "):
+        new_msg = text[len("پیام جوین "):].strip()
+        if not new_msg:
+            await edit("❗ فرمت: پیام جوین [متن پیام]")
+        else:
+            ss("force_join_message", new_msg)
+            await edit(f"✅ پیام جوین اجباری تنظیم شد:\n\n{new_msg}")
+
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
         status_map = {
@@ -865,7 +958,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "auto_seen_active": "سین خودکار", "auto_reaction_active": "ری‌اکشن",
             "private_lock_active": "قفل پیوی", "enemy_reply_active": "پاسخ دشمن",
             "auto_save_media": "ذخیره مدیا", "clock_name_active": "ساعت نام",
-            "clock_bio_active": "ساعت بیو",
+            "clock_bio_active": "ساعت بیو", "force_join_active": "جوین اجباری",
         }
         lines = [f"📊 وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
         for key, label in status_map.items():
@@ -874,6 +967,9 @@ async def _handle_command(cl, event, text, owner_id, entry):
         lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
         lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto','0')=='1' else '❌ خاموش'}")
         lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
+        fj_ch = gs("force_join_channel", "")
+        if fj_ch:
+            lines.append(f"📢 کانال جوین اجباری: {fj_ch}")
         lines.append(f"👥 دشمن: {len(db.get_enemies(owner_id))} نفر")
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
@@ -1080,12 +1176,17 @@ async def _resolve_target(event, parts):
 
 
 async def _do_spam(cl, owner_id, chat_id, text, count):
-    delay = float(db.get_setting(owner_id, "spam_delay", "2"))
-    for _ in range(count):
+    # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
+    delay = float(db.get_setting(owner_id, "spam_delay", "1"))
+    sent = 0
+    while True:
         if db.get_setting(owner_id, "spam_active") != "1":
+            break
+        if sent >= count:
             break
         try:
             await cl.send_message(chat_id, text)
+            sent += 1
             await asyncio.sleep(delay)
         except FloodWaitError as e:
             await asyncio.sleep(e.seconds + 1)
@@ -1364,6 +1465,14 @@ def _help_text():
             "پاسخ دشمن روشن",
             "پاسخ دشمن خاموش",
         ]),
+        ("🔹 جوین اجباری", [
+            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال و روشن کردن",
+            "جوین اجباری روشن",
+            "جوین اجباری خاموش",
+            "حذف کانال اجباری  ← حذف و خاموش کردن",
+            "پیام جوین [متن]  ← تغییر پیام هشدار به کاربر",
+            "💡 پیام کاربران عضو‌نشده حذف می‌شه و هشدار می‌گیرن",
+        ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
             "سین خودکار خاموش",
@@ -1384,8 +1493,9 @@ def _help_text():
             "ارز دلار / ارز تتر / ارز یورو / ارز پوند / ارز بیت کوین",
         ]),
         ("🔹 اسپم", [
-            "اسپم [تعداد] [متن]",
+            "اسپم [تعداد] [متن]  ← مثال: اسپم 100 سلام",
             "توقف اسپم",
+            "💡 تعداد نامحدود — فرمت باید دقیق باشه",
         ]),
         ("🔹 پیام", [
             "ذخیره [1-10]  ← ریپلای",
