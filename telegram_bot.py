@@ -130,27 +130,28 @@ def _run_tg(coro):
 def _kp_markup(digits, mode="code"):
     prefix = f"reg_kp_{mode}_"
     markup = types.InlineKeyboardMarkup(row_width=3)
+    # ✅ دکمه‌های اعداد با رنگ primary (آبی)
     markup.add(
-        types.InlineKeyboardButton("1", callback_data=f"{prefix}1"),
-        types.InlineKeyboardButton("2", callback_data=f"{prefix}2"),
-        types.InlineKeyboardButton("3", callback_data=f"{prefix}3"),
+        types.InlineKeyboardButton("1", callback_data=f"{prefix}1", style="primary"),
+        types.InlineKeyboardButton("2", callback_data=f"{prefix}2", style="primary"),
+        types.InlineKeyboardButton("3", callback_data=f"{prefix}3", style="primary"),
     )
     markup.add(
-        types.InlineKeyboardButton("4", callback_data=f"{prefix}4"),
-        types.InlineKeyboardButton("5", callback_data=f"{prefix}5"),
-        types.InlineKeyboardButton("6", callback_data=f"{prefix}6"),
+        types.InlineKeyboardButton("4", callback_data=f"{prefix}4", style="primary"),
+        types.InlineKeyboardButton("5", callback_data=f"{prefix}5", style="primary"),
+        types.InlineKeyboardButton("6", callback_data=f"{prefix}6", style="primary"),
     )
     markup.add(
-        types.InlineKeyboardButton("7", callback_data=f"{prefix}7"),
-        types.InlineKeyboardButton("8", callback_data=f"{prefix}8"),
-        types.InlineKeyboardButton("9", callback_data=f"{prefix}9"),
+        types.InlineKeyboardButton("7", callback_data=f"{prefix}7", style="primary"),
+        types.InlineKeyboardButton("8", callback_data=f"{prefix}8", style="primary"),
+        types.InlineKeyboardButton("9", callback_data=f"{prefix}9", style="primary"),
     )
     markup.add(
-        types.InlineKeyboardButton("⬅️", callback_data=f"{prefix}del"),
-        types.InlineKeyboardButton("0", callback_data=f"{prefix}0"),
-        types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm"),
+        types.InlineKeyboardButton("⬅️", callback_data=f"{prefix}del", style="danger"),  # 🔴 قرمز
+        types.InlineKeyboardButton("0", callback_data=f"{prefix}0", style="primary"),   # 🔵 آبی
+        types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm", style="success"),  # 🟢 سبز
     )
-    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel"))
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger"))  # 🔴 قرمز
     return markup
 
 
@@ -229,8 +230,10 @@ def start_token_bot():
         markup = types.InlineKeyboardMarkup(row_width=1)
         for ch in missing_channels:
             ch_clean = ch.lstrip("@")
-            markup.add(types.InlineKeyboardButton(f"📢 عضویت در {ch}", url=f"https://t.me/{ch_clean}"))
-        markup.add(types.InlineKeyboardButton("✅ بررسی عضویت من", callback_data="check_join"))
+            # 🟢 دکمه عضویت با رنگ primary (آبی)
+            markup.add(types.InlineKeyboardButton(f"📢 عضویت در {ch}", url=f"https://t.me/{ch_clean}", style="primary"))
+        # 🟢 دکمه بررسی با رنگ success (سبز)
+        markup.add(types.InlineKeyboardButton("✅ بررسی عضویت من", callback_data="check_join", style="success"))
         
         channels_list = "\n".join([f"🔸 {ch}" for ch in missing_channels])
         _bot.reply_to(
@@ -251,43 +254,67 @@ def start_token_bot():
         return True
 
     def _user_keyboard():
+        # ✅ دکمه‌های پایین صفحه با رنگ‌های مناسب
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        markup.add("💎 موجودی", "🎁 هدیه روزانه")
-        markup.add("🔗 رفرال", "🛒 خرید الماس")
-        markup.add("🎯 ماموریت‌ها")
+        markup.add(
+            types.KeyboardButton("💎 موجودی", style="primary"),      # 🔵 آبی
+            types.KeyboardButton("🎁 هدیه روزانه", style="success")  # 🟢 سبز
+        )
+        markup.add(
+            types.KeyboardButton("🔗 رفرال", style="primary"),        # 🔵 آبی
+            types.KeyboardButton("🛒 خرید الماس", style="success")   # 🟢 سبز
+        )
+        markup.add(
+            types.KeyboardButton("🎯 ماموریت‌ها", style="primary")    # 🔵 آبی
+        )
         return markup
 
     def _owner_keyboard():
+        # ✅ دکمه‌های پایین صفحه مخصوص ادمین
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        markup.add("💎 موجودی", "🎁 هدیه روزانه")
-        markup.add("🔗 رفرال", "🛒 خرید الماس")
-        markup.add("🎯 ماموریت‌ها", "📢 مدیریت")
+        markup.add(
+            types.KeyboardButton("💎 موجودی", style="primary"),      # 🔵 آبی
+            types.KeyboardButton("🎁 هدیه روزانه", style="success")  # 🟢 سبز
+        )
+        markup.add(
+            types.KeyboardButton("🔗 رفرال", style="primary"),        # 🔵 آبی
+            types.KeyboardButton("🛒 خرید الماس", style="success")   # 🟢 سبز
+        )
+        markup.add(
+            types.KeyboardButton("🎯 ماموریت‌ها", style="primary"),  # 🔵 آبی
+            types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
+        )
         return markup
 
     def _admin_panel_keyboard():
+        # ✅ دکمه‌های شیشه‌ای پنل مدیریت
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("📢 چنل‌های اجباری", callback_data="admin_channels"),
-            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users")
+            types.InlineKeyboardButton("📢 چنل‌های اجباری", callback_data="admin_channels", style="primary"),   # 🔵 آبی
+            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary")              # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("🏆 جام جهانی", callback_data="admin_wc"),
-            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games")
+            types.InlineKeyboardButton("🏆 جام جهانی", callback_data="admin_wc", style="success"),              # 🟢 سبز
+            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("💎 انتقال الماس", callback_data="admin_transfer"),
-            types.InlineKeyboardButton("💰 دادن الماس", callback_data="admin_give")
+            types.InlineKeyboardButton("💎 انتقال الماس", callback_data="admin_transfer", style="primary"),    # 🔵 آبی
+            types.InlineKeyboardButton("💰 دادن الماس", callback_data="admin_give", style="success")           # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card"),
-            types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments")
+            types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card", style="primary"), # 🔵 آبی
+            types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments", style="danger")   # 🔴 قرمز
         )
         markup.add(
-            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast"),
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions")
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
         )
-        markup.add(types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants"))
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+        markup.add(
+            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
+        )
+        markup.add(
+            types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
+        )
         return markup
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -352,10 +379,12 @@ def start_token_bot():
             payout = round(amount * 2 * (1 - BET_TAX))
 
             markup = types.InlineKeyboardMarkup()
+            # 🟢 دکمه ورود به شرط‌بندی با رنگ success (سبز)
             markup.add(
                 types.InlineKeyboardButton(
                     "⚔️ ورود به شرط‌بندی",
-                    callback_data=f"join_bet_{bet_id}"
+                    callback_data=f"join_bet_{bet_id}",
+                    style="success"  # 🟢 سبز
                 )
             )
 
@@ -718,10 +747,17 @@ def start_token_bot():
         min_bet = getattr(config, "WC_MIN_BET", 10)
         max_bet = getattr(config, "WC_MAX_BET", 5000)
         markup = types.InlineKeyboardMarkup(row_width=1)
+        # 🔵 دکمه تیم اول با رنگ primary (آبی)
         markup.add(
-            types.InlineKeyboardButton(f"🔵 {team1}", callback_data=f"wc_pick_{challenge_id}_team1"),
-            types.InlineKeyboardButton("🤝 مساوی",    callback_data=f"wc_pick_{challenge_id}_draw"),
-            types.InlineKeyboardButton(f"🔴 {team2}", callback_data=f"wc_pick_{challenge_id}_team2"),
+            types.InlineKeyboardButton(f"🔵 {team1}", callback_data=f"wc_pick_{challenge_id}_team1", style="primary")
+        )
+        # 🟢 دکمه مساوی با رنگ success (سبز)
+        markup.add(
+            types.InlineKeyboardButton("🤝 مساوی", callback_data=f"wc_pick_{challenge_id}_draw", style="success")
+        )
+        # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
+        markup.add(
+            types.InlineKeyboardButton(f"🔴 {team2}", callback_data=f"wc_pick_{challenge_id}_team2", style="danger")
         )
         now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
         text = (
@@ -1078,9 +1114,11 @@ def start_token_bot():
                 return  # هنوز فعاله
             site_url = getattr(config, "SITE_URL", "")
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond"))
+            # 🟢 دکمه تمدید با رنگ success (سبز)
+            markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
             if site_url:
-                markup.add(types.InlineKeyboardButton("🌐 پنل وب", url=site_url))
+                # 🔵 دکمه وب‌سایت با رنگ primary (آبی)
+                markup.add(types.InlineKeyboardButton("🌐 پنل وب", url=site_url, style="primary"))
             try:
                 _bot.send_message(
                     tg_id,
@@ -1122,14 +1160,15 @@ def start_token_bot():
                 exp = row["expires_at"]
                 remaining = _remaining_str(exp)
                 try:
+                    markup = types.InlineKeyboardMarkup()
+                    # 🟢 دکمه تمدید با رنگ success (سبز)
+                    markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
                     _bot.send_message(
                         tg_id,
                         f"⚠️ <b>اشتراک شما در حال انقضاست!</b>\n\n"
                         f"⏰ باقی‌مانده: <b>{remaining}</b>\n\n"
                         f"برای تمدید همین الان اقدام کنید 👇",
-                        reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond")
-                        )
+                        reply_markup=markup
                     )
                     execute_query(
                         "UPDATE amel_subscriptions SET status='notified' WHERE owner_id=%s",
@@ -1157,6 +1196,7 @@ def start_token_bot():
         }
         _bot.answer_callback_query(call.id)
         try:
+            # 🔴 دکمه لغو با رنگ danger (قرمز)
             _bot.edit_message_text(
                 "📱 <b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
                 "شماره تلفن خود را با کد کشور وارد کنید:\n"
@@ -1165,7 +1205,7 @@ def start_token_bot():
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel")
+                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger")  # 🔴 قرمز
                 ),
             )
         except Exception:
@@ -1539,7 +1579,8 @@ def start_token_bot():
                 site_url = getattr(config, "SITE_URL", "")
                 markup_done = types.InlineKeyboardMarkup()
                 if site_url:
-                    markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url))
+                    # 🔵 دکمه ورود با رنگ primary (آبی)
+                    markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
 
                 try:
                     _bot.edit_message_text(
@@ -1633,9 +1674,10 @@ def start_token_bot():
                 return _bot.answer_callback_query(call.id, "⚠️ سلف فعالی برای حذف وجود ندارد.", show_alert=True)
 
             markup = types.InlineKeyboardMarkup(row_width=2)
+            # 🟢 دکمه تأیید با رنگ success (سبز)
             markup.add(
-                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes"),
-                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no"),
+                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
+                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
             )
             _bot.answer_callback_query(call.id)
             try:
@@ -1678,7 +1720,8 @@ def start_token_bot():
             cache.invalidate(f"account_{call.from_user.id}")
 
             markup = types.InlineKeyboardMarkup(row_width=1)
-            markup.add(types.InlineKeyboardButton("🤖 وصل کردن دوباره سلف", callback_data="reg_start"))
+            # 🟢 دکمه وصل کردن مجدد با رنگ success (سبز)
+            markup.add(types.InlineKeyboardButton("🤖 وصل کردن دوباره سلف", callback_data="reg_start", style="success"))
 
             try:
                 _bot.edit_message_text(
@@ -1731,11 +1774,13 @@ def start_token_bot():
                         pass
 
                 markup = types.InlineKeyboardMarkup(row_width=1)
+                # 🟢 دکمه ساخت اکانت با ربات با رنگ success (سبز)
                 markup.add(
-                    types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start"),
+                    types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start", style="success")
                 )
                 if site_url:
-                    markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register"))
+                    # 🔵 دکمه ساخت با وب‌سایت با رنگ primary (آبی)
+                    markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"))
                 _bot.reply_to(
                     message,
                     "👋 <b>سلام!</b>\n\n"
@@ -1791,7 +1836,8 @@ def start_token_bot():
             # ── دکمه حذف سلف (در صورت لاگین بودن سلف) ───────────────────────
             if message.chat.type == 'private' and db.get_setting(account["id"], "logged_in", "0") == "1":
                 self_markup = types.InlineKeyboardMarkup()
-                self_markup.add(types.InlineKeyboardButton("🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask"))
+                # 🔴 دکمه حذف سلف با رنگ danger (قرمز)
+                self_markup.add(types.InlineKeyboardButton("🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
                 try:
                     _bot.send_message(
                         message.chat.id,
@@ -1935,21 +1981,31 @@ def start_token_bot():
 
     def _purchase_main_keyboard():
         markup = types.InlineKeyboardMarkup(row_width=1)
+        # 🟢 دکمه‌های خرید با رنگ success (سبز)
         markup.add(
-            types.InlineKeyboardButton("💎 خرید اشتراک با الماس",   callback_data="pur_sub_diamond"),
-            types.InlineKeyboardButton("💳 خرید اشتراک با کارت",    callback_data="pur_sub_card"),
-            types.InlineKeyboardButton("🛍 خرید الماس",              callback_data="pur_buy_diamond"),
+            types.InlineKeyboardButton("💎 خرید اشتراک با الماس", callback_data="pur_sub_diamond", style="success"),
+        )
+        # 🔵 دکمه‌های خرید با کارت با رنگ primary (آبی)
+        markup.add(
+            types.InlineKeyboardButton("💳 خرید اشتراک با کارت", callback_data="pur_sub_card", style="primary"),
+        )
+        # 🟢 دکمه خرید الماس با رنگ success (سبز)
+        markup.add(
+            types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"),
         )
         return markup
 
     def _plans_keyboard(prefix: str):
         markup = types.InlineKeyboardMarkup(row_width=1)
         for key, p in PLANS.items():
+            # 🔵 دکمه‌های پلن با رنگ primary (آبی)
             markup.add(types.InlineKeyboardButton(
                 f"{p['fa']} — {p['toman']:,} تومان / {p['diamonds']} الماس",
-                callback_data=f"{prefix}_{key}"
+                callback_data=f"{prefix}_{key}",
+                style="primary"
             ))
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back"))
+        # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
         return markup
 
     @_bot.message_handler(func=lambda m: m.text and m.text.strip() in ("🛒 خرید الماس", "🛒 خرید"), chat_types=['private'])
@@ -2011,6 +2067,11 @@ def start_token_bot():
                 cost = plan["diamonds"]
                 if balance < cost:
                     need = cost - balance
+                    markup = types.InlineKeyboardMarkup()
+                    # 🟢 دکمه خرید الماس با رنگ success (سبز)
+                    markup.add(types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"))
+                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_diamond", style="danger"))
                     return _bot.edit_message_text(
                         f"❌ <b>موجودی کافی نیست!</b>\n\n"
                         f"💎 موجودی: {balance} الماس\n"
@@ -2021,10 +2082,7 @@ def start_token_bot():
                         f"• دعوت دوستان 🔗\n"
                         f"• خرید الماس 🛍",
                         chat_id=call.message.chat.id, message_id=call.message.message_id,
-                        reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond"),
-                            types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_diamond")
-                        )
+                        reply_markup=markup
                     )
                 # کسر الماس و فعال‌سازی
                 db.deduct_tokens(account["id"], cost)
@@ -2058,6 +2116,9 @@ def start_token_bot():
                     plan=plan_key, toman_amount=plan["toman"]
                 )
                 _purchase_states[tg_id] = {"step": "waiting_receipt_sub", "payment_id": payment_id}
+                markup = types.InlineKeyboardMarkup()
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_card", style="danger"))
                 _bot.edit_message_text(
                     f"💳 <b>پرداخت اشتراک {plan['fa']}</b>\n\n"
                     f"💰 مبلغ: <b>{plan['toman']:,} تومان</b>\n"
@@ -2065,9 +2126,7 @@ def start_token_bot():
                     f"👤 به نام: <b>غفاری</b>\n\n"
                     f"بعد از واریز، تصویر رسید را ارسال کنید 👇",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
-                    reply_markup=types.InlineKeyboardMarkup().add(
-                        types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_card")
-                    )
+                    reply_markup=markup
                 )
                 _bot.answer_callback_query(call.id)
 
@@ -2075,6 +2134,9 @@ def start_token_bot():
             elif data == "pur_buy_diamond":
                 card = _get_card_number()
                 _purchase_states[tg_id] = {"step": "waiting_diamond_amount"}
+                markup = types.InlineKeyboardMarkup()
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
                 _bot.edit_message_text(
                     f"🛍 <b>خرید الماس</b>\n\n"
                     f"💎 نرخ: هر ۱۰۰ الماس = <b>{100 * DIAMOND_RATE:,} تومان</b>\n"
@@ -2082,9 +2144,7 @@ def start_token_bot():
                     f"چه تعداد الماس می‌خوای؟ (عدد بنویس)\n"
                     f"مثال: <code>200</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
-                    reply_markup=types.InlineKeyboardMarkup().add(
-                        types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back")
-                    )
+                    reply_markup=markup
                 )
                 _bot.answer_callback_query(call.id)
 
@@ -2129,11 +2189,12 @@ def start_token_bot():
                             )
                         except Exception: pass
 
+                    # 🟢 دکمه تأیید با رنگ success (سبز)
                     _bot.edit_message_reply_markup(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("✅ تأیید شد", callback_data="noop")
+                            types.InlineKeyboardButton("✅ تأیید شد", callback_data="noop", style="success")
                         )
                     )
                     _bot.answer_callback_query(call.id, "✅ پرداخت تأیید شد!", show_alert=True)
@@ -2146,11 +2207,12 @@ def start_token_bot():
                             "❌ <b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید."
                         )
                     except Exception: pass
+                    # 🔴 دکمه رد با رنگ danger (قرمز)
                     _bot.edit_message_reply_markup(
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("❌ رد شد", callback_data="noop")
+                            types.InlineKeyboardButton("❌ رد شد", callback_data="noop", style="danger")
                         )
                     )
                     _bot.answer_callback_query(call.id, "❌ پرداخت رد شد", show_alert=True)
@@ -2191,15 +2253,16 @@ def start_token_bot():
                     diamond_amount=amount, toman_amount=toman
                 )
                 _purchase_states[tg_id] = {"step": "waiting_receipt_diamond", "payment_id": payment_id}
+                markup = types.InlineKeyboardMarkup()
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="pur_back", style="danger"))
                 _bot.reply_to(message,
                     f"🛍 <b>خرید {amount} الماس</b>\n\n"
                     f"💰 مبلغ: <b>{toman:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
                     f"👤 به نام: <b>غفاری</b>\n\n"
                     f"بعد از واریز، تصویر رسید را ارسال کنید 👇",
-                    reply_markup=types.InlineKeyboardMarkup().add(
-                        types.InlineKeyboardButton("❌ لغو", callback_data="pur_back")
-                    )
+                    reply_markup=markup
                 )
 
             # ── کاربر رسید فرستاد ────────────────────────────────────────
@@ -2238,9 +2301,13 @@ def start_token_bot():
                     f"🔢 شناسه پرداخت: <code>{payment_id}</code>"
                 )
                 admin_markup = types.InlineKeyboardMarkup(row_width=2)
+                # 🟢 دکمه تأیید با رنگ success (سبز)
                 admin_markup.add(
-                    types.InlineKeyboardButton("✅ تأیید", callback_data=f"pur_approve_{payment_id}"),
-                    types.InlineKeyboardButton("❌ رد",   callback_data=f"pur_reject_{payment_id}")
+                    types.InlineKeyboardButton("✅ تأیید", callback_data=f"pur_approve_{payment_id}", style="success"),
+                )
+                # 🔴 دکمه رد با رنگ danger (قرمز)
+                admin_markup.add(
+                    types.InlineKeyboardButton("❌ رد", callback_data=f"pur_reject_{payment_id}", style="danger")
                 )
                 try:
                     admin_msg = _bot.send_photo(
@@ -2302,12 +2369,15 @@ def start_token_bot():
                     for ch in channels:
                         text += f"🔸 <code>{ch}</code>\n"
                         ch_clean = ch.lstrip("@")
-                        markup.add(types.InlineKeyboardButton(f"❌ حذف {ch}", callback_data=f"rmch_{ch_clean}"))
+                        # 🔴 دکمه حذف با رنگ danger (قرمز)
+                        markup.add(types.InlineKeyboardButton(f"❌ حذف {ch}", callback_data=f"rmch_{ch_clean}", style="danger"))
                 else:
                     text = "📋 لیست چنل‌ها خالی است.\n\n"
                 text += "\nبرای افزودن چنل جدید از دکمه زیر استفاده کنید:"
-                markup.add(types.InlineKeyboardButton("➕ افزودن چنل جدید", callback_data="addch_prompt"))
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                # 🟢 دکمه افزودن با رنگ success (سبز)
+                markup.add(types.InlineKeyboardButton("➕ افزودن چنل جدید", callback_data="addch_prompt", style="success"))
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
@@ -2333,7 +2403,8 @@ def start_token_bot():
             elif data == "addch_prompt":
                 _owner_states[call.from_user.id] = {"state": "waiting_channel"}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "📝 آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id,
@@ -2354,7 +2425,8 @@ def start_token_bot():
                         lines.append(f"• <b>{acc['username']}</b> — 💎{bal}")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
@@ -2366,9 +2438,12 @@ def start_token_bot():
             
             elif data == "admin_wc":
                 markup = types.InlineKeyboardMarkup(row_width=1)
-                markup.add(types.InlineKeyboardButton("➕ ایجاد چالش جدید", callback_data="wc_new"))
-                markup.add(types.InlineKeyboardButton("📋 چالش‌های فعال", callback_data="wc_list"))
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                # 🟢 دکمه ایجاد چالش با رنگ success (سبز)
+                markup.add(types.InlineKeyboardButton("➕ ایجاد چالش جدید", callback_data="wc_new", style="success"))
+                # 🔵 دکمه چالش‌های فعال با رنگ primary (آبی)
+                markup.add(types.InlineKeyboardButton("📋 چالش‌های فعال", callback_data="wc_list", style="primary"))
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "🏆 <b>مدیریت چالش‌های جام جهانی</b>\n\nیک گزینه را انتخاب کنید:",
                     chat_id=call.message.chat.id,
@@ -2381,7 +2456,8 @@ def start_token_bot():
             elif data == "wc_new":
                 _owner_states[call.from_user.id] = {"state": "wc_team1", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc", style="danger"))
                 _bot.edit_message_text(
                     "🏆 <b>ایجاد چالش جدید</b>\n\n"
                     "📝 مرحله ۱ از ۴:\nنام <b>تیم اول</b> را ارسال کنید:\n\nمثال: <code>ایران</code>",
@@ -2397,18 +2473,21 @@ def start_token_bot():
                 if not challenges:
                     text = "📋 هیچ چالش فعالی وجود ندارد."
                     markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc"))
+                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc", style="danger"))
                 else:
                     text = "🏆 <b>چالش‌های فعال:</b>\n\n"
                     markup = types.InlineKeyboardMarkup(row_width=2)
                     for c in challenges:
                         text += f"<b>ID {c['id']}:</b> {c['team1']} vs {c['team2']}\n"
                         text += f"⏰ {c['match_time']} | 💎 {c['bet_amount']}\n\n"
+                        # 🟢 دکمه‌های تعیین برنده با رنگ success (سبز)
                         markup.add(
-                            types.InlineKeyboardButton(f"✅ {c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}"),
-                            types.InlineKeyboardButton(f"✅ {c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}")
+                            types.InlineKeyboardButton(f"✅ {c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}", style="success"),
+                            types.InlineKeyboardButton(f"✅ {c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}", style="success")
                         )
-                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc"))
+                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc", style="danger"))
                 _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
@@ -2449,7 +2528,8 @@ def start_token_bot():
                 if today_matches is None:
                     text = "❌ خطا در ارتباط با Football API.\nلاگ سرور را بررسی کنید."
                     markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     try:
                         _bot.edit_message_text(text, chat_id=call.message.chat.id,
                             message_id=call.message.message_id, reply_markup=markup)
@@ -2460,7 +2540,8 @@ def start_token_bot():
                 if not getattr(config, "FOOTBALL_API_KEY", ""):
                     text = "⚠️ FOOTBALL_API_KEY تنظیم نشده است."
                     markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
                     return
@@ -2468,7 +2549,8 @@ def start_token_bot():
                 if not today_matches:
                     text = "📭 امروز بازی‌ای ثبت نشده."
                     markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                    # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
                     return
@@ -2503,14 +2585,17 @@ def start_token_bot():
                     sent_icon = "📤" if already else "📨"
 
                     lines.append(f"{st} <b>{home}</b> vs <b>{away}</b> — ⏰{time_str}")
+                    # 🟢 دکمه ارسال چالش با رنگ success (سبز)
                     markup.add(
                         types.InlineKeyboardButton(
                             f"{sent_icon} ارسال چالش: {home} vs {away}",
-                            callback_data=f"wc_sendnow_{match_id}"
+                            callback_data=f"wc_sendnow_{match_id}",
+                            style="success"
                         )
                     )
 
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 text = "\n".join(lines)
 
                 try:
@@ -2573,7 +2658,8 @@ def start_token_bot():
             elif data == "admin_transfer":
                 _owner_states[call.from_user.id] = {"state": "transfer_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "💎 <b>انتقال الماس (از طرف سیستم)</b>\n\n"
                     "📝 یوزرنیم کاربر مقصد را ارسال کنید:\n\nمثال: <code>ali</code>",
@@ -2587,7 +2673,8 @@ def start_token_bot():
             elif data == "admin_give":
                 _owner_states[call.from_user.id] = {"state": "give_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "💰 <b>دادن الماس به کاربر</b>\n\n"
                     "📝 یوزرنیم کاربر را ارسال کنید:\n\nمثال: <code>ali</code>",
@@ -2602,7 +2689,8 @@ def start_token_bot():
                 cur_card = db.get_global_setting("card_number", "تنظیم نشده")
                 _owner_states[call.from_user.id] = {"state": "set_card"}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     f"💳 <b>تنظیم شماره کارت</b>\n\n"
                     f"کارت فعلی: <code>{cur_card}</code>\n\n"
@@ -2630,7 +2718,8 @@ def start_token_bot():
             elif data == "admin_broadcast":
                 _owner_states[call.from_user.id] = {"state": "broadcast_msg"}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     "📣 <b>ارسال پیام عمومی</b>\n\n"
                     "پیام خود را ارسال کنید (متن، عکس یا لینک):\n"
@@ -2653,7 +2742,8 @@ def start_token_bot():
                         lines.append(f"{i}. <b>{uname}</b> — 🎯{p['bet_count']} شرط | 💎{p['total_bet']} الماس")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -2666,11 +2756,14 @@ def start_token_bot():
                     text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
                         text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
-                        markup.add(types.InlineKeyboardButton(f"❌ حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}"))
+                        # 🔴 دکمه حذف با رنگ danger (قرمز)
+                        markup.add(types.InlineKeyboardButton(f"❌ حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}", style="danger"))
                 else:
                     text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
-                markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="add_mission_prompt"))
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel"))
+                # 🟢 دکمه افزودن ماموریت با رنگ success (سبز)
+                markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="add_mission_prompt", style="success"))
+                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -2687,7 +2780,8 @@ def start_token_bot():
             elif data == "add_mission_prompt":
                 _owner_states[call.from_user.id] = {"state": "mission_channel"}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions"))
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions", style="danger"))
                 _bot.edit_message_text(
                     "🎯 <b>افزودن ماموریت</b>\n\nآیدی کانال را ارسال کنید (با @):\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup
@@ -2774,9 +2868,13 @@ def start_token_bot():
                 
                 group = getattr(config, 'WORLD_CUP_GROUP', '@amelselfgap')
                 markup = types.InlineKeyboardMarkup(row_width=2)
+                # 🔵 دکمه تیم اول با رنگ primary (آبی)
                 markup.add(
-                    types.InlineKeyboardButton(f"🔵 {data['team1']}", callback_data=f"bet_wc_{challenge_id}_{data['team1']}"),
-                    types.InlineKeyboardButton(f"🔴 {data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}")
+                    types.InlineKeyboardButton(f"🔵 {data['team1']}", callback_data=f"bet_wc_{challenge_id}_{data['team1']}", style="primary")
+                )
+                # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
+                markup.add(
+                    types.InlineKeyboardButton(f"🔴 {data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}", style="danger")
                 )
                 
                 try:
@@ -2939,11 +3037,14 @@ def start_token_bot():
                 ch_clean = m["channel_username"].lstrip("@")
                 lines.append(f"{status} {m['channel_username']} — 💎{m['reward']} الماس")
                 if not done:
+                    # 🔵 دکمه عضویت با رنگ primary (آبی)
                     markup.add(types.InlineKeyboardButton(
                         f"🔗 عضویت در {m['channel_username']}",
-                        url=f"https://t.me/{ch_clean}"
+                        url=f"https://t.me/{ch_clean}",
+                        style="primary"
                     ))
-            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions"))
+            # 🟢 دکمه بررسی با رنگ success (سبز)
+            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
             _bot.reply_to(message, "\n".join(lines), reply_markup=markup)
         except Exception as e:
             print(f"❌ خطا در cmd_missions: {e}")
