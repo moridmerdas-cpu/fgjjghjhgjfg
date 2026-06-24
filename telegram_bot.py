@@ -272,7 +272,7 @@ def start_token_bot():
         )
         return markup
 
-    def _main_inline_keyboard():
+    def _main_inline_keyboard(account=None):
         # ✅ دکمه‌های اصلی کاربر به‌صورت InlineKeyboardButton
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
@@ -286,6 +286,16 @@ def start_token_bot():
         markup.add(
             types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary") # 🔵 آبی
         )
+        # ✅ اگر اکانت سلف دارد ولی سلف به اکانت تلگرامی فعلی وصل نیست، دکمه ورود دوباره نمایش داده می‌شود
+        if account is not None:
+            try:
+                is_logged_in = db.get_setting(account["id"], "logged_in", "0") == "1"
+            except Exception:
+                is_logged_in = True
+            if not is_logged_in:
+                markup.add(
+                    types.InlineKeyboardButton("🤖 ورود سلف با ربات", callback_data="reg_start", style="success")  # 🟢 سبز
+                )
         return markup
 
     def _admin_panel_keyboard():
@@ -1935,6 +1945,24 @@ def start_token_bot():
             # سلف رایگان برای کاربر جدید
             threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
 
+            # اگر سلف از اکانت حذف شده → دکمه وصل کردن دوباره نمایش بده
+            if message.chat.type == 'private':
+                is_logged_in = db.get_setting(account["id"], "logged_in", "0") == "1"
+                if not is_logged_in:
+                    kb_reconnect = types.InlineKeyboardMarkup(row_width=1)
+                    kb_reconnect.add(
+                        types.InlineKeyboardButton("🤖 وصل کردن سلف", callback_data="reg_start", style="success")
+                    )
+                    _bot.reply_to(
+                        message,
+                        f"👋 سلام <b>{account['username']}</b>!\n\n"
+                        "⚠️ <b>سلف شما به اکانت وصل نیست.</b>\n"
+                        "برای وصل کردن دوباره دکمه زیر را بزنید:",
+                        parse_mode="HTML",
+                        reply_markup=kb_reconnect
+                    )
+                    return
+
             stats = db.get_token_stats(account["id"])
             sub = db.get_subscription(account["id"])
 
@@ -1974,7 +2002,7 @@ def start_token_bot():
                 reply_markup=kb_markup
             )
             if message.chat.type == 'private':
-                _bot.send_message(message.chat.id, "📋 منوی اصلی:", reply_markup=_main_inline_keyboard())
+                _bot.send_message(message.chat.id, "📋 منوی اصلی:", reply_markup=_main_inline_keyboard(account))
 
             if message.chat.type == 'private':
                 sponsors = getattr(config, 'SPONSORS', [])
@@ -2038,7 +2066,7 @@ def start_token_bot():
                 f"📊 کل: <b>{stats['total_earned']}</b>\n"
                 f"👥 رفرال: <b>{ref_count}</b> نفر\n"
                 f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
-                reply_markup=_main_inline_keyboard())
+                reply_markup=_main_inline_keyboard(account))
         except Exception as e:
             print(f"❌ خطا در cmd_balance: {e}")
 
@@ -2060,7 +2088,7 @@ def start_token_bot():
                 f"📊 کل: <b>{stats['total_earned']}</b>\n"
                 f"👥 رفرال: <b>{ref_count}</b> نفر\n"
                 f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
-                reply_markup=_main_inline_keyboard())
+                reply_markup=_main_inline_keyboard(account))
         except Exception as e:
             print(f"❌ خطا در callback_menu_balance: {e}")
 
@@ -2085,7 +2113,7 @@ def start_token_bot():
                 text = f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>"
             else:
                 text = msg
-            kwargs = {"reply_markup": _main_inline_keyboard()}
+            kwargs = {"reply_markup": _main_inline_keyboard(account)}
             if reply_to:
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id, text, **kwargs)
@@ -2110,7 +2138,7 @@ def start_token_bot():
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
             referral_value = config.REFERRAL_TOKENS * token_price
-            kwargs = {"reply_markup": _main_inline_keyboard()}
+            kwargs = {"reply_markup": _main_inline_keyboard(account)}
             if reply_to:
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id,
@@ -3208,7 +3236,7 @@ def start_token_bot():
 
             missions = db.get_active_missions()
             if not missions:
-                return _bot.send_message(chat_id, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "📭 در حال حاضر ماموریت فعالی وجود ندارد.", reply_markup=_main_inline_keyboard(account))
 
             completed_ids = db.get_completed_mission_ids(account["id"])
             markup = types.InlineKeyboardMarkup(row_width=1)
@@ -3325,15 +3353,22 @@ def start_token_bot():
         return _RANK_VALUES[card["rank"]]
 
     def _hokm_get(chat_id) -> Optional[dict]:
+        """یک بازی فعال برای chat_id پیدا نمی‌کند — deprecated، از _hokm_get_by_id استفاده کنید"""
         with _hokm_lock:
             g = _hokm_games.get(chat_id)
             return g if g and g["state"] != "finished" else None
 
+    def _hokm_get_by_id(game_id: str) -> Optional[dict]:
+        """دریافت بازی بر اساس game_id"""
+        with _hokm_lock:
+            g = _hokm_games.get(game_id)
+            return g if g and g["state"] != "finished" else None
+
     def _hokm_find_by_player(user_id):
         with _hokm_lock:
-            for cid, g in _hokm_games.items():
+            for gid, g in _hokm_games.items():
                 if user_id in g["players"] and g["state"] != "finished":
-                    return cid, g
+                    return gid, g
         return None, None
 
     def _hokm_lobby_text(g):
@@ -3367,10 +3402,6 @@ def start_token_bot():
             chat_id = message.chat.id
             user_id = message.from_user.id
 
-            # جلوگیری از چند بازی همزمان در یک گروه
-            if _hokm_get(chat_id):
-                return _bot.reply_to(message, "⚠️ یک بازی حکم در جریان است!")
-
             bet = int(message.text.strip().split()[1])
             if bet < 1:
                 return _bot.reply_to(message, "❌ مبلغ شرط باید بیشتر از صفر باشد.")
@@ -3379,6 +3410,11 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
 
+            # جلوگیری از ورود یک کاربر به دو بازی همزمان
+            _, existing = _hokm_find_by_player(user_id)
+            if existing:
+                return _bot.reply_to(message, "⚠️ شما در حال حاضر در یک بازی حکم هستید!")
+
             balance = db.get_token_balance(account["id"])
             if balance < bet:
                 return _bot.reply_to(message,
@@ -3386,7 +3422,7 @@ def start_token_bot():
 
             uname = message.from_user.username
             display = f"@{uname}" if uname else message.from_user.first_name
-            game_id = f"{chat_id}_{int(time.time())}"
+            game_id = f"{chat_id}_{user_id}_{int(time.time())}"
 
             game = {
                 "game_id":     game_id,
@@ -3397,26 +3433,26 @@ def start_token_bot():
                 "players":     [user_id],
                 "names":       {user_id: display},
                 "accounts":    {user_id: account["id"]},
-                "state":       "lobby",    # lobby|pick_trump|playing|finished
+                "state":       "lobby",
                 "msg_id":      None,
                 "timer":       None,
-                # بازی
                 "deck":        [],
-                "hands":       {},         # uid -> [card, ...]
+                "hands":       {},
                 "trump":       None,
                 "hakem":       None,
-                "teams":       {},         # uid -> 0 or 1  (تیم ۰ = حاکم+شریک, تیم ۱ = رقیب)
-                "round_cards": {},         # uid -> card
-                "round_lead":  None,       # uid که این دست اول کارت زد
+                "teams":       {},
+                "round_cards": {},
+                "round_lead":  None,
                 "lead_suit":   None,
-                "tricks":      {0: 0, 1: 0},   # تعداد دست‌های هر تیم
-                "total_tricks":0,
+                "tricks":      {0: 0, 1: 0},
+                "total_tricks": 0,
                 "turn_order":  [],
                 "current_turn_idx": 0,
+                "player_msg":  {},   # uid -> message_id پیام شخصی هر بازیکن در پیوی (برای ادیت به‌جای ارسال پیام جدید)
             }
 
             with _hokm_lock:
-                _hokm_games[chat_id] = game
+                _hokm_games[game_id] = game
 
             msg = _bot.send_message(
                 chat_id,
@@ -3436,9 +3472,9 @@ def start_token_bot():
             game_id = call.data[len("hokm_join_"):]
             chat_id = call.message.chat.id
             user_id = call.from_user.id
-            game = _hokm_get(chat_id)
+            game = _hokm_get_by_id(game_id)
 
-            if not game or game["game_id"] != game_id:
+            if not game:
                 return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد یا تمام شده.")
 
             if game["state"] != "lobby":
@@ -3475,9 +3511,9 @@ def start_token_bot():
                 if len(game["players"]) == 2:
                     def _lobby_timer():
                         time.sleep(10)
-                        g = _hokm_get(chat_id)
-                        if g and g["game_id"] == game_id and g["state"] == "lobby" and len(g["players"]) >= 2:
-                            _hokm_begin(chat_id)
+                        g = _hokm_get_by_id(game_id)
+                        if g and g["state"] == "lobby" and len(g["players"]) >= 2:
+                            _hokm_begin(game_id)
                     t = threading.Thread(target=_lobby_timer, daemon=True)
                     t.start()
                     game["timer"] = t
@@ -3486,7 +3522,7 @@ def start_token_bot():
                 if len(game["players"]) == 4:
                     if game.get("timer"):
                         game["timer"] = None  # کنسل منطقی
-                    _hokm_begin(chat_id)
+                    _hokm_begin(game_id)
                     return
 
             # به‌روزرسانی پیام لابی
@@ -3509,9 +3545,9 @@ def start_token_bot():
         try:
             game_id = call.data[len("hokm_cancel_"):]
             chat_id = call.message.chat.id
-            game = _hokm_get(chat_id)
+            game = _hokm_get_by_id(game_id)
 
-            if not game or game["game_id"] != game_id:
+            if not game:
                 return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
             if call.from_user.id != game["creator_id"]:
                 return _bot.answer_callback_query(call.id, "❌ فقط سازنده می‌تواند لغو کند.", show_alert=True)
@@ -3520,7 +3556,7 @@ def start_token_bot():
 
             game["state"] = "finished"
             with _hokm_lock:
-                _hokm_games.pop(chat_id, None)
+                _hokm_games.pop(game_id, None)
 
             _bot.edit_message_text(
                 "❌ بازی حکم لغو شد.",
@@ -3530,13 +3566,88 @@ def start_token_bot():
         except Exception as e:
             print(f"❌ callback_hokm_cancel: {e}")
 
-    # ── شروع بازی ────────────────────────────────────────────────────────────
-    def _hokm_begin(chat_id):
+    # ── کمکی: پیام واحد هر بازیکن — فقط یک‌بار ارسال، بقیه موارد فقط ادیت می‌شود ──
+    def _hokm_send_or_edit(uid, game, text, kb=None):
+        """به‌جای ارسال پیام تازه در هر مرحله، یک پیام واحد برای هر بازیکن نگه می‌دارد و همان را ادیت می‌کند."""
         try:
-            game = _hokm_get(chat_id)
+            msg_id = game.get("player_msg", {}).get(uid)
+            if msg_id:
+                try:
+                    _bot.edit_message_text(text, uid, msg_id, parse_mode="HTML", reply_markup=kb)
+                    return
+                except Exception as ex:
+                    if "message is not modified" in str(ex).lower():
+                        return
+                    # پیام قبلی پاک شده یا قابل ادیت نبود → یک‌بار پیام جدید ارسال و ذخیره می‌شود
+            msg = _bot.send_message(uid, text, parse_mode="HTML", reply_markup=kb)
+            game.setdefault("player_msg", {})[uid] = msg.message_id
+        except Exception as e:
+            print(f"⚠️ _hokm_send_or_edit {uid}: {e}")
+
+    def _hokm_status_lines(game, uid):
+        """خطوط وضعیت کلی بازی برای پیام شخصی هر بازیکن"""
+        lines = ["🎮 <b>بازی حکم</b>"]
+        if game.get("trump"):
+            lines.append(f"🔱 حکم: <b>{_SUIT_NAMES[game['trump']]}</b>")
+        if game.get("state") == "playing":
+            t0 = game["tricks"][0]
+            t1 = game["tricks"][1]
+            lines.append(f"📊 تیم حاکم: {t0} | تیم رقیب: {t1}")
+            if game.get("round_cards"):
+                played = " | ".join(
+                    f"{game['names'][u]}: {_hokm_card_label(c)}"
+                    for u, c in game["round_cards"].items()
+                )
+                lines.append(f"🃏 دست جاری: {played}")
+            if game.get("turn_order"):
+                current = game["turn_order"][game["current_turn_idx"]]
+                who = "شما" if current == uid else game["names"].get(current, "?")
+                lines.append(f"🎯 نوبت: <b>{who}</b>")
+        return lines
+
+    def _hokm_send_hand(uid, game, extra_lines=None, extra_rows=None):
+        """نمایش/به‌روزرسانی پیام شخصی بازیکن: وضعیت بازی + کارت‌های دست (فقط نوع و عدد کارت، بدون ایموجی اضافه)"""
+        try:
+            lines = _hokm_status_lines(game, uid)
+            if extra_lines:
+                lines.append("")
+                lines.extend(extra_lines)
+
+            hand = game["hands"].get(uid, [])
+            lines.append("")
+            lines.append(f"🃏 کارت‌های شما ({len(hand)} کارت):")
+
+            kb = types.InlineKeyboardMarkup(row_width=4)
+            if extra_rows:
+                for row in extra_rows:
+                    kb.row(*row)
+            card_btns = [
+                types.InlineKeyboardButton(
+                    _hokm_card_label(card),
+                    callback_data=f"hokm_play_{game['chat_id']}_{uid}_{i}"
+                )
+                for i, card in enumerate(hand)
+            ]
+            if card_btns:
+                kb.add(*card_btns)
+
+            _hokm_send_or_edit(uid, game, "\n".join(lines), kb)
+        except Exception as e:
+            print(f"⚠️ _hokm_send_hand {uid}: {e}")
+
+    def _hokm_broadcast_hands(game, extra_lines=None):
+        """به‌روزرسانی پیام شخصی همه بازیکنان با ادیت (بدون ارسال پیام جدید)"""
+        for uid in game["players"]:
+            _hokm_send_hand(uid, game, extra_lines=extra_lines)
+
+    # ── شروع بازی ────────────────────────────────────────────────────────────
+    def _hokm_begin(game_id):
+        try:
+            game = _hokm_get_by_id(game_id)
             if not game or game["state"] != "lobby":
                 return
             game["state"] = "determine_hakem"
+            chat_id = game["chat_id"]
 
             players = game["players"]
             names_list = "\n".join(f"  • {game['names'][uid]}" for uid in players)
@@ -3560,49 +3671,37 @@ def start_token_bot():
 
             # تعیین حاکم (تک = Ace)
             deck = _hokm_make_deck()
-            aces = [c for c in deck if c["rank"] == "A"]
-            random.shuffle(aces)
-            # به هر بازیکن یک کارت رندوم
             drawn = {}
             remaining_deck = deck[:]
             for uid in players:
                 card = remaining_deck.pop(0)
                 drawn[uid] = card
 
-            # اولین کسی که Ace دارد
-            hakem = None
             ace_holders = [uid for uid in players if drawn[uid]["rank"] == "A"]
             if ace_holders:
                 hakem = random.choice(ace_holders)
             else:
-                # اگر هیچ‌کس Ace ندارد → بالاترین کارت
                 hakem = max(players, key=lambda u: _RANK_VALUES[drawn[u]["rank"]])
 
             game["hakem"] = hakem
             game["deck"] = _hokm_make_deck()
-
             hakem_name = game["names"][hakem]
 
-            # ارسال پیام خصوصی به همه
+            # پیام شخصی هر بازیکن — فقط همین یک‌بار ارسال می‌شود؛ مراحل بعدی همین پیام را ادیت می‌کنند
             for uid in players:
                 card_label = _hokm_card_label(drawn[uid])
                 is_hakem = (uid == hakem)
-                try:
-                    kb = types.InlineKeyboardMarkup()
-                    kb.add(types.InlineKeyboardButton(
-                        "🃏 شروع بازی", callback_data=f"hokm_ready_{chat_id}"
-                    ))
-                    _bot.send_message(
-                        uid,
-                        f"🎮 <b>بازی حکم شروع شد!</b>\n\n"
-                        f"🎲 کارت قرعه شما: <b>{card_label}</b>\n"
-                        f"👑 حاکم: <b>{hakem_name}</b>{'  ← شما!' if is_hakem else ''}\n\n"
-                        f"برای ادامه دکمه زیر را بزنید:",
-                        parse_mode="HTML",
-                        reply_markup=kb
-                    )
-                except Exception as ex:
-                    print(f"⚠️ نمی‌توان به {uid} پیام داد: {ex}")
+                kb = types.InlineKeyboardMarkup()
+                kb.add(types.InlineKeyboardButton(
+                    "🃏 شروع بازی", callback_data=f"hokm_ready_{chat_id}"
+                ))
+                text = (
+                    f"🎮 <b>بازی حکم شروع شد!</b>\n\n"
+                    f"🎲 کارت قرعه شما: <b>{card_label}</b>\n"
+                    f"👑 حاکم: <b>{hakem_name}</b>{'  ← شما!' if is_hakem else ''}\n\n"
+                    f"برای ادامه دکمه زیر را بزنید:"
+                )
+                _hokm_send_or_edit(uid, game, text, kb)
 
         except Exception as e:
             print(f"❌ _hokm_begin: {e}")
@@ -3615,30 +3714,37 @@ def start_token_bot():
         try:
             chat_id = int(call.data[len("hokm_ready_"):])
             user_id = call.from_user.id
-            game = _hokm_get(chat_id)
+            gid, game = _hokm_find_by_player(user_id)
             if not game:
                 return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
-            if user_id not in game["players"]:
-                return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.")
+            game_id = gid
 
             _hokm_ready.setdefault(chat_id, set()).add(user_id)
             _bot.answer_callback_query(call.id, "✅ آماده‌اید!")
-            _bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
+            try:
+                _bot.edit_message_text(
+                    "✅ <b>آماده‌اید!</b>\nمنتظر بقیه بازیکنان بمانید...",
+                    call.message.chat.id, call.message.message_id,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
 
             # همه آماده شدند → پخش ۴ کارت اولیه
             if _hokm_ready[chat_id] == set(game["players"]):
-                _hokm_deal_initial(chat_id)
+                _hokm_deal_initial(game_id)
 
         except Exception as e:
             print(f"❌ callback_hokm_ready: {e}")
 
     # ── پخش ۴ کارت اولیه و نمایش به هر بازیکن ───────────────────────────────
-    def _hokm_deal_initial(chat_id):
+    def _hokm_deal_initial(game_id):
         try:
-            game = _hokm_get(chat_id)
+            game = _hokm_get_by_id(game_id)
             if not game:
                 return
             game["state"] = "pick_trump"
+            chat_id = game["chat_id"]
             deck = game["deck"]
             random.shuffle(deck)
 
@@ -3647,66 +3753,40 @@ def start_token_bot():
                 game["hands"][uid] = [deck.pop() for _ in range(4)]
 
             game["deck"] = deck
-
-            # نمایش دکمه‌ای کارت‌ها به هر بازیکن
-            for uid in game["players"]:
-                _hokm_send_hand(uid, game, phase="initial")
-
-            # از حاکم بخواه حکم انتخاب کند
             hakem = game["hakem"]
-            kb = types.InlineKeyboardMarkup(row_width=2)
-            kb.add(
-                types.InlineKeyboardButton("♥️ دل",     callback_data=f"hokm_trump_{chat_id}_hearts"),
-                types.InlineKeyboardButton("♠️ پیک",    callback_data=f"hokm_trump_{chat_id}_spades"),
-                types.InlineKeyboardButton("♦️ خشت",    callback_data=f"hokm_trump_{chat_id}_diamonds"),
-                types.InlineKeyboardButton("♣️ گشنیز",  callback_data=f"hokm_trump_{chat_id}_clubs"),
-            )
-            try:
-                _bot.send_message(
-                    hakem,
-                    "👑 <b>شما حاکم هستید!</b>\nحکم را انتخاب کنید:",
-                    parse_mode="HTML",
-                    reply_markup=kb
-                )
-            except Exception as ex:
-                print(f"⚠️ نمی‌توان به حاکم {hakem} پیام داد: {ex}")
+
+            # همان پیام قبلی هر بازیکن ادیت می‌شود و کارت‌های اولیه نشان داده می‌شود
+            for uid in game["players"]:
+                if uid == hakem:
+                    trump_rows = [
+                        [
+                            types.InlineKeyboardButton("♥️ دل", callback_data=f"hokm_trump_{chat_id}_hearts"),
+                            types.InlineKeyboardButton("♠️ پیک", callback_data=f"hokm_trump_{chat_id}_spades"),
+                        ],
+                        [
+                            types.InlineKeyboardButton("♦️ خشت", callback_data=f"hokm_trump_{chat_id}_diamonds"),
+                            types.InlineKeyboardButton("♣️ گشنیز", callback_data=f"hokm_trump_{chat_id}_clubs"),
+                        ],
+                    ]
+                    _hokm_send_hand(
+                        uid, game,
+                        extra_lines=["👑 شما حاکم هستید! حکم را انتخاب کنید:"],
+                        extra_rows=trump_rows
+                    )
+                else:
+                    _hokm_send_hand(uid, game, extra_lines=["⏳ منتظر انتخاب حکم توسط حاکم..."])
 
         except Exception as e:
             print(f"❌ _hokm_deal_initial: {e}")
-
-    def _hokm_send_hand(uid, game, phase="play", highlight_playable=False):
-        """ارسال کارت‌های دست به صورت دکمه‌ای"""
-        try:
-            hand = game["hands"].get(uid, [])
-            chat_id = game["chat_id"]
-            kb = types.InlineKeyboardMarkup(row_width=4)
-            btns = []
-            for i, card in enumerate(hand):
-                label = _hokm_card_label(card)
-                cb = f"hokm_play_{chat_id}_{uid}_{i}"
-                if phase == "play" and highlight_playable:
-                    btns.append(types.InlineKeyboardButton(f"▶{label}", callback_data=cb))
-                else:
-                    btns.append(types.InlineKeyboardButton(label, callback_data=cb))
-            kb.add(*btns)
-            _bot.send_message(
-                uid,
-                f"🃏 <b>کارت‌های شما</b> ({len(hand)} کارت):",
-                parse_mode="HTML",
-                reply_markup=kb
-            )
-        except Exception as e:
-            print(f"⚠️ _hokm_send_hand {uid}: {e}")
 
     # ── انتخاب حکم توسط حاکم ────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_trump_"))
     def callback_hokm_trump(call):
         try:
             parts = call.data.split("_")   # hokm_trump_CHATID_SUIT
-            chat_id = int(parts[2])
             suit = parts[3]
             user_id = call.from_user.id
-            game = _hokm_get(chat_id)
+            game_id, game = _hokm_find_by_player(user_id)
 
             if not game:
                 return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
@@ -3718,30 +3798,17 @@ def start_token_bot():
             game["trump"] = suit
             suit_label = _SUIT_NAMES[suit]
             _bot.answer_callback_query(call.id, f"✅ حکم {suit_label} انتخاب شد!")
-            _bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
 
-            # اطلاع به همه
-            for uid in game["players"]:
-                try:
-                    _bot.send_message(
-                        uid,
-                        f"👑 حاکم <b>{game['names'][game['hakem']]}</b> حکم را انتخاب کرد:\n"
-                        f"<b>{suit_label}</b>",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-
-            # پخش کامل کارت‌ها
-            _hokm_deal_full(chat_id)
+            # پخش کامل کارت‌ها (پیام شخصی هر بازیکن همین‌جا ادیت می‌شود و حکم انتخابی را نشان می‌دهد)
+            _hokm_deal_full(game_id)
 
         except Exception as e:
             print(f"❌ callback_hokm_trump: {e}")
 
     # ── پخش کامل کارت‌ها ─────────────────────────────────────────────────────
-    def _hokm_deal_full(chat_id):
+    def _hokm_deal_full(game_id):
         try:
-            game = _hokm_get(chat_id)
+            game = _hokm_get_by_id(game_id)
             if not game:
                 return
             game["state"] = "playing"
@@ -3750,7 +3817,6 @@ def start_token_bot():
 
             players = game["players"]
 
-            # مابقی کارت‌ها تقسیم شود (هر کس باید ۱۳ کارت داشته باشد)
             for uid in players:
                 current = len(game["hands"].get(uid, []))
                 need = 13 - current
@@ -3760,22 +3826,18 @@ def start_token_bot():
 
             game["deck"] = deck
 
-            # تعیین تیم‌ها: حاکم + نفر روبرو vs بقیه
             hakem = game["hakem"]
             idx_hakem = players.index(hakem)
             game["teams"] = {}
-            for i, uid in enumerate(players):
-                # اگر ۴ نفر: حاکم و نفر مقابل (idx+2) یک تیم
+            for uid in players:
                 if len(players) == 4:
                     if uid == hakem or players[(idx_hakem + 2) % 4] == uid:
                         game["teams"][uid] = 0
                     else:
                         game["teams"][uid] = 1
                 else:
-                    # ۲ نفر: حاکم = تیم ۰
                     game["teams"][uid] = 0 if uid == hakem else 1
 
-            # ترتیب نوبت از حاکم
             game["turn_order"] = players[idx_hakem:] + players[:idx_hakem]
             game["current_turn_idx"] = 0
             game["round_cards"] = {}
@@ -3784,54 +3846,20 @@ def start_token_bot():
             game["tricks"] = {0: 0, 1: 0}
             game["total_tricks"] = 0
 
-            # ارسال دست کامل به هر بازیکن
-            for uid in players:
-                _hokm_send_hand(uid, game, phase="play",
-                                highlight_playable=(uid == game["turn_order"][0]))
-                try:
-                    _bot.send_message(
-                        uid,
-                        f"🎮 بازی شروع شد! نوبت اول با <b>{game['names'][game['turn_order'][0]]}</b> است.",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-
-            # اطلاع نوبت به اولین بازیکن
-            _hokm_notify_turn(chat_id)
+            # همان پیام شخصی هر بازیکن ادیت می‌شود: دست کامل + وضعیت جدید بازی + نوبت
+            _hokm_broadcast_hands(game)
 
         except Exception as e:
             print(f"❌ _hokm_deal_full: {e}")
-
-    def _hokm_notify_turn(chat_id):
-        """اطلاع رسانی نوبت"""
-        try:
-            game = _hokm_get(chat_id)
-            if not game:
-                return
-            current = game["turn_order"][game["current_turn_idx"]]
-            try:
-                _bot.send_message(
-                    current,
-                    "🎯 <b>نوبت شماست!</b> کارت خود را انتخاب کنید:",
-                    parse_mode="HTML"
-                )
-                _hokm_send_hand(current, game, phase="play", highlight_playable=True)
-            except Exception as e:
-                print(f"⚠️ _hokm_notify_turn: {e}")
-        except Exception as e:
-            print(f"❌ _hokm_notify_turn outer: {e}")
 
     # ── انتخاب کارت (بازی) ───────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_play_"))
     def callback_hokm_play(call):
         try:
             parts = call.data.split("_")  # hokm_play_CHATID_UID_IDX
-            chat_id = int(parts[2])
-            uid_str = int(parts[3])
             card_idx = int(parts[4])
             user_id = call.from_user.id
-            game = _hokm_get(chat_id)
+            game_id, game = _hokm_find_by_player(user_id)
 
             if not game:
                 return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
@@ -3840,7 +3868,6 @@ def start_token_bot():
             if user_id not in game["players"]:
                 return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.")
 
-            # بررسی نوبت
             current_uid = game["turn_order"][game["current_turn_idx"]]
             if user_id != current_uid:
                 return _bot.answer_callback_query(call.id, "⏳ نوبت شما نیست!", show_alert=True)
@@ -3851,7 +3878,6 @@ def start_token_bot():
 
             card = hand[card_idx]
 
-            # بررسی قوانین: پیروی از خال
             if game["lead_suit"] and card["suit"] != game["lead_suit"]:
                 has_lead = any(c["suit"] == game["lead_suit"] for c in hand)
                 if has_lead:
@@ -3861,50 +3887,36 @@ def start_token_bot():
                         show_alert=True
                     )
 
-            # ثبت کارت
             hand.pop(card_idx)
             game["round_cards"][user_id] = card
             if not game["lead_suit"]:
                 game["lead_suit"] = card["suit"]
 
             _bot.answer_callback_query(call.id, f"✅ {_hokm_card_label(card)} بازی شد.")
-            _bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id)
 
-            # اطلاع به همه کارتی که بازی شد
-            for uid in game["players"]:
-                try:
-                    _bot.send_message(
-                        uid,
-                        f"🃏 {game['names'][user_id]} کارت <b>{_hokm_card_label(card)}</b> بازی کرد.",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-
-            # نوبت بعدی
             n = len(game["players"])
             game["current_turn_idx"] = (game["current_turn_idx"] + 1) % n
 
             # آیا همه در این دست کارت زدند؟
             if len(game["round_cards"]) == n:
-                _hokm_resolve_round(chat_id)
+                _hokm_resolve_round(game_id)
             else:
-                _hokm_notify_turn(chat_id)
+                # ادیت پیام شخصی همه بازیکنان: کارت بازی‌شده + نوبت جدید (بدون ارسال پیام جدید)
+                _hokm_broadcast_hands(game)
 
         except Exception as e:
             print(f"❌ callback_hokm_play: {e}")
 
     # ── تعیین برنده هر دست ───────────────────────────────────────────────────
-    def _hokm_resolve_round(chat_id):
+    def _hokm_resolve_round(game_id):
         try:
-            game = _hokm_get(chat_id)
+            game = _hokm_get_by_id(game_id)
             if not game:
                 return
 
             trump = game["trump"]
             lead_suit = game["lead_suit"]
 
-            # برنده دست
             winner = max(
                 game["round_cards"].keys(),
                 key=lambda u: _hokm_card_value(game["round_cards"][u], trump, lead_suit)
@@ -3913,47 +3925,34 @@ def start_token_bot():
             game["tricks"][winner_team] += 1
             game["total_tricks"] += 1
 
-            # نمایش نتیجه دست
             cards_played = " | ".join(
                 f"{game['names'][u]}: {_hokm_card_label(game['round_cards'][u])}"
                 for u in game["players"]
             )
-            t0 = game["tricks"][0]
-            t1 = game["tricks"][1]
-            for uid in game["players"]:
-                try:
-                    _bot.send_message(
-                        uid,
-                        f"🏁 <b>دست تمام شد!</b>\n"
-                        f"کارت‌ها: {cards_played}\n"
-                        f"🏆 برنده: <b>{game['names'][winner]}</b>\n"
-                        f"📊 تیم حاکم: {t0} | تیم رقیب: {t1}",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
+            winner_name = game["names"][winner]
+
+            round_summary = [
+                "🏁 <b>دست تمام شد!</b>",
+                f"کارت‌ها: {cards_played}",
+                f"🏆 برنده: <b>{winner_name}</b>",
+            ]
 
             # ریست دست
             game["round_cards"] = {}
             game["lead_suit"] = None
 
-            # ترتیب نوبت بعدی از برنده شروع شود
             win_idx = game["turn_order"].index(winner)
             game["turn_order"] = game["turn_order"][win_idx:] + game["turn_order"][:win_idx]
             game["current_turn_idx"] = 0
             game["round_lead"] = winner
 
-            # بررسی پایان بازی (۷ دست برنده)
             if game["tricks"][0] >= 7 or game["tricks"][1] >= 7:
-                _hokm_finish(chat_id, game["tricks"][0] >= 7)
+                _hokm_finish(game_id, game["tricks"][0] >= 7, round_summary)
             elif game["total_tricks"] >= 13:
-                _hokm_finish(chat_id, game["tricks"][0] > game["tricks"][1])
+                _hokm_finish(game_id, game["tricks"][0] > game["tricks"][1], round_summary)
             else:
-                # ارسال دست جدید
-                for uid in game["players"]:
-                    _hokm_send_hand(uid, game, phase="play",
-                                    highlight_playable=(uid == winner))
-                _hokm_notify_turn(chat_id)
+                # ادیت پیام شخصی همه بازیکنان: نتیجهٔ دست قبلی + دست جدید
+                _hokm_broadcast_hands(game, extra_lines=round_summary)
 
         except Exception as e:
             print(f"❌ _hokm_resolve_round: {e}")
@@ -3966,12 +3965,13 @@ def start_token_bot():
         return _RANK_VALUES[card["rank"]]
 
     # ── پایان بازی و توزیع جایزه ─────────────────────────────────────────────
-    def _hokm_finish(chat_id, team0_won: bool):
+    def _hokm_finish(game_id, team0_won: bool, round_summary=None):
         try:
-            game = _hokm_get(chat_id)
+            game = _hokm_get_by_id(game_id)
             if not game:
                 return
             game["state"] = "finished"
+            chat_id = game["chat_id"]
 
             players = game["players"]
             bet = game["bet"]
@@ -3985,43 +3985,45 @@ def start_token_bot():
 
             payout_each = payout_total // len(winners) if winners else 0
 
-            # واریز به برندگان
             for uid in winners:
                 acc_id = game["accounts"][uid]
                 db.add_tokens(acc_id, payout_each)
 
-            # پیام پایان
             win_names = ", ".join(game["names"][u] for u in winners)
             lose_names = ", ".join(game["names"][u] for u in losers)
-            hakem_team_won = game["teams"][game["hakem"]] == (0 if team0_won else 1)
 
-            result_text = (
-                f"🏆 <b>بازی حکم تمام شد!</b>\n\n"
-                f"{'🥇 تیم حاکم' if team0_won else '🥇 تیم رقیب'} برنده شد!\n\n"
-                f"✅ برندگان: <b>{win_names}</b>\n"
-                f"❌ بازندگان: {lose_names}\n\n"
-                f"💰 مجموع شرط: {total} الماس\n"
-                f"🏛 مالیات ۱۰٪: {tax} الماس\n"
-                f"💎 هر برنده: <b>{payout_each} الماس</b>\n\n"
-                f"📊 نتیجه: تیم حاکم {game['tricks'][0]} — تیم رقیب {game['tricks'][1]}"
-            )
+            result_lines = []
+            if round_summary:
+                result_lines.extend(round_summary)
+                result_lines.append("")
+            result_lines.extend([
+                "🏆 <b>بازی حکم تمام شد!</b>",
+                "",
+                f"{'🥇 تیم حاکم' if team0_won else '🥇 تیم رقیب'} برنده شد!",
+                "",
+                f"✅ برندگان: <b>{win_names}</b>",
+                f"❌ بازندگان: {lose_names}",
+                "",
+                f"💰 مجموع شرط: {total} الماس",
+                f"🏛 مالیات ۱۰٪: {tax} الماس",
+                f"💎 هر برنده: <b>{payout_each} الماس</b>",
+                "",
+                f"📊 نتیجه: تیم حاکم {game['tricks'][0]} — تیم رقیب {game['tricks'][1]}",
+            ])
+            result_text = "\n".join(result_lines)
 
-            # ارسال به همه بازیکنان
+            # ادیت همان پیام شخصی هر بازیکن با نتیجه نهایی و حذف دکمه‌ها
             for uid in players:
-                try:
-                    _bot.send_message(uid, result_text, parse_mode="HTML")
-                except Exception:
-                    pass
+                _hokm_send_or_edit(uid, game, result_text, types.InlineKeyboardMarkup())
 
-            # اطلاع در گروه
+            # اطلاع در گروه (پیام جدید، چون پیام گروهی قبلاً برای شروع بازی ادیت شده بود)
             try:
                 _bot.send_message(chat_id, result_text, parse_mode="HTML")
             except Exception:
                 pass
 
-            # پاک کردن بازی
             with _hokm_lock:
-                _hokm_games.pop(chat_id, None)
+                _hokm_games.pop(game_id, None)
 
         except Exception as e:
             print(f"❌ _hokm_finish: {e}")
