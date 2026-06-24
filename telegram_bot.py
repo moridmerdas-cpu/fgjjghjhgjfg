@@ -253,26 +253,23 @@ def start_token_bot():
             return False
         return True
 
-    def _user_keyboard(show_remove_self=False):
-        # ✅ فقط دکمه حذف سلف به‌صورت KeyboardButton — بقیه دکمه‌ها InlineKeyboardButton هستند
-        if not show_remove_self:
-            return types.ReplyKeyboardRemove()
+    def _user_keyboard(show_remove_self=True):
+        # ✅ دکمه حذف سلف همیشه نمایش داده می‌شود — بقیه دکمه‌ها InlineKeyboardButton هستند
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
         markup.add(
             types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
         )
         return markup
 
-    def _owner_keyboard(show_remove_self=False):
-        # ✅ دکمه مدیریت + حذف سلف به‌صورت KeyboardButton — بقیه دکمه‌ها InlineKeyboardButton هستند
+    def _owner_keyboard(show_remove_self=True):
+        # ✅ دکمه مدیریت + حذف سلف همیشه نمایش داده می‌شوند — بقیه دکمه‌ها InlineKeyboardButton هستند
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
         markup.add(
             types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
         )
-        if show_remove_self:
-            markup.add(
-                types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
-            )
+        markup.add(
+            types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
+        )
         return markup
 
     def _main_inline_keyboard():
@@ -1863,8 +1860,8 @@ def start_token_bot():
             _remove_self_from_account(account["id"])
             cache.invalidate(f"account_{call.from_user.id}")
 
-            # آپدیت keyboard پایین صفحه (بدون دکمه حذف سلف)
-            kb = _owner_keyboard(show_remove_self=False) if call.from_user.id == OWNER_TG_ID else _user_keyboard(show_remove_self=False)
+            # آپدیت keyboard پایین صفحه (دکمه حذف سلف همچنان نمایش داده می‌شود)
+            kb = _owner_keyboard() if call.from_user.id == OWNER_TG_ID else _user_keyboard()
             try:
                 _bot.send_message(
                     call.message.chat.id,
@@ -1963,8 +1960,7 @@ def start_token_bot():
                 sub_status = "❌ اشتراک ندارید"
 
             if message.chat.type == 'private':
-                show_remove = db.get_setting(account["id"], "logged_in", "0") == "1"
-                kb_markup = _owner_keyboard(show_remove_self=show_remove) if tg_id == OWNER_TG_ID else _user_keyboard(show_remove_self=show_remove)
+                kb_markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
             else:
                 kb_markup = None
 
@@ -3286,7 +3282,7 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             
-            kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else types.ReplyKeyboardRemove()
+            kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
             _bot.reply_to(message, "⚠️ دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
         except Exception as e:
             print(f"❌ خطا در cmd_unknown: {e}")
