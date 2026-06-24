@@ -392,6 +392,14 @@ def start_token_bot():
                     style="success"  # 🟢 سبز
                 )
             )
+            # 🔴 دکمه لغو شرط‌بندی برای سازنده
+            markup.add(
+                types.InlineKeyboardButton(
+                    "❌ لغو شرط‌بندی",
+                    callback_data=f"cancel_bet_{bet_id}",
+                    style="danger"  # 🔴 قرمز
+                )
+            )
 
             msg = _bot.reply_to(
                 message,
@@ -517,6 +525,43 @@ def start_token_bot():
 
         except Exception as e:
             print(f"❌ خطا در callback_join_bet: {e}")
+            try:
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
+            except Exception:
+                pass
+
+    # ── Callback: لغو دستی شرط‌بندی توسط سازنده ────────────────────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("cancel_bet_"))
+    def callback_cancel_bet(call):
+        try:
+            bet_id = int(call.data.split("_")[2])
+
+            bet_mem = _active_bets.get(bet_id)
+            if bet_mem is None:
+                return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی یافت نشد یا قبلاً لغو شده.", show_alert=True)
+
+            if bet_mem["opponent_tg_id"] is not None:
+                return _bot.answer_callback_query(call.id, "❌ حریف وارد شده — دیگر نمی‌توانید لغو کنید.", show_alert=True)
+
+            if bet_mem["creator_tg_id"] != call.from_user.id:
+                return _bot.answer_callback_query(call.id, "❌ فقط سازنده شرط می‌تواند لغو کند.", show_alert=True)
+
+            db.cancel_bet(bet_id)
+            _active_bets.pop(bet_id, None)
+
+            try:
+                _bot.edit_message_text(
+                    "🚫 <b>شرط‌بندی لغو شد!</b>\n\nسازنده شرط را لغو کرد.\n💎 مبلغ به سازنده بازگشت داده شد.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id
+                )
+            except Exception:
+                pass
+
+            _bot.answer_callback_query(call.id, "✅ شرط‌بندی لغو شد و مبلغ بازگشت داده شد.", show_alert=True)
+
+        except Exception as e:
+            print(f"❌ خطا در callback_cancel_bet: {e}")
             try:
                 _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
             except Exception:
