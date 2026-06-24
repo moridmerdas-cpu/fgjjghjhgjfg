@@ -59,6 +59,27 @@ def _apply_font(owner_id, text):
     return fn(text)
 
 
+# ─── فونت‌های مخصوص ساعت (فقط روی ارقام اعمال می‌شود) ──────────────────────────
+CLOCK_FONTS = {
+    "0": "0123456789",
+    "1": "⓿❶❷❸❹❺❻❼❽❾",
+    "2": "𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵",
+    "3": "⓪①②③④⑤⑥⑦⑧⑨",
+    "4": "𝟢𝟣𝟤𝟥𝟦𝟧𝟨𝟩𝟪𝟫",
+    "5": "0⑴⑵⑶⑷⑸⑹⑺⑻⑼",
+    "6": "₀₁₂₃₄₅₆₇₈₉",
+    "7": "⁰¹²³⁴⁵⁶⁷⁸⁹",
+    "8": "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗",
+    "9": "𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡",
+}
+
+
+def _apply_clock_font(owner_id, text):
+    font_id = db.get_setting(owner_id, "selected_clock_font", "0")
+    digits = CLOCK_FONTS.get(font_id, CLOCK_FONTS["0"])
+    return "".join(digits[int(ch)] if ch.isdigit() else ch for ch in text)
+
+
 _SUPER = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 
 def persian_time():
@@ -385,7 +406,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             if now - last_reply >= SECRETARY_COOLDOWN:
                 sec_msg = db.get_setting(owner_id, "secretary_message", "در حال حاضر در دسترس نیستم.")
                 try:
-                    await event.reply(f"🤖 منشی خودکار:\n{sec_msg}")
+                    await event.reply(sec_msg)
                     _last_secretary_reply[chat_id] = now
                 except Exception:
                     pass
@@ -666,6 +687,24 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "پاسخ دشمن خاموش":
         ss("enemy_reply_active", "0"); await edit("⚔️ پاسخ خودکار به دشمن خاموش شد.")
 
+    # ─── فونت ساعت ──────────────────────────────────────────────────────────
+    elif text.startswith("فونت ساعت "):
+        font_id = text.split()[-1]
+        if font_id in CLOCK_FONTS:
+            ss("selected_clock_font", font_id)
+            digits = CLOCK_FONTS[font_id]
+            sample = _apply_clock_font(owner_id, "12:34")
+            await edit(f"⏰ فونت ساعت {font_id} انتخاب شد:\n`{sample}`")
+        else:
+            await edit("❗ شماره فونت ساعت باید بین ۰ تا ۹ باشد.")
+    elif text == "لیست فونت ساعت":
+        lines = ["⏰ **فونت‌های ساعت موجود:**\n"]
+        for k, digits in CLOCK_FONTS.items():
+            sample = "".join(digits[int(ch)] for ch in "1234567890")
+            lines.append(f"`فونت ساعت {k}` — `{sample}`")
+        lines.append("\n💡 برای انتخاب: `فونت ساعت [شماره]`")
+        await edit("\n".join(lines))
+
     # ─── فونت ────────────────────────────────────────────────────────────────
     elif text.startswith("فونت "):
         parts = text.split()
@@ -694,16 +733,16 @@ async def _handle_command(cl, event, text, owner_id, entry):
             fn = FONTS[k]
             styled = fn(name)
             lines.append(f"`فونت {k}` — `{styled}`")
-        lines.append("\n💡 فونت انتخابی روی ساعت نام/بیو هم اعمال می‌شود!")
+        lines.append("\n💡 برای فونت مخصوص ساعت از `لیست فونت ساعت` استفاده کنید.")
         await edit("\n".join(lines))
 
     # ─── ساعت ────────────────────────────────────────────────────────────────
     elif text == "ساعت نام روشن":
-        ss("clock_name_active", "1"); await edit("⏰ ساعت در نام روشن شد.\n💡 فونت فعلی روی ساعت اعمال می‌شود.")
+        ss("clock_name_active", "1"); await edit("⏰ ساعت در نام روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
     elif text == "ساعت نام خاموش":
         ss("clock_name_active", "0"); await edit("⏰ ساعت در نام خاموش شد.")
     elif text == "ساعت بیو روشن":
-        ss("clock_bio_active", "1"); await edit("⏰ ساعت در بیو روشن شد.\n💡 فونت فعلی روی ساعت اعمال می‌شود.")
+        ss("clock_bio_active", "1"); await edit("⏰ ساعت در بیو روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
     elif text == "ساعت بیو خاموش":
         ss("clock_bio_active", "0"); await edit("⏰ ساعت در بیو خاموش شد.")
 
@@ -810,6 +849,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             icon = "✅" if gs(key) == "1" else "❌"
             lines.append(f"{icon} {label}")
         lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
+        lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
         lines.append(f"👥 دشمن: {len(db.get_enemies(owner_id))} نفر")
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
@@ -970,6 +1010,20 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit(f"📅 پیام در {m.group(1)} ارسال خواهد شد.")
         else:
             await edit("❗ فرمت: ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن")
+
+    # ─── پیام عادی (دستور نیست) — اعمال فونت انتخابی روی متن ───────────────────
+    else:
+        font_id = gs("selected_font", "0")
+        if font_id != "0" and text:
+            fn = FONTS.get(font_id, FONTS["0"])
+            styled = fn(text)
+            if styled != text:
+                try:
+                    await event.edit(styled)
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds + 1)
+                except Exception:
+                    pass
 
 
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
@@ -1323,10 +1377,11 @@ def _help_text():
             "گروه های @یوزرنیم یا آیدی  ← گروه‌های مشترک",
         ]),
         ("🔹 فونت", [
-            "فونت [0-8]  ← تغییر فونت",
+            "فونت [0-8]  ← تغییر فونت پیام‌ها",
             "فونت [متن] [0-8]  ← پیش‌نمایش متن با فونت",
             "لیست فونت  ← نمایش نمونه‌ها",
-            "💡 فونت روی ساعت نام/بیو هم اعمال می‌شود",
+            "فونت ساعت [0-9]  ← تغییر فونت ساعت (نام/بیو)",
+            "لیست فونت ساعت  ← نمایش نمونه‌های فونت ساعت",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -1358,10 +1413,8 @@ async def _clock_loop(cl, owner_id):
                 last_minute = current_minute
                 time_str = f"{now.hour:02d}:{now.minute:02d}"
                 
-                # اعمال فونت
-                font_id = db.get_setting(owner_id, "selected_font", "0")
-                fn = FONTS.get(font_id, FONTS["0"])
-                styled_time = fn(time_str)
+                # اعمال فونت مخصوص ساعت
+                styled_time = _apply_clock_font(owner_id, time_str)
                 
                 # به‌روزرسانی نام
                 if db.get_setting(owner_id, "clock_name_active") == "1":
