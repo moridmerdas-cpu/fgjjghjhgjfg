@@ -10,32 +10,56 @@ from config import DATABASE_URL
 import redis_cache as rc
 
 # ─── اتصال به دیتابیس ──────────────────────────────────────────────────────────
+import threading
 _conn = None
+_conn_lock = threading.Lock()
 
 def get_conn():
-    """دریافت اتصال به دیتابیس با connection pooling"""
+    """دریافت اتصال به دیتابیس (thread-safe)"""
     global _conn
     if _conn is None or _conn.closed:
-        _conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        _conn = psycopg2.connect(DATABASE_URL, sslmode='require', connect_timeout=10)
         _conn.autocommit = True
     return _conn
 
 def execute_query(query: str, params: tuple = None, fetch_one: bool = False, fetch_all: bool = False):
-    """اجرای کوئری با مدیریت خودکار اتصال"""
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
-        cur.execute(query, params)
-        if fetch_one:
-            return cur.fetchone()
-        elif fetch_all:
-            return cur.fetchall()
-        return cur.rowcount
-    except Exception as e:
-        print(f"❌ Database error: {e}")
-        raise
-    finally:
-        cur.close()
+    """
+    اجرای کوئری با مدیریت خودکار اتصال.
+
+    ⚠️ این کانکشن بین چند Thread مشترک است (درخواست‌های Flask، حلقه‌ی asyncio که
+    همه‌ی سلف‌ها روش اجرا می‌شن، و Timer های پس‌زمینه). psycopg2 thread-safe نیست
+    اگه همزمان از چند Thread روی یک کانکشن کوئری زده شود؛ بدون قفل، ممکنه کانکشن
+    به‌هم بریزه و باعث خطاهای عجیب/قطعی‌های موقتی برای کاربرهای دیگه بشه.
+    به همین خاطر کل عملیات با یک Lock سراسری محافظت می‌شود.
+    """
+    with _conn_lock:
+        global _conn
+        conn = get_conn()
+        try:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            try:
+                cur.execute(query, params)
+                if fetch_one:
+                    return cur.fetchone()
+                elif fetch_all:
+                    return cur.fetchall()
+                return cur.rowcount
+            finally:
+                cur.close()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # ✅ کانکشن خراب/قطع شده — آن را دور می‌ریزیم تا دفعه‌ی بعد یک
+            # کانکشن تازه ساخته شود، به‌جای اینکه برای همیشه روی کانکشن
+            # خراب گیر کنیم و همه‌ی کوئری‌های بعدی شکست بخورند
+            print(f"❌ Database connection error (در حال بازسازی کانکشن): {e}")
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _conn = None
+            raise
+        except Exception as e:
+            print(f"❌ Database error: {e}")
+            raise
 
 def _hash_pw(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -266,16 +290,22 @@ def get_setting(owner_id: int, key: str, default=None) -> str:
         result = execute_query(query, (owner_id, key), fetch_one=True)
         if result:
             val = result['value']
-            _settings_cache[ram_key] = val
-            rc.rset(rc.k_setting(owner_id, key), val, rc.TTL_SETTING)
-            return val
-    except Exception:
-        pass
-
-    default_val = str(SETTING_DEFAULTS.get(key, default) or "")
-    _settings_cache[ram_key] = default_val
-    rc.rset(rc.k_setting(owner_id, key), default_val, rc.TTL_SETTING)
-    return default_val
+        else:
+            # ✅ ردیف واقعاً در دیتابیس وجود ندارد — این یک نتیجه‌ی قطعی است،
+            # پس مقدار پیش‌فرض را با خاطر جمعی کش می‌کنیم
+            val = str(SETTING_DEFAULTS.get(key, default) or "")
+        _settings_cache[ram_key] = val
+        rc.rset(rc.k_setting(owner_id, key), val, rc.TTL_SETTING)
+        return val
+    except Exception as e:
+        # ⚠️ اینجا یک خطای موقتی دیتابیس/شبکه است، نه «نبود داده».
+        # قبلاً این حالت هم با مقدار پیش‌فرض (خالی) کش می‌شد و چون کش RAM
+        # هیچ‌وقت expire نمی‌شد، یک قطعی موقتی دیتابیس باعث می‌شد session_data
+        # کاربر برای همیشه «خالی» در نظر گرفته شود و سلف تا لاگین مجدد دستی
+        # دیگر هیچ‌وقت وصل نشود. به همین خاطر در خطا چیزی کش نمی‌کنیم تا
+        # درخواست بعدی دوباره از دیتابیس بخواند.
+        print(f"⚠️ get_setting خطای موقتی ({owner_id}, {key}): {e} — کش نشد")
+        return str(default or "")
 
 def set_setting(owner_id: int, key: str, value):
     try:

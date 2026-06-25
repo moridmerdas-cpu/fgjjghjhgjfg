@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+import time
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from telethon import TelegramClient
@@ -534,7 +535,40 @@ if __name__ == "__main__":
     # ۴. استارت بات برای همه کاربران لاگین‌شده
     loop = get_loop()
     for oid in db.get_all_logged_in_users():
-        bot_manager.start(oid, loop, check_tokens=False, is_restart=True)
-        print(f"🚀 بات کاربر {oid} استارت شد.")
-    
+        # ✅ هر کاربر جدا try/except دارد — اگر استارت یک کاربر با خطا مواجه شود
+        # (مثلاً یک هیکاپ لحظه‌ای دیتابیس/تلگرام)، دیگر کاربرهای بعدی در این
+        # لیست بی‌خبر نمی‌مانند و استارت‌شان متوقف نمی‌شود (قبلاً یک خطا برای
+        # یک کاربر، کل حلقه را متوقف می‌کرد و باقی کاربرها هرگز ری‌استارت
+        # نمی‌شدند تا خودشان دستی دوباره لاگین کنند)
+        try:
+            bot_manager.start(oid, loop, check_tokens=False, is_restart=True)
+            print(f"🚀 بات کاربر {oid} استارت شد.")
+        except Exception as e:
+            print(f"❌ خطا در استارت خودکار کاربر {oid}: {e} — کاربر بعدی ادامه می‌یابد")
+        # ✅ فاصله‌ی کوچک بین استارت‌ها تا تلگرام همه‌ی این اتصال‌های هم‌زمان
+        # را به‌عنوان رفتار مشکوک/فلود نبیند
+        time.sleep(0.3)
+
+    # ۵. واچ‌داگ سلامت سلف‌ها — هر چند دقیقه چک می‌کند که آیا سلف هر کاربر
+    #    لاگین‌شده واقعاً در حال اجراست؛ اگر نبود (مثلاً به هر دلیلی، حتی
+    #    دلایلی که هنوز کشف نشده‌اند، متوقف شده بود) خودش دوباره استارتش
+    #    می‌زند — تا کاربر مجبور نشود دستی سلف را حذف و دوباره لاگین کند
+    def _self_heal_watchdog():
+        WATCHDOG_INTERVAL = 180  # هر ۳ دقیقه
+        while True:
+            time.sleep(WATCHDOG_INTERVAL)
+            try:
+                for oid in db.get_all_logged_in_users():
+                    try:
+                        if not bot_manager.is_running(oid):
+                            print(f"🩺 واچ‌داگ: سلف کاربر {oid} روشن نبود — تلاش برای ری‌استارت خودکار")
+                            bot_manager.start(oid, get_loop(), check_tokens=False, is_restart=True)
+                    except Exception as e:
+                        print(f"⚠️ واچ‌داگ: خطا در بررسی/ری‌استارت کاربر {oid}: {e}")
+            except Exception as e:
+                print(f"⚠️ واچ‌داگ: خطای کلی: {e}")
+
+    threading.Thread(target=_self_heal_watchdog, daemon=True).start()
+    print("✅ واچ‌داگ سلامت سلف‌ها استارت شد")
+
     app.run(host="0.0.0.0", port=config.PORT, debug=False)
