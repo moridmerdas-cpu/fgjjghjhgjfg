@@ -2652,15 +2652,32 @@ def start_token_bot():
                 if not accounts:
                     text = "هیچ کاربری ثبت نشده."
                 else:
-                    lines = [f"👥 <b>کاربران ({len(accounts)} نفر):</b>\n\n"]
-                    for acc in accounts[:30]:
+                    lines = [f"👥 <b>کاربران ({len(accounts)} نفر)</b>\n"]
+                    for i, acc in enumerate(accounts[:30], 1):
                         bal = db.get_token_balance(acc["id"])
                         remaining = _format_plan_remaining(acc["id"])
+                        tg_id_val = db.get_telegram_id_by_owner(acc["id"])
+                        # دریافت یوزرنیم تلگرام (@username) از طریق آیدی
+                        tg_username_line = "👤 تلگرام: ندارد"
+                        if tg_id_val:
+                            try:
+                                tg_chat = _bot.get_chat(tg_id_val)
+                                if tg_chat.username:
+                                    tg_username_line = f"👤 تلگرام: @{tg_chat.username}"
+                                else:
+                                    tg_username_line = f"👤 تلگرام: {tg_chat.first_name or tg_id_val}"
+                            except Exception:
+                                tg_username_line = f"👤 تلگرام: <code>{tg_id_val}</code>"
+                        tg_id_line = f"📱 آیدی: <code>{tg_id_val}</code>" if tg_id_val else "📱 آیدی: ندارد"
                         lines.append(
-                            f"• <b>{acc['username']}</b> — 🆔 <code>{acc['id']}</code>\n"
-                            f"  💎{bal} | ⏳ پلن: {remaining}"
+                            f"┌─ <b>#{i} {acc['username']}</b>\n"
+                            f"├ 🆔 پنل: <code>{acc['id']}</code>\n"
+                            f"├ {tg_username_line}\n"
+                            f"├ {tg_id_line}\n"
+                            f"├ 💎 موجودی: <b>{bal} الماس</b>\n"
+                            f"└ ⏳ پلن: {remaining}"
                         )
-                    text = "\n".join(lines)
+                    text = "\n\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
