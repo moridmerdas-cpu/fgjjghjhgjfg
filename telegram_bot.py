@@ -1168,11 +1168,14 @@ def start_token_bot():
     # /start
     # ══════════════════════════════════════════════════════════════════════════
     def _grant_free_trial(account_id: int, tg_id: int):
-        """یک روز سلف رایگان برای کاربران جدید"""
+        """یک روز سلف رایگان برای کاربران جدید — فقط اگر اشتراک نداشته باشند
+        و فقط پیام خوش‌آمد می‌فرستد؛ set_subscription صدا نمی‌زند چون در ثبت‌نام انجام شده."""
         try:
             existing = db.get_subscription(account_id)
             if existing:
-                return  # قبلاً اشتراک داشته
+                # اشتراک قبلاً وجود دارد — کاری نکن تا سلف قطع نشه
+                return
+            # اگر به هر دلیلی در ثبت‌نام ست نشده بود، اینجا ست می‌کنیم
             expires = db.set_subscription(account_id, "free_trial", 1)
             if expires:
                 exp_str = _fmt_tehran(expires)
@@ -1677,12 +1680,16 @@ def start_token_bot():
                     db.save_telegram_user_id(existing["id"], tg_id)
                     _reg_clear(tg_id)
 
-                    from bot import bot_manager
-                    from app import get_loop
-                    try:
-                        bot_manager.start(existing["id"], get_loop(), check_tokens=False)
-                    except Exception:
-                        pass
+                    # ── استارت سلف در thread جدا با تاخیر کوتاه تا DB کاملاً commit شه ──
+                    def _start_existing(_acc_id):
+                        time.sleep(1.5)
+                        try:
+                            from bot import bot_manager
+                            from app import get_loop
+                            bot_manager.start(_acc_id, get_loop(), check_tokens=False)
+                        except Exception as _e:
+                            print(f"⚠️ bot_manager.start (existing): {_e}")
+                    threading.Thread(target=_start_existing, args=(existing["id"],), daemon=True).start()
 
                     try:
                         _bot.edit_message_text(
@@ -1726,14 +1733,28 @@ def start_token_bot():
                 # هدیه خوش‌آمد
                 db.add_tokens(new_id, config.WELCOME_TOKENS)
 
+                # اشتراک رایگان یک‌روزه برای کاربر جدید — همین‌جا ست می‌شه
+                # تا /start بعدی دوباره set_subscription صدا نزنه و سلف قطع نشه
+                try:
+                    if not db.get_subscription(new_id):
+                        db.set_subscription(new_id, "free_trial", 1)
+                except Exception as _e:
+                    print(f"⚠️ set free_trial on register: {_e}")
+
                 _reg_clear(tg_id)
 
-                from bot import bot_manager
-                from app import get_loop
-                try:
-                    bot_manager.start(new_id, get_loop(), check_tokens=False)
-                except Exception:
-                    pass
+                # ── استارت سلف در thread جدا با تاخیر کوتاه تا DB کاملاً commit شه ──
+                def _start_new(_acc_id, _tg_id):
+                    time.sleep(1.5)
+                    try:
+                        from bot import bot_manager
+                        from app import get_loop
+                        bot_manager.start(_acc_id, get_loop(), check_tokens=False)
+                    except Exception as _e:
+                        print(f"⚠️ bot_manager.start (new): {_e}")
+                    # اطلاع‌رسانی انقضا ۲۴ ساعت بعد
+                    threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
+                threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
 
                 site_url = getattr(config, "SITE_URL", "")
                 markup_done = types.InlineKeyboardMarkup()
@@ -1747,8 +1768,9 @@ def start_token_bot():
                         f"👤 نام: <b>{tg_user['name']}</b>\n"
                         f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n"
                         f"🔒 رمز عبور: همان رمزی که وارد کردید\n\n"
-                        f"🎁 <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n\n"
-                        f"✅ سلف‌بات فعال شد — می‌توانید از تلگرام استفاده کنید.",
+                        f"🎁 <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
+                        f"⏰ <b>۱ روز سلف رایگان</b> فعال شد!\n\n"
+                        f"✅ سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=markup_done,
@@ -1976,8 +1998,13 @@ def start_token_bot():
                 )
                 return
 
-            # سلف رایگان برای کاربر جدید
-            threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
+            # سلف رایگان فقط برای کاربری که هیچ اشتراکی ندارد
+            # (جلوگیری از فراخوانی set_subscription هر بار و قطع شدن سلف)
+            try:
+                if not db.get_subscription(account["id"]):
+                    threading.Thread(target=_grant_free_trial, args=[account["id"], tg_id], daemon=True).start()
+            except Exception:
+                pass
 
             # اگر سلف از اکانت حذف شده → دکمه وصل کردن دوباره نمایش بده
             if message.chat.type == 'private':
