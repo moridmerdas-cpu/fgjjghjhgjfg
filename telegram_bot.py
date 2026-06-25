@@ -28,6 +28,40 @@ def _fmt_tehran(dt) -> str:
     tehran = dt.astimezone(_TEHRAN_OFFSET)
     return tehran.strftime("%Y/%m/%d — %H:%M")
 
+def _format_plan_remaining(owner_id: int) -> str:
+    """متن باقی‌مانده‌ی پلن سلف یک کاربر (برای نمایش به مالک در لیست کاربران).
+    expires_at به‌صورت زمان محلی تهران (بدون tzinfo) ذخیره شده، پس مستقیم با
+    زمان فعلی تهران مقایسه می‌شود (بدون تبدیل از UTC)."""
+    try:
+        sub = db.get_subscription(owner_id)
+    except Exception:
+        sub = None
+    if not sub or not sub.get("expires_at"):
+        return "بدون پلن"
+
+    exp = sub["expires_at"]
+    if isinstance(exp, str):
+        try:
+            exp = datetime.datetime.fromisoformat(exp)
+        except Exception:
+            return "نامشخص"
+    if exp.tzinfo is not None:
+        exp = exp.replace(tzinfo=None)
+
+    now_teh = datetime.datetime.now(_TEHRAN_OFFSET).replace(tzinfo=None)
+    secs = (exp - now_teh).total_seconds()
+    if secs <= 0:
+        return "❌ منقضی شده"
+
+    days = int(secs // 86400)
+    hours = int((secs % 86400) // 3600)
+    minutes = int((secs % 3600) // 60)
+    if days > 0:
+        return f"{days} روز و {hours} ساعت"
+    if hours > 0:
+        return f"{hours} ساعت و {minutes} دقیقه"
+    return f"{minutes} دقیقه"
+
 def _remaining_str(dt) -> str:
     """باقی‌مانده زمان تا انقضا به فارسی"""
     if dt is None:
@@ -2621,7 +2655,11 @@ def start_token_bot():
                     lines = [f"👥 <b>کاربران ({len(accounts)} نفر):</b>\n\n"]
                     for acc in accounts[:30]:
                         bal = db.get_token_balance(acc["id"])
-                        lines.append(f"• <b>{acc['username']}</b> — 💎{bal}")
+                        remaining = _format_plan_remaining(acc["id"])
+                        lines.append(
+                            f"• <b>{acc['username']}</b> — 🆔 <code>{acc['id']}</code>\n"
+                            f"  💎{bal} | ⏳ پلن: {remaining}"
+                        )
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
