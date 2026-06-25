@@ -4124,119 +4124,133 @@ def start_token_bot():
     # 🪨📄✂️ بازی سنگ کاغذ قیچی گروهی — ۵ راند — دکمه توی گروه
     # ══════════════════════════════════════════════════════════════════════════
     # فرمت دستور: "بازی 100"  → شرط 100 الماس
+    # ساختار: _rps_games[game_id] = {
+    #   "chat_id": int, "player1": int, "player2": int | None,
+    #   "player1_name": str, "player2_name": str | None,
+    #   "choice1": str | None, "choice2": str | None,   ← انتخاب راند فعلی
+    #   "score1": int, "score2": int,                   ← امتیاز کل
+    #   "round": int,                                   ← راند فعلی (1-5)
+    #   "msg_id": int,                                  ← پیام اصلی گروه
+    #   "round_msg_id": int | None,                     ← پیام دکمه‌های راند
+    #   "account1": int, "account2": int | None,
+    #   "bet": int,
+    #   "state": "waiting" | "playing" | "finished"
+    # }
     _rps_games = {}
     _rps_lock = threading.Lock()
     _RPS_CHOICES = {"rock": "🪨 سنگ", "paper": "📄 کاغذ", "scissors": "✂️ قیچی"}
-    _RPS_WINS    = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
-    _RPS_TAX     = 0.10
-    _RPS_ROUNDS  = 5
+    _RPS_WINS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
+    _RPS_TAX = 0.10   # ۱۰٪ مالیات
+    _RPS_ROUNDS = 5
 
     def _rps_new_id():
         import uuid
         return str(uuid.uuid4())[:8]
 
-    def _rps_round_result(c1, c2):
-        if c1 == c2: return "draw"
-        return "win1" if _RPS_WINS[c1] == c2 else "win2"
+    def _rps_result_text(c1, c2):
+        """نتیجه یک راند: 'win1', 'win2', 'draw'"""
+        if c1 == c2:
+            return "draw"
+        if _RPS_WINS[c1] == c2:
+            return "win1"
+        return "win2"
 
-    def _rps_bar(s1, s2):
+    def _rps_score_bar(s1, s2, total_rounds=_RPS_ROUNDS):
+        """نوار امتیاز بصری"""
         bar = ""
-        for i in range(_RPS_ROUNDS):
-            if i < s1:        bar += "🟦"
-            elif i < s1 + s2: bar += "🟥"
-            else:              bar += "⬜"
+        for i in range(total_rounds):
+            if i < s1:
+                bar += "🟦"
+            elif i < s1 + s2:
+                bar += "🟥"
+            else:
+                bar += "⬜"
         return bar
 
-    def _rps_pick_markup(game_id):
-        markup = types.InlineKeyboardMarkup(row_width=3)
-        markup.add(
-            types.InlineKeyboardButton("🪨 سنگ",   callback_data=f"rps_{game_id}_rock",     style="primary"),
-            types.InlineKeyboardButton("📄 کاغذ",  callback_data=f"rps_{game_id}_paper",    style="success"),
-            types.InlineKeyboardButton("✂️ قیچی", callback_data=f"rps_{game_id}_scissors", style="danger"),
-        )
-        return markup
-
-    def _rps_header(game):
-        """پیام ثابت بالای بازی"""
-        p1, p2 = game["p1_name"], game.get("p2_name") or "منتظر بازیکن..."
+    def _rps_status_text(game):
+        p1 = game["player1_name"]
+        p2 = game.get("player2_name") or "منتظر بازیکن..."
         bet = game["bet"]
-        payout = int(bet * 2 * (1 - _RPS_TAX))
-        s1, s2 = game.get("score1", 0), game.get("score2", 0)
-        rnd = game.get("round", 1)
+        total = bet * 2
+        tax = int(total * _RPS_TAX)
+        payout = total - tax
         state = game["state"]
 
         if state == "waiting":
             return (
-                "🎮 <b>بازی سنگ کاغذ قیچی — ۵ راند</b>\n\n"
-                f"👤 {p1} منتظر حریف است\n\n"
-                f"💰 شرط هر نفر: <b>{bet} 💎</b>\n"
-                f"🏆 جایزه برنده: <b>{payout} 💎</b> (۱۰٪ مالیات)\n\n"
-                "⬇️ برای ورود دکمه زیر را بزنید"
+                "🎮 <b>بازی سنگ کاغذ قیچی — ۵ راند!</b>\n\n"
+                f"👤 نفر اول: <b>{p1}</b>\n"
+                f"👤 نفر دوم: در انتظار...\n\n"
+                f"💰 شرط هر نفر: <b>{bet} 💎 الماس</b>\n"
+                f"🏆 جایزه برنده: <b>{payout} 💎 الماس</b> (مالیات ۱۰٪)\n\n"
+                "⬇️ برای ورود به بازی دکمه زیر را بزنید"
             )
-        c1_icon = "✅" if game.get("c1") else "⏳"
-        c2_icon = "✅" if game.get("c2") else "⏳"
+
+        rnd = game.get("round", 1)
+        s1 = game.get("score1", 0)
+        s2 = game.get("score2", 0)
+        c1_done = "✅" if game.get("choice1") else "⏳"
+        c2_done = "✅" if game.get("choice2") else "⏳"
+        bar = _rps_score_bar(s1, s2)
+
         return (
-            f"🎮 <b>راند {rnd} از {_RPS_ROUNDS}</b>\n\n"
-            f"👤 {p1}  {c1_icon}\n"
-            f"👤 {p2}  {c2_icon}\n\n"
-            f"📊 {p1} <b>{s1}</b> — <b>{s2}</b> {p2}\n"
-            f"{_rps_bar(s1, s2)}\n\n"
-            f"💰 شرط: <b>{bet} 💎</b> هر نفر"
+            f"🎮 <b>سنگ کاغذ قیچی — راند {rnd} از {_RPS_ROUNDS}</b>\n\n"
+            f"👤 {p1}  {c1_done}\n"
+            f"👤 {p2}  {c2_done}\n\n"
+            f"📊 امتیاز: {p1} <b>{s1}</b> — <b>{s2}</b> {p2}\n"
+            f"{bar}\n\n"
+            f"💰 شرط: <b>{bet} 💎</b> هر نفر\n"
+            "⬇️ انتخاب خود را بزنید:"
         )
 
-    def _rps_send_round(game_id):
-        """ارسال پیام دکمه‌های راند جدید — همیشه پیام جدید"""
-        with _rps_lock:
-            game = _rps_games.get(game_id)
-            if not game or game["state"] != "playing":
-                print(f"⚠️ _rps_send_round: game not found or not playing, id={game_id}")
-                return
-            chat_id  = game["chat_id"]
-            msg_id   = game["msg_id"]
-            rnd      = game["round"]
+    def _rps_pick_markup(game_id):
+        markup = types.InlineKeyboardMarkup(row_width=3)
+        markup.add(
+            types.InlineKeyboardButton("🪨 سنگ",   callback_data=f"rps_pick_{game_id}_rock"),
+            types.InlineKeyboardButton("📄 کاغذ",  callback_data=f"rps_pick_{game_id}_paper"),
+            types.InlineKeyboardButton("✂️ قیچی", callback_data=f"rps_pick_{game_id}_scissors"),
+        )
+        return markup
 
-        # آپدیت header
+    def _rps_start_round(game_id):
+        """ارسال پیام دکمه‌های راند جدید توی گروه"""
+        game = _rps_games.get(game_id)
+        if not game:
+            return
         try:
-            _bot.edit_message_text(_rps_header(game), chat_id, msg_id,
-                                   parse_mode="HTML", reply_markup=types.InlineKeyboardMarkup())
+            # ابتدا پیام اصلی (سربرگ) آپدیت شود
+            _bot.edit_message_text(
+                _rps_status_text(game),
+                game["chat_id"], game["msg_id"],
+                parse_mode="HTML",
+                reply_markup=types.InlineKeyboardMarkup()
+            )
         except Exception:
             pass
-
-        # پیام دکمه‌های راند
         try:
+            # پیام جداگانه برای دکمه‌های راند
             sent = _bot.send_message(
-                chat_id,
-                f"🎯 <b>راند {rnd}</b> — انتخاب کنید 👇",
+                game["chat_id"],
+                f"🎯 <b>راند {game['round']}</b> — انتخاب کنید 👇",
                 parse_mode="HTML",
                 reply_markup=_rps_pick_markup(game_id)
             )
-            with _rps_lock:
-                g = _rps_games.get(game_id)
-                if g:
-                    g["round_msg_id"] = sent.message_id
-                    print(f"✅ round {rnd} msg sent, msg_id={sent.message_id}")
+            game["round_msg_id"] = sent.message_id
         except Exception as e:
-            print(f"❌ _rps_send_round send: {e}")
+            print(f"❌ _rps_start_round send: {e}")
 
-    # ── دستور: "بازی 100" ────────────────────────────────────────────────────
-    @_bot.message_handler(commands=["rps"], chat_types=["group", "supergroup"])
-    def cmd_rps_slash(message):
-        parts = message.text.strip().split()
-        if len(parts) < 2 or not parts[1].isdigit():
-            return _bot.reply_to(message, "❌ فرمت: /rps 100")
-        _rps_begin(message, int(parts[1]))
-
-    @_bot.message_handler(
-        func=lambda m: m.text and re.match(r'^بازی\s+(\d+)$', m.text.strip()),
-        chat_types=['group', 'supergroup']
-    )
+    # ── دستور شروع بازی: "بازی 100" ──────────────────────────────────────────
+    @_bot.message_handler(func=lambda m: (
+        m.chat.type in ("group", "supergroup") and
+        m.text and
+        re.match(r'^بازی\s+(\d+)$', m.text.strip())
+    ))
     def cmd_rps_start(message):
-        m2 = re.match(r'^بازی\s+(\d+)$', message.text.strip())
-        _rps_begin(message, int(m2.group(1)))
-
-    def _rps_begin(message, bet):
         try:
             user = message.from_user
+            match = re.match(r'^بازی\s+(\d+)$', message.text.strip())
+            bet = int(match.group(1))
+
             if bet <= 0:
                 return _bot.reply_to(message, "❌ مقدار شرط باید بیشتر از صفر باشد.")
 
@@ -4244,52 +4258,61 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "❌ ابتدا اکانت بسازید.")
 
-            balance = db.get_token_balance(account["id"])
+            balance = db.get_tokens(account["id"])
             if balance < bet:
-                return _bot.reply_to(message,
-                    f"❌ موجودی کافی نیست!\n💎 موجودی: {balance}\n💰 شرط: {bet}")
+                return _bot.reply_to(
+                    message,
+                    f"❌ موجودی کافی نیست!\n💎 موجودی شما: {balance} الماس\n💰 شرط: {bet} الماس"
+                )
 
             with _rps_lock:
                 for g in _rps_games.values():
                     if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
                         return _bot.reply_to(message, "❌ شما هم‌اکنون در یک بازی فعال هستید.")
 
+            # کسر الماس از نفر اول
             db.add_tokens(account["id"], -bet)
             cache.invalidate(f"account_{user.id}")
 
             game_id = _rps_new_id()
             game = {
-                "chat_id":    message.chat.id,
-                "player1":    user.id,
-                "p1_name":    user.first_name,
-                "player2":    None,
-                "p2_name":    None,
-                "c1":         None,
-                "c2":         None,
-                "score1":     0,
-                "score2":     0,
-                "round":      1,
-                "msg_id":     None,
+                "chat_id": message.chat.id,
+                "player1": user.id,
+                "player1_name": user.first_name,
+                "player2": None,
+                "player2_name": None,
+                "choice1": None,
+                "choice2": None,
+                "score1": 0,
+                "score2": 0,
+                "round": 1,
+                "msg_id": None,
                 "round_msg_id": None,
-                "account1":   account["id"],
-                "account2":   None,
-                "bet":        bet,
-                "state":      "waiting",
+                "account1": account["id"],
+                "account2": None,
+                "bet": bet,
+                "state": "waiting",
             }
 
-            markup = types.InlineKeyboardMarkup()
+            markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(types.InlineKeyboardButton(
-                f"⚔️ ورود به بازی — {bet} 💎",
+                f"⚔️ ورود به بازی — {bet} 💎 الماس",
                 callback_data=f"rps_join_{game_id}"
             ))
-            sent = _bot.send_message(message.chat.id, _rps_header(game),
-                                     parse_mode="HTML", reply_markup=markup)
+
+            sent = _bot.send_message(
+                message.chat.id,
+                _rps_status_text(game),
+                parse_mode="HTML",
+                reply_markup=markup
+            )
             game["msg_id"] = sent.message_id
 
             with _rps_lock:
                 _rps_games[game_id] = game
 
-            def _timeout(gid):
+            # تایمر ۵ دقیقه — لغو خودکار اگر نفر دوم نیاید
+            def _rps_timeout(gid):
                 with _rps_lock:
                     g = _rps_games.get(gid)
                     if not g or g["state"] != "waiting":
@@ -4300,22 +4323,25 @@ def start_token_bot():
                 cache.invalidate(f"account_{g['player1']}")
                 try:
                     _bot.edit_message_text(
-                        f"⏰ بازی لغو شد — کسی نیامد.\n💎 {g['bet']} الماس به حساب برگشت.",
+                        f"⏰ <b>بازی لغو شد!</b>\n\n{g['player1_name']} منتظر حریف ماند ولی کسی نیامد.\n"
+                        f"💎 {g['bet']} الماس به حساب برگشت.",
                         g["chat_id"], g["msg_id"],
-                        parse_mode="HTML", reply_markup=types.InlineKeyboardMarkup())
+                        parse_mode="HTML",
+                        reply_markup=types.InlineKeyboardMarkup()
+                    )
                 except Exception:
                     pass
-            threading.Timer(300, _timeout, args=[game_id]).start()
+            threading.Timer(300, _rps_timeout, args=[game_id]).start()
 
         except Exception as e:
-            print(f"❌ _rps_begin: {e}")
+            print(f"❌ cmd_rps_start: {e}")
 
     # ── ورود نفر دوم ─────────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_join_"))
     def callback_rps_join(call):
         try:
-            game_id = call.data[len("rps_join_"):]
-            user    = call.from_user
+            game_id = call.data.split("_", 2)[2]
+            user = call.from_user
 
             with _rps_lock:
                 game = _rps_games.get(game_id)
@@ -4331,43 +4357,48 @@ def start_token_bot():
                     return _bot.answer_callback_query(call.id, "❌ ابتدا اکانت بسازید.", show_alert=True)
 
                 bet = game["bet"]
-                if db.get_token_balance(account["id"]) < bet:
-                    return _bot.answer_callback_query(call.id,
-                        f"❌ موجودی کافی نیست! شرط: {bet} 💎", show_alert=True)
+                balance = db.get_tokens(account["id"])
+                if balance < bet:
+                    return _bot.answer_callback_query(
+                        call.id,
+                        f"❌ موجودی کافی نیست!\n💎 موجودی: {balance}\n💰 شرط: {bet}",
+                        show_alert=True
+                    )
 
                 for gid, g in _rps_games.items():
-                    if gid != game_id and user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
+                    if gid == game_id:
+                        continue
+                    if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
                         return _bot.answer_callback_query(call.id, "❌ شما در یک بازی دیگر هستید.", show_alert=True)
 
+                # کسر الماس از نفر دوم
                 db.add_tokens(account["id"], -bet)
                 cache.invalidate(f"account_{user.id}")
 
-                game["player2"]  = user.id
-                game["p2_name"]  = user.first_name
+                game["player2"] = user.id
+                game["player2_name"] = user.first_name
                 game["account2"] = account["id"]
-                game["state"]    = "playing"
-                game["round"]    = 1
+                game["state"] = "playing"
+                game["round"] = 1
+                game["choice1"] = None
+                game["choice2"] = None
 
-            _bot.answer_callback_query(call.id, f"✅ وارد بازی شدید! {bet} 💎 کسر شد.")
-            _rps_send_round(game_id)
+            _bot.answer_callback_query(call.id, f"✅ وارد بازی شدید! {bet} الماس کسر شد.")
+            _rps_start_round(game_id)
 
         except Exception as e:
             print(f"❌ callback_rps_join: {e}")
 
-    # ── انتخاب توی گروه ──────────────────────────────────────────────────────
-    @_bot.callback_query_handler(func=lambda c: (
-        re.match(r'^rps_[^_]+_(rock|paper|scissors)$', c.data)
-    ))
+    # ── انتخاب سنگ/کاغذ/قیچی (توی گروه) ────────────────────────────────────
+    @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_pick_"))
     def callback_rps_pick(call):
         try:
-            parts  = call.data.split("_")   # rps  GAMEID  CHOICE
-            game_id = parts[1]
-            choice  = parts[2]
-            user    = call.from_user
+            parts = call.data.split("_")  # rps_pick_GAMEID_CHOICE
+            game_id = parts[2]
+            choice = parts[3]
+            user = call.from_user
 
-            print(f"🎯 pick: user={user.id} game={game_id} choice={choice}")
-
-            resolve = False
+            both_chosen = False
             with _rps_lock:
                 game = _rps_games.get(game_id)
                 if not game:
@@ -4376,149 +4407,199 @@ def start_token_bot():
                     return _bot.answer_callback_query(call.id, "❌ بازی در جریان نیست.")
 
                 if user.id == game["player1"]:
-                    if game["c1"]:
-                        return _bot.answer_callback_query(call.id, "⚠️ قبلاً انتخاب کردید.", show_alert=True)
-                    game["c1"] = choice
+                    if game["choice1"]:
+                        return _bot.answer_callback_query(call.id, "⚠️ شما قبلاً انتخاب کردید.", show_alert=True)
+                    game["choice1"] = choice
                 elif user.id == game["player2"]:
-                    if game["c2"]:
-                        return _bot.answer_callback_query(call.id, "⚠️ قبلاً انتخاب کردید.", show_alert=True)
-                    game["c2"] = choice
+                    if game["choice2"]:
+                        return _bot.answer_callback_query(call.id, "⚠️ شما قبلاً انتخاب کردید.", show_alert=True)
+                    game["choice2"] = choice
                 else:
                     return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.", show_alert=True)
 
-                _bot.answer_callback_query(call.id,
-                    f"✅ {_RPS_CHOICES[choice]} انتخاب شد! منتظر رقیب...")
+                _bot.answer_callback_query(call.id, f"✅ {_RPS_CHOICES.get(choice, choice)} انتخاب شد! منتظر رقیب...")
 
-                # آپدیت header (نشان بده کی انتخاب کرده)
+                # آپدیت وضعیت (نشان بده کی انتخاب کرده)
                 try:
-                    _bot.edit_message_text(_rps_header(game),
+                    _bot.edit_message_text(
+                        _rps_status_text(game),
                         game["chat_id"], game["msg_id"],
-                        parse_mode="HTML", reply_markup=types.InlineKeyboardMarkup())
+                        parse_mode="HTML",
+                        reply_markup=types.InlineKeyboardMarkup()
+                    )
                 except Exception:
                     pass
 
-                resolve = bool(game["c1"] and game["c2"])
+                both_chosen = bool(game["choice1"] and game["choice2"])
 
-            if resolve:
-                _rps_do_round(game_id)
+            if both_chosen:
+                _rps_resolve_round(game_id)
 
         except Exception as e:
             print(f"❌ callback_rps_pick: {e}")
 
-    def _rps_do_round(game_id):
-        """پردازش نتیجه راند جاری و تصمیم برای ادامه یا پایان"""
+    def _rps_resolve_round(game_id):
+        """پردازش نتیجه یک راند"""
         try:
             with _rps_lock:
                 game = _rps_games.get(game_id)
                 if not game or game["state"] != "playing":
                     return
 
-                c1, c2 = game["c1"], game["c2"]
-                rnd    = game["round"]
-                result = _rps_round_result(c1, c2)
+                c1 = game["choice1"]
+                c2 = game["choice2"]
+                result = _rps_result_text(c1, c2)
+                rnd = game["round"]
 
-                if result == "win1": game["score1"] += 1
-                elif result == "win2": game["score2"] += 1
+                if result == "win1":
+                    game["score1"] += 1
+                elif result == "win2":
+                    game["score2"] += 1
 
-                s1, s2   = game["score1"], game["score2"]
-                p1, p2   = game["p1_name"], game["p2_name"]
-                chat_id  = game["chat_id"]
-                rmid     = game.get("round_msg_id")
-                is_last  = (rnd >= _RPS_ROUNDS)
+                label1 = _RPS_CHOICES.get(c1, c1)
+                label2 = _RPS_CHOICES.get(c2, c2)
+                p1 = game["player1_name"]
+                p2 = game["player2_name"]
+                s1 = game["score1"]
+                s2 = game["score2"]
 
-                # پاک کردن انتخاب‌ها برای راند بعد
-                game["c1"] = None
-                game["c2"] = None
-                if not is_last:
-                    game["round"] = rnd + 1
+                if result == "win1":
+                    round_result_line = f"🏅 <b>{p1}</b> این راند را برد!"
+                elif result == "win2":
+                    round_result_line = f"🏅 <b>{p2}</b> این راند را برد!"
                 else:
-                    game["state"] = "finished"
+                    round_result_line = "🤝 این راند مساوی شد!"
 
-                # اطلاعاتی که بعد از lock نیاز داریم
-                snap = dict(game)
+                round_msg_id = game.get("round_msg_id")
+                chat_id = game["chat_id"]
 
-            label1 = _RPS_CHOICES[c1]
-            label2 = _RPS_CHOICES[c2]
-            if result == "win1":  rl = f"🏅 <b>{p1}</b> این راند را برد!"
-            elif result == "win2": rl = f"🏅 <b>{p2}</b> این راند را برد!"
-            else:                  rl = "🤝 این راند مساوی شد!"
+                is_last = (rnd >= _RPS_ROUNDS)
+                if is_last:
+                    game["state"] = "resolving"
 
+                # آماده کردن داده برای بعد از lock
+                game_snapshot = dict(game)
+                game["choice1"] = None
+                game["choice2"] = None
+                game["round"] = rnd + 1
+
+            # آپدیت/حذف پیام دکمه‌های راند
             round_text = (
                 f"📋 <b>نتیجه راند {rnd}</b>\n\n"
                 f"👤 {p1}: {label1}\n"
                 f"👤 {p2}: {label2}\n\n"
-                f"{rl}\n\n"
-                f"📊 {p1} <b>{s1}</b> — <b>{s2}</b> {p2}\n"
-                f"{_rps_bar(s1, s2)}"
+                f"{round_result_line}\n\n"
+                f"📊 امتیاز: {p1} <b>{s1}</b> — <b>{s2}</b> {p2}\n"
+                f"{_rps_score_bar(s1, s2)}"
             )
-            print(f"📋 round {rnd} done: {p1}={c1} vs {p2}={c2} → {result} | scores {s1}-{s2} | is_last={is_last}")
-
-            if rmid:
+            if round_msg_id:
                 try:
-                    _bot.edit_message_text(round_text, chat_id, rmid,
-                        parse_mode="HTML", reply_markup=types.InlineKeyboardMarkup())
+                    _bot.edit_message_text(
+                        round_text,
+                        chat_id, round_msg_id,
+                        parse_mode="HTML",
+                        reply_markup=types.InlineKeyboardMarkup()
+                    )
                 except Exception:
-                    _bot.send_message(chat_id, round_text, parse_mode="HTML")
+                    try:
+                        _bot.send_message(chat_id, round_text, parse_mode="HTML")
+                    except Exception:
+                        pass
             else:
-                _bot.send_message(chat_id, round_text, parse_mode="HTML")
-
-            time.sleep(1)
+                try:
+                    _bot.send_message(chat_id, round_text, parse_mode="HTML")
+                except Exception:
+                    pass
 
             if is_last:
-                _rps_finish(game_id, snap)
+                # کمی صبر کن بعد نتیجه نهایی بده
+                time.sleep(1)
+                _rps_finish(game_id, game_snapshot)
             else:
-                _rps_send_round(game_id)
+                # راند بعدی
+                time.sleep(1)
+                _rps_start_round(game_id)
 
         except Exception as e:
-            print(f"❌ _rps_do_round: {e}")
+            print(f"❌ _rps_resolve_round: {e}")
 
     def _rps_finish(game_id, game):
+        """تسویه نهایی بعد از ۵ راند"""
         try:
-            s1, s2   = game["score1"], game["score2"]
-            bet      = game["bet"]
-            total    = bet * 2
-            tax      = int(total * _RPS_TAX)
-            payout   = total - tax
-            p1, p2   = game["p1_name"], game["p2_name"]
+            s1 = game["score1"]
+            s2 = game["score2"]
+            bet = game["bet"]
+            total = bet * 2
+            tax = int(total * _RPS_TAX)
+            payout = total - tax
+            p1_name = game["player1_name"]
+            p2_name = game["player2_name"]
 
             if s1 > s2:
-                db.add_tokens(game["account1"], payout)
+                winner_uid = game["player1"]
+                winner_acc = game["account1"]
+                winner_name = p1_name
+                loser_name = p2_name
+                db.add_tokens(winner_acc, payout)
                 cache.invalidate(f"account_{game['player1']}")
-                rl = f"🏆 <b>{p1}</b> برنده شد! ({s1}—{s2})"
-                pl = f"💰 جمع شرط: {total} 💎\n🏛 مالیات ۱۰٪: {tax} 💎\n💎 جایزه: <b>{payout}</b> به {p1}"
+                result_line = f"🏆 <b>{winner_name}</b> برنده شد! ({s1} — {s2})"
+                payout_line = (
+                    f"💰 مجموع شرط: {total} 💎\n"
+                    f"🏛 مالیات ۱۰٪: {tax} 💎\n"
+                    f"💎 جایزه: <b>{payout} الماس</b> به {winner_name}"
+                )
             elif s2 > s1:
-                db.add_tokens(game["account2"], payout)
+                winner_uid = game["player2"]
+                winner_acc = game["account2"]
+                winner_name = p2_name
+                loser_name = p1_name
+                db.add_tokens(winner_acc, payout)
                 cache.invalidate(f"account_{game['player2']}")
-                rl = f"🏆 <b>{p2}</b> برنده شد! ({s2}—{s1})"
-                pl = f"💰 جمع شرط: {total} 💎\n🏛 مالیات ۱۰٪: {tax} 💎\n💎 جایزه: <b>{payout}</b> به {p2}"
+                result_line = f"🏆 <b>{winner_name}</b> برنده شد! ({s2} — {s1})"
+                payout_line = (
+                    f"💰 مجموع شرط: {total} 💎\n"
+                    f"🏛 مالیات ۱۰٪: {tax} 💎\n"
+                    f"💎 جایزه: <b>{payout} الماس</b> به {winner_name}"
+                )
             else:
+                # مساوی: برگشت شرط
+                winner_uid = None
+                winner_name = None
                 db.add_tokens(game["account1"], bet)
                 db.add_tokens(game["account2"], bet)
                 cache.invalidate(f"account_{game['player1']}")
                 cache.invalidate(f"account_{game['player2']}")
-                rl = f"🤝 <b>مساوی!</b> ({s1}—{s2})"
-                pl = f"↩️ هر نفر {bet} 💎 دریافت کرد."
+                result_line = f"🤝 <b>مساوی!</b> ({s1} — {s2})"
+                payout_line = f"↩️ هر نفر {bet} 💎 الماس دریافت کرد."
 
-            final = (
+            bar = _rps_score_bar(s1, s2)
+            final_text = (
                 "🎮 <b>نتیجه نهایی — سنگ کاغذ قیچی</b>\n\n"
-                f"👤 {p1}: <b>{s1}</b> امتیاز\n"
-                f"👤 {p2}: <b>{s2}</b> امتیاز\n"
-                f"{_rps_bar(s1, s2)}\n\n"
-                f"{rl}\n\n{pl}"
+                f"👤 {p1_name}:  <b>{s1}</b> امتیاز\n"
+                f"👤 {p2_name}:  <b>{s2}</b> امتیاز\n"
+                f"{bar}\n\n"
+                f"{result_line}\n\n"
+                f"{payout_line}"
             )
+
             try:
-                _bot.edit_message_text(final, game["chat_id"], game["msg_id"],
-                    parse_mode="HTML", reply_markup=types.InlineKeyboardMarkup())
+                _bot.edit_message_text(
+                    final_text,
+                    game["chat_id"], game["msg_id"],
+                    parse_mode="HTML",
+                    reply_markup=types.InlineKeyboardMarkup()
+                )
             except Exception:
-                _bot.send_message(game["chat_id"], final, parse_mode="HTML")
+                try:
+                    _bot.send_message(game["chat_id"], final_text, parse_mode="HTML")
+                except Exception:
+                    pass
 
             with _rps_lock:
                 _rps_games.pop(game_id, None)
 
         except Exception as e:
             print(f"❌ _rps_finish: {e}")
-
-
 
     # ══════════════════════════════════════════════════════════════════════════
     # Polling
