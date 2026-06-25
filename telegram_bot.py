@@ -4239,17 +4239,27 @@ def start_token_bot():
         except Exception as e:
             print(f"❌ _rps_start_round send: {e}")
 
-    # ── دستور شروع بازی: "بازی 100" ──────────────────────────────────────────
-    @_bot.message_handler(func=lambda m: (
-        m.chat.type in ("group", "supergroup") and
-        m.text and
-        re.match(r'^بازی\s+(\d+)$', m.text.strip())
-    ))
+    # ── دستور شروع بازی: "/rps 100" یا "بازی 100" ────────────────────────────
+    # نکته: در گروه با privacy mode روشن، /rps همیشه کار می‌کند
+    @_bot.message_handler(commands=["rps"], chat_types=["group", "supergroup"])
+    def cmd_rps_slash(message):
+        parts = message.text.strip().split()
+        bet_val = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else None
+        if not bet_val:
+            return _bot.reply_to(message, "❌ فرمت: /rps 100")
+        cmd_rps_text(message, bet_val)
+
+    @_bot.message_handler(
+        func=lambda m: m.text and re.match(r'^بازی\s+(\d+)$', m.text.strip()),
+        chat_types=['group', 'supergroup']
+    )
     def cmd_rps_start(message):
+        m2 = re.match(r'^بازی\s+(\d+)$', message.text.strip())
+        cmd_rps_text(message, int(m2.group(1)))
+
+    def cmd_rps_text(message, bet):
         try:
             user = message.from_user
-            match = re.match(r'^بازی\s+(\d+)$', message.text.strip())
-            bet = int(match.group(1))
 
             if bet <= 0:
                 return _bot.reply_to(message, "❌ مقدار شرط باید بیشتر از صفر باشد.")
@@ -4258,7 +4268,7 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "❌ ابتدا اکانت بسازید.")
 
-            balance = db.get_tokens(account["id"])
+            balance = db.get_token_balance(account["id"])
             if balance < bet:
                 return _bot.reply_to(
                     message,
@@ -4357,7 +4367,7 @@ def start_token_bot():
                     return _bot.answer_callback_query(call.id, "❌ ابتدا اکانت بسازید.", show_alert=True)
 
                 bet = game["bet"]
-                balance = db.get_tokens(account["id"])
+                balance = db.get_token_balance(account["id"])
                 if balance < bet:
                     return _bot.answer_callback_query(
                         call.id,
