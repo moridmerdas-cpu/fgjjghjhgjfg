@@ -4111,6 +4111,312 @@ def start_token_bot():
             print(f"❌ _hokm_finish: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # 🪨📄✂️ بازی سنگ کاغذ قیچی گروهی
+    # ══════════════════════════════════════════════════════════════════════════
+    # ساختار: _rps_games[game_id] = {
+    #   "chat_id": int, "player1": int, "player2": int | None,
+    #   "player1_name": str, "player2_name": str | None,
+    #   "choice1": str | None, "choice2": str | None,
+    #   "msg_id": int,  # پیام گروه
+    #   "account1": int, "account2": int | None,
+    #   "state": "waiting" | "choosing" | "finished"
+    # }
+    _rps_games = {}
+    _rps_lock = threading.Lock()
+    _RPS_REWARD = 200
+    _RPS_CHOICES = {"rock": "🪨 سنگ", "paper": "📄 کاغذ", "scissors": "✂️ قیچی"}
+    _RPS_WINS = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
+
+    def _rps_new_id():
+        import uuid
+        return str(uuid.uuid4())[:8]
+
+    def _rps_result_text(c1, c2):
+        """نتیجه: 'win1', 'win2', 'draw'"""
+        if c1 == c2:
+            return "draw"
+        if _RPS_WINS[c1] == c2:
+            return "win1"
+        return "win2"
+
+    def _rps_game_markup(game_id, game):
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        if game["state"] == "waiting":
+            markup.add(types.InlineKeyboardButton(
+                "✅ ورود به بازی (نفر دوم)",
+                callback_data=f"rps_join_{game_id}"
+            ))
+        elif game["state"] == "choosing":
+            markup.add(
+                types.InlineKeyboardButton("🪨 سنگ", callback_data=f"rps_pick_{game_id}_rock"),
+                types.InlineKeyboardButton("📄 کاغذ", callback_data=f"rps_pick_{game_id}_paper"),
+                types.InlineKeyboardButton("✂️ قیچی", callback_data=f"rps_pick_{game_id}_scissors"),
+            )
+        return markup
+
+    def _rps_game_text(game):
+        p1 = game["player1_name"]
+        p2 = game.get("player2_name") or "؟؟؟"
+        state = game["state"]
+        if state == "waiting":
+            return (
+                "🎮 <b>بازی سنگ کاغذ قیچی!</b>\n\n"
+                f"👤 نفر اول: <b>{p1}</b>\n"
+                f"👤 نفر دوم: <b>منتظر بازیکن...</b>\n\n"
+                "برای شرکت در بازی روی دکمه زیر بزنید 👇"
+            )
+        elif state == "choosing":
+            c1 = "✅ انتخاب کرد" if game.get("choice1") else "⏳ در حال انتخاب..."
+            c2 = "✅ انتخاب کرد" if game.get("choice2") else "⏳ در حال انتخاب..."
+            return (
+                "🎮 <b>بازی سنگ کاغذ قیچی!</b>\n\n"
+                f"👤 {p1}: {c1}\n"
+                f"👤 {p2}: {c2}\n\n"
+                "هر بازیکن انتخاب خود را در پیام خصوصی بزند 👇"
+            )
+        return "🎮 بازی تمام شد."
+
+    # دستور شروع بازی
+    @_bot.message_handler(func=lambda m: m.chat.type in ("group", "supergroup") and m.text and m.text.strip() in ("سنگ کاغذ قیچی", "سنگکاغذقیچی", "rps"))
+    def cmd_rps_start(message):
+        try:
+            user = message.from_user
+            account = _get_account_cached(user.id)
+            if not account:
+                return _bot.reply_to(message, "❌ ابتدا اکانت بسازید.")
+
+            # بررسی اینکه کاربر در بازی دیگری نیست
+            with _rps_lock:
+                for gid, g in _rps_games.items():
+                    if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
+                        return _bot.reply_to(message, "❌ شما هم‌اکنون در یک بازی فعال هستید.")
+
+            game_id = _rps_new_id()
+            game = {
+                "chat_id": message.chat.id,
+                "player1": user.id,
+                "player1_name": user.first_name,
+                "player2": None,
+                "player2_name": None,
+                "choice1": None,
+                "choice2": None,
+                "msg_id": None,
+                "account1": account["id"],
+                "account2": None,
+                "state": "waiting",
+            }
+
+            sent = _bot.send_message(
+                message.chat.id,
+                _rps_game_text(game),
+                parse_mode="HTML",
+                reply_markup=_rps_game_markup(game_id, game)
+            )
+            game["msg_id"] = sent.message_id
+
+            with _rps_lock:
+                _rps_games[game_id] = game
+
+        except Exception as e:
+            print(f"❌ cmd_rps_start: {e}")
+
+    # ورود نفر دوم
+    @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_join_"))
+    def callback_rps_join(call):
+        try:
+            game_id = call.data.split("_", 2)[2]
+            user = call.from_user
+
+            with _rps_lock:
+                game = _rps_games.get(game_id)
+                if not game:
+                    return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
+                if game["state"] != "waiting":
+                    return _bot.answer_callback_query(call.id, "❌ بازی شروع شده یا تمام شده.")
+                if user.id == game["player1"]:
+                    return _bot.answer_callback_query(call.id, "❌ شما خودتان این بازی را ساختید!", show_alert=True)
+
+                account = _get_account_cached(user.id)
+                if not account:
+                    return _bot.answer_callback_query(call.id, "❌ ابتدا اکانت بسازید.", show_alert=True)
+
+                # بررسی بازی موازی
+                for gid, g in _rps_games.items():
+                    if gid == game_id:
+                        continue
+                    if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
+                        return _bot.answer_callback_query(call.id, "❌ شما در یک بازی دیگر هستید.", show_alert=True)
+
+                game["player2"] = user.id
+                game["player2_name"] = user.first_name
+                game["account2"] = account["id"]
+                game["state"] = "choosing"
+
+            _bot.answer_callback_query(call.id, "✅ وارد بازی شدید! انتخاب خود را بزنید.")
+            _bot.edit_message_text(
+                _rps_game_text(game),
+                game["chat_id"], game["msg_id"],
+                parse_mode="HTML",
+                reply_markup=_rps_game_markup(game_id, game)
+            )
+
+            # ارسال پیام خصوصی به هر دو نفر با دکمه‌های انتخاب
+            for uid, name in [(game["player1"], game["player1_name"]), (game["player2"], game["player2_name"])]:
+                try:
+                    markup = types.InlineKeyboardMarkup(row_width=3)
+                    markup.add(
+                        types.InlineKeyboardButton("🪨 سنگ", callback_data=f"rps_pick_{game_id}_rock"),
+                        types.InlineKeyboardButton("📄 کاغذ", callback_data=f"rps_pick_{game_id}_paper"),
+                        types.InlineKeyboardButton("✂️ قیچی", callback_data=f"rps_pick_{game_id}_scissors"),
+                    )
+                    _bot.send_message(
+                        uid,
+                        f"🎮 <b>بازی سنگ کاغذ قیچی</b>\n\n"
+                        f"رقیب شما: <b>{'؟' if uid == game['player1'] else game['player1_name']}</b>\n\n"
+                        "انتخاب خود را بزنید 👇",
+                        parse_mode="HTML",
+                        reply_markup=markup
+                    )
+                except Exception:
+                    pass  # اگر کاربر چت خصوصی با ربات نداشته باشد
+
+        except Exception as e:
+            print(f"❌ callback_rps_join: {e}")
+
+    # انتخاب سنگ/کاغذ/قیچی
+    @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_pick_"))
+    def callback_rps_pick(call):
+        try:
+            parts = call.data.split("_")  # rps_pick_GAMEID_CHOICE
+            game_id = parts[2]
+            choice = parts[3]
+            user = call.from_user
+
+            with _rps_lock:
+                game = _rps_games.get(game_id)
+                if not game:
+                    return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
+                if game["state"] != "choosing":
+                    return _bot.answer_callback_query(call.id, "❌ بازی در وضعیت انتخاب نیست.")
+
+                if user.id == game["player1"]:
+                    if game["choice1"]:
+                        return _bot.answer_callback_query(call.id, "⚠️ شما قبلاً انتخاب کردید.", show_alert=True)
+                    game["choice1"] = choice
+                elif user.id == game["player2"]:
+                    if game["choice2"]:
+                        return _bot.answer_callback_query(call.id, "⚠️ شما قبلاً انتخاب کردید.", show_alert=True)
+                    game["choice2"] = choice
+                else:
+                    return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.", show_alert=True)
+
+                choice_label = _RPS_CHOICES.get(choice, choice)
+                _bot.answer_callback_query(call.id, f"✅ {choice_label} انتخاب شد!", show_alert=False)
+
+                # ویرایش پیام گروه
+                try:
+                    _bot.edit_message_text(
+                        _rps_game_text(game),
+                        game["chat_id"], game["msg_id"],
+                        parse_mode="HTML",
+                        reply_markup=_rps_game_markup(game_id, game)
+                    )
+                except Exception:
+                    pass
+
+                both_chosen = game["choice1"] and game["choice2"]
+
+            # اگر هر دو انتخاب کردند → تعیین نتیجه
+            if both_chosen:
+                _rps_resolve(game_id)
+
+        except Exception as e:
+            print(f"❌ callback_rps_pick: {e}")
+
+    def _rps_resolve(game_id):
+        try:
+            with _rps_lock:
+                game = _rps_games.get(game_id)
+                if not game or game["state"] == "finished":
+                    return
+                game["state"] = "finished"
+
+            c1 = game["choice1"]
+            c2 = game["choice2"]
+            p1_name = game["player1_name"]
+            p2_name = game["player2_name"]
+            result = _rps_result_text(c1, c2)
+
+            label1 = _RPS_CHOICES.get(c1, c1)
+            label2 = _RPS_CHOICES.get(c2, c2)
+
+            if result == "draw":
+                result_line = "🤝 <b>مساوی!</b> هیچ‌کدام الماسی دریافت نمی‌کنند."
+                winner_uid = None
+                winner_acc = None
+                winner_name = None
+            elif result == "win1":
+                winner_uid = game["player1"]
+                winner_acc = game["account1"]
+                winner_name = p1_name
+                loser_name = p2_name
+                result_line = f"🏆 <b>{winner_name}</b> برنده شد!"
+            else:
+                winner_uid = game["player2"]
+                winner_acc = game["account2"]
+                winner_name = p2_name
+                loser_name = p1_name
+                result_line = f"🏆 <b>{winner_name}</b> برنده شد!"
+
+            # اعطای جایزه به برنده
+            if winner_uid and winner_acc:
+                try:
+                    db.add_tokens(winner_acc, _RPS_REWARD)
+                except Exception as e:
+                    print(f"❌ rps add_tokens: {e}")
+
+            final_text = (
+                "🎮 <b>نتیجه بازی سنگ کاغذ قیچی!</b>\n\n"
+                f"👤 {p1_name}: {label1}\n"
+                f"👤 {p2_name}: {label2}\n\n"
+                f"{result_line}\n"
+            )
+            if winner_uid:
+                final_text += f"\n💎 <b>{_RPS_REWARD} الماس</b> به {winner_name} اضافه شد!"
+
+            _bot.edit_message_text(
+                final_text,
+                game["chat_id"], game["msg_id"],
+                parse_mode="HTML",
+                reply_markup=types.InlineKeyboardMarkup()
+            )
+
+            # اطلاع به هر بازیکن در چت خصوصی
+            for uid, name in [(game["player1"], p1_name), (game["player2"], p2_name)]:
+                try:
+                    is_winner = (uid == winner_uid)
+                    private_text = (
+                        f"🎮 <b>بازی تمام شد!</b>\n\n"
+                        f"شما: {_RPS_CHOICES.get(game['choice1'] if uid == game['player1'] else game['choice2'])}\n"
+                        f"رقیب: {_RPS_CHOICES.get(game['choice2'] if uid == game['player1'] else game['choice1'])}\n\n"
+                    )
+                    if result == "draw":
+                        private_text += "🤝 مساوی شد!"
+                    elif is_winner:
+                        private_text += f"🏆 شما برنده شدید! +{_RPS_REWARD} 💎 الماس"
+                    else:
+                        private_text += "😔 این بار نباختید، دفعه بعد موفق باشید!"
+                    _bot.send_message(uid, private_text, parse_mode="HTML")
+                except Exception:
+                    pass
+
+            with _rps_lock:
+                _rps_games.pop(game_id, None)
+
+        except Exception as e:
+            print(f"❌ _rps_resolve: {e}")
+
+    # ══════════════════════════════════════════════════════════════════════════
     # Polling
     # ══════════════════════════════════════════════════════════════════════════
     def _polling_loop():
