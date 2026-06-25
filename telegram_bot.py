@@ -4152,18 +4152,12 @@ def start_token_bot():
         return "win2"
 
     def _rps_game_markup(game_id, game):
-        markup = types.InlineKeyboardMarkup(row_width=3)
+        markup = types.InlineKeyboardMarkup(row_width=1)
         if game["state"] == "waiting":
             markup.add(types.InlineKeyboardButton(
                 f"✅ ورود به بازی — شرط: {game['bet']} 💎",
                 callback_data=f"rps_join_{game_id}"
             ))
-        elif game["state"] == "choosing":
-            markup.add(
-                types.InlineKeyboardButton("🪨 سنگ",   callback_data=f"rps_pick_{game_id}_rock"),
-                types.InlineKeyboardButton("📄 کاغذ",  callback_data=f"rps_pick_{game_id}_paper"),
-                types.InlineKeyboardButton("✂️ قیچی", callback_data=f"rps_pick_{game_id}_scissors"),
-            )
         return markup
 
     def _rps_game_text(game):
@@ -4192,8 +4186,7 @@ def start_token_bot():
                 f"👤 {p2}: {c2}\n\n"
                 f"💰 شرط هر نفر: <b>{bet} الماس</b>\n"
                 f"🏆 جایزه برنده: <b>{payout} الماس</b>\n\n"
-                "انتخاب خود را از دکمه‌های زیر بزنید 👇\n"
-                "⚠️ <i>انتخاب شما برای رقیب مخفی است</i>"
+                "هر بازیکن انتخاب خود را در پیام خصوصی بزند 👇"
             )
         return "🎮 بازی تمام شد."
 
@@ -4309,16 +4302,38 @@ def start_token_bot():
 
             _bot.answer_callback_query(call.id, f"✅ وارد بازی شدید! {bet} الماس کسر شد.")
 
-            # آپدیت پیام گروه با دکمه‌های انتخاب
+            # آپدیت پیام گروه (بدون دکمه — دکمه‌ها در چت خصوصی)
             try:
                 _bot.edit_message_text(
                     _rps_game_text(game),
                     game["chat_id"], game["msg_id"],
                     parse_mode="HTML",
-                    reply_markup=_rps_game_markup(game_id, game)
+                    reply_markup=types.InlineKeyboardMarkup()
                 )
             except Exception:
                 pass
+
+            # ارسال دکمه‌های انتخاب به هر دو نفر در چت خصوصی
+            for uid in (game["player1"], game["player2"]):
+                try:
+                    rival_name = game["player2_name"] if uid == game["player1"] else game["player1_name"]
+                    markup = types.InlineKeyboardMarkup(row_width=3)
+                    markup.add(
+                        types.InlineKeyboardButton("🪨 سنگ",   callback_data=f"rps_pick_{game_id}_rock"),
+                        types.InlineKeyboardButton("📄 کاغذ",  callback_data=f"rps_pick_{game_id}_paper"),
+                        types.InlineKeyboardButton("✂️ قیچی", callback_data=f"rps_pick_{game_id}_scissors"),
+                    )
+                    _bot.send_message(
+                        uid,
+                        f"🎮 <b>بازی سنگ کاغذ قیچی</b>\n\n"
+                        f"⚔️ رقیب: <b>{rival_name}</b>\n"
+                        f"💰 شرط: <b>{game['bet']} الماس</b>\n\n"
+                        "انتخاب خود را بزنید (رقیب نمی‌بیند) 👇",
+                        parse_mode="HTML",
+                        reply_markup=markup
+                    )
+                except Exception:
+                    pass
 
         except Exception as e:
             print(f"❌ callback_rps_join: {e}")
@@ -4352,13 +4367,13 @@ def start_token_bot():
 
                 _bot.answer_callback_query(call.id, f"✅ {_RPS_CHOICES.get(choice, choice)} انتخاب شد! منتظر رقیب...")
 
-                # آپدیت پیام گروه با دکمه‌ها (کسی که انتخاب کرده دکمه‌اش غیرفعال نمیشه ولی وضعیت عوض میشه)
+                # آپدیت پیام گروه (وضعیت انتخاب)
                 try:
                     _bot.edit_message_text(
                         _rps_game_text(game),
                         game["chat_id"], game["msg_id"],
                         parse_mode="HTML",
-                        reply_markup=_rps_game_markup(game_id, game)
+                        reply_markup=types.InlineKeyboardMarkup()
                     )
                 except Exception:
                     pass
