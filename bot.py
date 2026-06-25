@@ -113,7 +113,17 @@ class BotManager:
             return max(0, remaining)
         return None
 
-    def start(self, owner_id: int, loop: asyncio.AbstractEventLoop, check_tokens: bool = True) -> bool:
+    def start(self, owner_id: int, loop: asyncio.AbstractEventLoop, check_tokens: bool = True,
+              is_restart: bool = False) -> bool:
+        """
+        is_restart=True یعنی این استارت یک «اتصال مجدد خودکار» است (مثلاً بعد از بالا آمدن
+        دوباره‌ی سرور روی Render). در این حالت سلف کاربر همیشه باید روشن بماند و کاربر
+        نباید مجبور باشد دوباره چیزی بزند؛ پس این حالت هیچ‌وقت استارت را مسدود نمی‌کند:
+        اگر از زمان شروع سشن قبلی (ذخیره‌شده در Supabase) کمتر از SESSION_HOURS گذشته باشد،
+        فقط زمان واقعی باقی‌مانده به تایمر داده می‌شود؛ اگر هم تمام شده باشد، به‌جای قطع کردن
+        کاربر، یک پنجره‌ی تازه (fresh) برایش شروع می‌شود تا ری‌استارت سرور هیچ‌وقت سلف را
+        برای کاربر خاموش نکند.
+        """
         if self.is_running(owner_id):
             self.stop(owner_id)
 
@@ -123,6 +133,29 @@ class BotManager:
         # ─── چک اشتراک (پلن) ──────────────────────────────────────────────────
         if not is_owner and not db.is_subscribed(owner_id):
             return False
+
+        # ─── محاسبه‌ی زمان باقی‌مانده‌ی سشن (قبل از وصل شدن) ────────────────────
+        now_ts = time.time()
+        remaining = None
+        reset_started_at = False
+        if config.BOT_TOKEN and not is_owner:
+            if is_restart:
+                started_raw = db.get_setting(owner_id, "session_started_at", "")
+                try:
+                    started_at = float(started_raw) if started_raw else None
+                except (TypeError, ValueError):
+                    started_at = None
+                if started_at is None:
+                    started_at = now_ts
+                remaining = (config.SESSION_HOURS * 3600) - (now_ts - started_at)
+                if remaining <= 0:
+                    # سشن قبلی تموم شده، ولی چون این یک اتصال مجدد خودکار بعد از
+                    # ری‌استارت سرور است، کاربر را قطع نمی‌کنیم — یک پنجره‌ی تازه می‌دهیم
+                    remaining = config.SESSION_HOURS * 3600
+                    reset_started_at = True
+            else:
+                remaining = config.SESSION_HOURS * 3600
+                reset_started_at = True
 
         tokens_deducted = 0
         if config.BOT_TOKEN and check_tokens and not is_owner:
@@ -142,10 +175,15 @@ class BotManager:
 
         if config.BOT_TOKEN and not is_owner:
             self._cancel_timer(owner_id)
+            if reset_started_at:
+                # شروع تازه‌ی سشن (لاگین جدید، استارت دستی، یا ری‌استارت بعد از تمام
+                # شدن پنجره‌ی قبلی) → زمان شروع جدید در Supabase ثبت می‌شود
+                db.set_setting(owner_id, "session_started_at", str(now_ts))
             timer = threading.Timer(
-                config.SESSION_HOURS * 3600, self.stop, args=[owner_id]
+                remaining, self.stop, args=[owner_id]
             )
             timer.daemon = True
+            timer._timer_start = now_ts
             timer.start()
             self._timers[owner_id] = timer
 

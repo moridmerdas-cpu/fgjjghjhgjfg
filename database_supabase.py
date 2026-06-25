@@ -242,6 +242,7 @@ SETTING_DEFAULTS = {
     "spam_delay": "2",
     "session_data": "",
     "logged_in": "0",
+    "session_started_at": "",
 }
 
 # کش تنظیمات (RAM — fallback سریع)

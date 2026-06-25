@@ -152,7 +152,7 @@ def api_panel_login():
         return jsonify({"ok": False, "error": "یوزرنیم یا رمز اشتباه است"}), 401
     session["owner_id"] = uid
     if db.get_setting(uid, "logged_in") == "1":
-        bot_manager.start(uid, get_loop(), check_tokens=False)
+        bot_manager.start(uid, get_loop(), check_tokens=False, is_restart=True)
     return jsonify({"ok": True})
 
 
@@ -534,7 +534,7 @@ if __name__ == "__main__":
     # ۴. استارت بات برای همه کاربران لاگین‌شده
     loop = get_loop()
     for oid in db.get_all_logged_in_users():
-        bot_manager.start(oid, loop, check_tokens=False)
+        bot_manager.start(oid, loop, check_tokens=False, is_restart=True)
         print(f"🚀 بات کاربر {oid} استارت شد.")
     
     app.run(host="0.0.0.0", port=config.PORT, debug=False)
