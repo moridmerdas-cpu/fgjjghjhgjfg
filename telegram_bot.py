@@ -4484,14 +4484,13 @@ def start_token_bot():
                 chat_id = game["chat_id"]
 
                 is_last = (rnd >= _RPS_ROUNDS)
-                if is_last:
-                    game["state"] = "resolving"
 
                 # آماده کردن داده برای بعد از lock
                 game_snapshot = dict(game)
                 game["choice1"] = None
                 game["choice2"] = None
-                game["round"] = rnd + 1
+                if not is_last:
+                    game["round"] = rnd + 1
 
             # آپدیت/حذف پیام دکمه‌های راند
             round_text = (
@@ -4522,7 +4521,11 @@ def start_token_bot():
                     pass
 
             if is_last:
-                # کمی صبر کن بعد نتیجه نهایی بده
+                # علامت‌گذاری بازی تمام‌شده
+                with _rps_lock:
+                    g = _rps_games.get(game_id)
+                    if g:
+                        g["state"] = "finished"
                 time.sleep(1)
                 _rps_finish(game_id, game_snapshot)
             else:
