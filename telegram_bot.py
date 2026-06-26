@@ -357,6 +357,9 @@ def start_token_bot():
             types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
         )
         markup.add(
+            types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
+        )
+        markup.add(
             types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
         )
         return markup
@@ -3210,6 +3213,164 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
 
+            elif data == "admin_gift":
+                # ── انتخاب نوع هدیه ──────────────────────────────────────────────
+                markup = types.InlineKeyboardMarkup(row_width=2)
+                markup.add(
+                    types.InlineKeyboardButton("💎 الماس", callback_data="admin_gift_diamond", style="primary"),
+                    types.InlineKeyboardButton("📋 پنل", callback_data="admin_gift_panel", style="success")
+                )
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    "🎁 <b>هدیه به کاربر</b>\n\n"
+                    "نوع هدیه را وارد کنید:",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_gift_diamond":
+                # ── هدیه الماس: تعداد الماس ──────────────────────────────────────
+                _owner_states[call.from_user.id] = {"state": "gift_diamond_amount", "data": {"gift_type": "diamond"}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    "💎 <b>هدیه الماس</b>\n\n"
+                    "تعداد الماس هدیه را وارد کنید:\n\nمثال: <code>100</code>",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_gift_panel":
+                # ── هدیه پنل: انتخاب نوع پلن ────────────────────────────────────
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("📅 پنل یک ماهه (30 روز)", callback_data="admin_gift_plan_30", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک هفته‌ای (7 روز)", callback_data="admin_gift_plan_7", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک روزه (1 روز)", callback_data="admin_gift_plan_1", style="primary")
+                )
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    "📋 <b>هدیه پنل</b>\n\n"
+                    "نوع پنل هدیه را انتخاب کنید:",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_gift_plan_"):
+                # ── هدیه پنل: ایدی عددی کاربر ───────────────────────────────────
+                days = int(data.split("_")[-1])
+                plan_names = {30: "یک ماهه", 7: "یک هفته‌ای", 1: "یک روزه"}
+                plan_label = plan_names.get(days, f"{days} روزه")
+                _owner_states[call.from_user.id] = {
+                    "state": "gift_tg_id",
+                    "data": {"gift_type": "panel", "days": days, "plan_label": plan_label}
+                }
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    f"📋 <b>پنل {plan_label}</b>\n\n"
+                    "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_gift_confirm_"):
+                # ── تایید هدیه ───────────────────────────────────────────────────
+                gift_key = data[len("admin_gift_confirm_"):]
+                gift_info = _owner_states.get(call.from_user.id, {}).get("gift_pending")
+                if not gift_info or gift_info.get("key") != gift_key:
+                    _bot.answer_callback_query(call.id, "❌ اطلاعات هدیه منقضی شده. دوباره تلاش کنید.", show_alert=True)
+                    return
+
+                tg_id = gift_info["tg_id"]
+                account = gift_info["account"]
+                gift_type = gift_info["gift_type"]
+
+                if gift_type == "diamond":
+                    amount = gift_info["amount"]
+                    db.add_tokens(account["id"], amount)
+                    new_balance = db.get_token_balance(account["id"])
+                    gift_desc = f"💎 {amount} الماس"
+                    try:
+                        _bot.send_message(
+                            tg_id,
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n"
+                            f"╔══════════════════╗\n"
+                            f"  💎 <b>الماس هدیه:</b> {amount} الماس\n"
+                            f"  💰 <b>موجودی جدید:</b> {new_balance} الماس\n"
+                            f"╚══════════════════╝"
+                        )
+                    except Exception:
+                        pass
+                    admin_msg = (
+                        f"✅ <b>هدیه با موفقیت ارسال شد!</b>\n\n"
+                        f"👤 کاربر: <b>{account['username']}</b>\n"
+                        f"💎 هدیه: <b>{amount} الماس</b>\n"
+                        f"💰 موجودی جدید: <b>{new_balance}</b>"
+                    )
+                else:
+                    days = gift_info["days"]
+                    plan_label = gift_info["plan_label"]
+                    db.set_subscription(account["id"], "gift", days)
+                    sub = db.get_subscription(account["id"])
+                    end_date = sub.get("end_date", "نامشخص") if sub else "نامشخص"
+                    gift_desc = f"📋 پنل {plan_label}"
+                    try:
+                        _bot.send_message(
+                            tg_id,
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n"
+                            f"╔══════════════════╗\n"
+                            f"  📋 <b>پنل هدیه:</b> {plan_label} ({days} روز)\n"
+                            f"  📅 <b>تاریخ انقضا:</b> {end_date}\n"
+                            f"╚══════════════════╝"
+                        )
+                    except Exception:
+                        pass
+                    admin_msg = (
+                        f"✅ <b>هدیه با موفقیت ارسال شد!</b>\n\n"
+                        f"👤 کاربر: <b>{account['username']}</b>\n"
+                        f"📋 هدیه: <b>پنل {plan_label}</b>\n"
+                        f"📅 انقضا: <b>{end_date}</b>"
+                    )
+
+                _owner_states.pop(call.from_user.id, None)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="primary"))
+                _bot.edit_message_text(
+                    admin_msg,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id, "✅ هدیه ارسال شد!", show_alert=False)
+                return
+
+            elif data == "admin_gift_cancel":
+                _owner_states.pop(call.from_user.id, None)
+                markup = _admin_panel_keyboard()
+                _bot.edit_message_text(
+                    "❌ <b>عملیات هدیه لغو شد.</b>",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
             elif data == "admin_missions":
                 missions = db.get_active_missions()
                 markup = types.InlineKeyboardMarkup(row_width=1)
@@ -3426,6 +3587,91 @@ def start_token_bot():
                     f"💎 موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
+
+            elif state == "gift_diamond_amount":
+                # ── مرحله ۱ الماس: دریافت تعداد الماس ──────────────────────────
+                try:
+                    amount = int(text)
+                    if amount <= 0:
+                        return _bot.reply_to(message, "❌ تعداد الماس باید بیشتر از صفر باشد. دوباره وارد کنید:")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ لطفاً یک عدد معتبر وارد کنید:")
+                state_data["data"]["amount"] = amount
+                state_data["state"] = "gift_tg_id"
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                _bot.reply_to(
+                    message,
+                    f"💎 <b>هدیه الماس: {amount} الماس</b>\n\n"
+                    "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
+                    reply_markup=markup
+                )
+
+            elif state == "gift_tg_id":
+                # ── دریافت ایدی عددی تلگرام ──────────────────────────────────────
+                try:
+                    tg_id = int(text)
+                except ValueError:
+                    return _bot.reply_to(message, "❌ ایدی عددی باید فقط شامل اعداد باشد. دوباره وارد کنید:")
+
+                account = db.get_account_by_tg_id(tg_id)
+                if not account:
+                    return _bot.reply_to(
+                        message,
+                        "❌ کاربری با این ایدی عددی در سیستم یافت نشد.\n"
+                        "مطمئن شوید کاربر قبلاً در ربات ثبت‌نام کرده باشد.",
+                        reply_markup=_owner_keyboard()
+                    )
+
+                gift_type = state_data["data"]["gift_type"]
+                balance = db.get_token_balance(account["id"])
+                sub = db.get_subscription(account["id"])
+                if sub and sub.get("end_date"):
+                    plan_remaining = sub["end_date"]
+                else:
+                    plan_remaining = "ندارد"
+
+                if gift_type == "diamond":
+                    amount = state_data["data"]["amount"]
+                    gift_desc = f"💎 {amount} الماس"
+                else:
+                    days = state_data["data"]["days"]
+                    plan_label = state_data["data"]["plan_label"]
+                    gift_desc = f"📋 پنل {plan_label} ({days} روز)"
+
+                # ذخیره اطلاعات تایید هدیه
+                import hashlib, time
+                gift_key = hashlib.md5(f"{tg_id}{time.time()}".encode()).hexdigest()[:8]
+                state_data["gift_pending"] = {
+                    "key": gift_key,
+                    "tg_id": tg_id,
+                    "account": account,
+                    "gift_type": gift_type,
+                    "amount": state_data["data"].get("amount"),
+                    "days": state_data["data"].get("days"),
+                    "plan_label": state_data["data"].get("plan_label"),
+                }
+                state_data["state"] = "gift_awaiting_confirm"
+
+                confirm_text = (
+                    f"🎁 <b>تایید هدیه</b>\n\n"
+                    f"👤 <b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
+                    f"🆔 <b>ایدی تلگرام:</b> @{account.get('username', '-')}\n"
+                    f"🔢 <b>ایدی عددی:</b> <code>{tg_id}</code>\n"
+                    f"📋 <b>پلن باقی‌مانده:</b> {plan_remaining}\n"
+                    f"💰 <b>موجودی:</b> {balance} الماس\n"
+                    f"🎁 <b>{gift_desc} هدیه</b>\n\n"
+                    f"آیا تایید می‌کنید؟"
+                )
+                markup = types.InlineKeyboardMarkup(row_width=2)
+                markup.add(
+                    types.InlineKeyboardButton("✅ تایید", callback_data=f"admin_gift_confirm_{gift_key}", style="success"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="admin_gift_cancel", style="danger")
+                )
+                _bot.reply_to(message, confirm_text, reply_markup=markup)
+
+            elif state == "gift_awaiting_confirm":
+                _bot.reply_to(message, "⏳ لطفاً روی دکمه تایید یا لغو کلیک کنید.")
 
             elif state == "set_card":
                 card = text.strip().replace("-", "").replace(" ", "")
