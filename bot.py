@@ -354,6 +354,25 @@ class BotManager:
 bot_manager = BotManager()
 
 
+# ─── تابع کمکی: ارسال تاس/بازی تا رسیدن به مقدار هدف ──────────────────────────
+async def _send_dice_until(cl, chat_id, emoji: str, target: int):
+    """پیام متنی رو حذف می‌کنه و تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد"""
+    from telethon.tl.types import MessageMediaDice
+    while True:
+        try:
+            sent = await cl.send_file(chat_id, media=emoji)
+            if hasattr(sent, "media") and isinstance(sent.media, MessageMediaDice):
+                if sent.media.value == target:
+                    break
+                await sent.delete()
+            else:
+                break
+        except FloodWaitError as e:
+            await asyncio.sleep(e.seconds + 1)
+        except Exception:
+            break
+
+
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
 def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
@@ -601,6 +620,10 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
             "تقلب روشن", "تقلب خاموش",
+            "تاس", "تاس 1", "تاس 2", "تاس 3", "تاس 4", "تاس 5", "تاس 6",
+            "بسکتبال", "بسکتبال گل",
+            "پنالتی", "پنالتی گل",
+            "دارت", "دارت مرکز",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -953,49 +976,42 @@ async def _handle_command(cl, event, text, owner_id, entry):
             ss("selected_font", font_id)
             fn = FONTS[font_id]
             if preview_words:
-                # نمایش متن با فونت انتخابی
-                preview_text = " ".join(preview_words)
-                styled = fn(preview_text)
-                await edit(f"🔤 فونت {font_id} انتخاب شد:\n`{styled}`")
+                preview = fn(" ".join(preview_words))
+                await edit(f"✅ فونت {font_id} انتخاب شد:\n`{preview}`")
             else:
-                # نمایش نام فونت با خودش
-                font_names = {"0":"Normal","1":"Bold","2":"Italic","3":"Mono","4":"Full","5":"Serif","6":"Script","7":"Strike","8":"Under"}
-                styled = fn(font_names.get(font_id, f"Font{font_id}"))
-                await edit(f"🔤 فونت {font_id} انتخاب شد:\n`{styled}`")
+                sample = fn("Hello World")
+                await edit(f"✅ فونت {font_id} انتخاب شد.\nنمونه: `{sample}`")
         else:
             await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
+
     elif text == "لیست فونت":
-        font_names = {"0":"Normal","1":"Bold","2":"Italic","3":"Mono","4":"Full","5":"Serif","6":"Script","7":"Strike","8":"Under"}
-        lines = ["📝 **فونت‌های موجود:**\n"]
-        for k, name in font_names.items():
+        lines = ["🔤 **فونت‌های موجود:**\n"]
+        for k in FONTS:
             fn = FONTS[k]
-            styled = fn(name)
-            lines.append(f"`فونت {k}` — `{styled}`")
-        lines.append("\n💡 برای فونت مخصوص ساعت از `لیست فونت ساعت` استفاده کنید.")
+            sample = fn("Hello World")
+            lines.append(f"`فونت {k}` — `{sample}`")
+        lines.append("\n💡 برای انتخاب: `فونت [شماره]`")
         await edit("\n".join(lines))
 
-    # ─── ساعت ────────────────────────────────────────────────────────────────
+    # ─── ساعت نام/بیو ─────────────────────────────────────────────────────────
     elif text == "ساعت نام روشن":
-        ss("clock_name_active", "1"); await edit("⏰ ساعت در نام روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
+        ss("clock_name_active", "1"); await edit("⏰ ساعت نام روشن شد.")
     elif text == "ساعت نام خاموش":
-        ss("clock_name_active", "0"); await edit("⏰ ساعت در نام خاموش شد.")
+        ss("clock_name_active", "0"); await edit("⏰ ساعت نام خاموش شد.")
     elif text == "ساعت بیو روشن":
-        ss("clock_bio_active", "1"); await edit("⏰ ساعت در بیو روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
+        ss("clock_bio_active", "1"); await edit("⏰ ساعت بیو روشن شد.")
     elif text == "ساعت بیو خاموش":
-        ss("clock_bio_active", "0"); await edit("⏰ ساعت در بیو خاموش شد.")
+        ss("clock_bio_active", "0"); await edit("⏰ ساعت بیو خاموش شد.")
 
     # ─── اسپم ────────────────────────────────────────────────────────────────
     elif text.startswith("اسپم "):
-        # فرمت دقیق: "اسپم [عدد] [متن]"
-        # اگه دقیقاً این فرمت نباشه (مثلاً "اسپمش کردم") جوابی نده
-        parts = text.split(" ", 2)
-        if len(parts) >= 3 and parts[1].isdigit() and len(parts[2].strip()) > 0:
-            count = int(parts[1])          # نامحدود — هر عددی قبول می‌شه
+        parts = text.split(maxsplit=2)
+        if len(parts) >= 3 and parts[1].isdigit():
+            count = int(parts[1])
             spam_text = parts[2]
-            ss("spam_active", "1")
-            label = f"{count} بار" if count <= 9999 else "نامحدود"
-            await edit(f"💣 اسپم شروع شد — {label}\nبرای توقف: توقف اسپم")
             chat = await event.get_chat()
+            ss("spam_active", "1")
+            await msg.delete()
             asyncio.ensure_future(_do_spam(cl, owner_id, chat.id, spam_text, count))
         # اگه فرمت درست نیست → هیچ کاری نکن (بی‌صدا)
     elif text == "توقف اسپم":
@@ -1147,6 +1163,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "private_lock_active": "قفل پیوی", "enemy_reply_active": "پاسخ دشمن",
             "auto_save_media": "ذخیره مدیا", "clock_name_active": "ساعت نام",
             "clock_bio_active": "ساعت بیو", "force_join_active": "جوین اجباری",
+            "cheat_active": "تقلب",
         }
         lines = [f"📊 وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
         for key, label in status_map.items():
@@ -1171,12 +1188,48 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "🏀 بسکتبال ← همیشه گل\n"
             "⚽ پنالتی ← همیشه گل\n"
             "🎯 دارت ← همیشه مرکز\n\n"
+            "دستورات مستقیم (بدون نیاز به روشن بودن تقلب):\n"
+            "> `تاس 6` — تاس با عدد ۶\n"
+            "> `تاس [1-6]` — تاس با عدد دلخواه\n"
+            "> `بسکتبال گل` — بسکتبال گل\n"
+            "> `پنالتی گل` — پنالتی گل\n"
+            "> `دارت مرکز` — دارت مرکز\n\n"
             "برای خاموش کردن: <code>تقلب خاموش</code>"
         )
 
     elif text == "تقلب خاموش":
         ss("cheat_active", "0")
         await edit("🎰 حالت تقلب خاموش شد.")
+
+    # ─── دستورات مستقیم تاس با عدد دلخواه ───────────────────────────────────
+    elif text.startswith("تاس"):
+        chat = await event.get_chat()
+        parts = text.split()
+        # تاس [عدد] — مثلاً: تاس 6 یا تاس 3
+        if len(parts) == 2 and parts[1].isdigit() and 1 <= int(parts[1]) <= 6:
+            target_val = int(parts[1])
+        else:
+            target_val = 6  # پیش‌فرض: ۶
+        await event.message.delete()
+        await _send_dice_until(cl, chat.id, "🎲", target_val)
+
+    # ─── دستورات مستقیم بسکتبال ──────────────────────────────────────────────
+    elif text in ("بسکتبال", "بسکتبال گل"):
+        chat = await event.get_chat()
+        await event.message.delete()
+        await _send_dice_until(cl, chat.id, "🏀", 5)
+
+    # ─── دستورات مستقیم پنالتی ───────────────────────────────────────────────
+    elif text in ("پنالتی", "پنالتی گل"):
+        chat = await event.get_chat()
+        await event.message.delete()
+        await _send_dice_until(cl, chat.id, "⚽", 5)
+
+    # ─── دستورات مستقیم دارت ─────────────────────────────────────────────────
+    elif text in ("دارت", "دارت مرکز"):
+        chat = await event.get_chat()
+        await event.message.delete()
+        await _send_dice_until(cl, chat.id, "🎯", 6)
 
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
@@ -1590,6 +1643,17 @@ def _help_text():
             "──────────────────",
             "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
+        ]),
+        ("🎰 تقلب", [
+            "تقلب روشن  ← تقلب خودکار روی هر تاس/بازی",
+            "تقلب خاموش",
+            "──────────────────",
+            "تاس 6  ← تاس با عدد ۶",
+            "تاس [1-6]  ← تاس با عدد دلخواه",
+            "بسکتبال گل  ← 🏀 همیشه گل",
+            "پنالتی گل  ← ⚽ همیشه گل",
+            "دارت مرکز  ← 🎯 همیشه مرکز",
+            "💡 دستورات مستقیم نیاز به روشن بودن تقلب ندارند",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
