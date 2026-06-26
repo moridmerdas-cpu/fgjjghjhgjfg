@@ -398,6 +398,9 @@ def start_token_bot():
             types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
         )
         markup.add(
+            types.InlineKeyboardButton("👤 مدیریت کاربران", callback_data="admin_manage_users", style="success")  # 🟢 سبز
+        )
+        markup.add(
             types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success")    # 🟢 سبز
         )
         markup.add(
@@ -2013,6 +2016,9 @@ def start_token_bot():
                 if not db.get_setting(acc_id, "logged_in", "0") == "1":
                     return _bot.answer_callback_query(
                         call.id, "❌ سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
+                if db.get_setting(acc_id, "owner_force_stop_self", "0") == "1":
+                    return _bot.answer_callback_query(
+                        call.id, "🚫 سلف شما توسط مالک قفل شده است. برای روشن کردن با مالک تماس بگیرید.", show_alert=True)
                 if not db.is_subscribed(acc_id):
                     return _bot.answer_callback_query(
                         call.id, "❌ اشتراک ندارید یا منقضی شده. ابتدا پلن تهیه کنید.", show_alert=True)
@@ -3523,6 +3529,248 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
 
+            # ══════════════════════════════════════════════════════════════════
+            # 👤 مدیریت کاربران — لیست رنگی با دکمه‌های per-user
+            # ══════════════════════════════════════════════════════════════════
+            elif data == "admin_manage_users" or data.startswith("admin_manage_users_p"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
+                accounts = db.get_all_accounts()
+                if not accounts:
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+                    _bot.edit_message_text("هیچ کاربری ثبت نشده.", chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=markup)
+                    _bot.answer_callback_query(call.id)
+                    return
+
+                PAGE_SIZE = 15
+                total = len(accounts)
+                total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+                try:
+                    page = int(data.split("_p")[-1]) if data.startswith("admin_manage_users_p") else 1
+                except Exception:
+                    page = 1
+                page = max(1, min(page, total_pages))
+                start_idx = (page - 1) * PAGE_SIZE
+                page_accounts = accounts[start_idx: start_idx + PAGE_SIZE]
+
+                markup = types.InlineKeyboardMarkup(row_width=2)
+                for acc in page_accounts:
+                    sub_ok = db.is_subscribed(acc["id"])
+                    btn_style = "success" if sub_ok else "danger"
+                    uname = acc.get("username") or str(acc["id"])
+                    icon = "🟢" if sub_ok else "🔴"
+                    markup.add(types.InlineKeyboardButton(
+                        f"{icon} {uname}",
+                        callback_data=f"admin_mu_{acc['id']}",
+                        style=btn_style
+                    ))
+
+                nav = []
+                if page > 1:
+                    nav.append(types.InlineKeyboardButton("◀️ قبلی", callback_data=f"admin_manage_users_p{page - 1}"))
+                nav.append(types.InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data="admin_users_noop"))
+                if page < total_pages:
+                    nav.append(types.InlineKeyboardButton("بعدی ▶️", callback_data=f"admin_manage_users_p{page + 1}"))
+                if nav:
+                    markup.add(*nav)
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+
+                _bot.edit_message_text(
+                    f"👤 <b>مدیریت کاربران ({total} نفر)</b>\n\n"
+                    f"🟢 = پلن فعال  |  🔴 = پلن غیرفعال\n\n"
+                    f"روی هر کاربر بزنید تا وارد مدیریتش شوید:",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_mu_") and not data.startswith("admin_mu_add_") \
+                    and not data.startswith("admin_mu_ded_") \
+                    and not data.startswith("admin_mu_block_") \
+                    and not data.startswith("admin_mu_fstop_") \
+                    and not data.startswith("admin_mu_allow_") \
+                    and not data.startswith("admin_mu_fine_") \
+                    and not data.startswith("admin_mu_back_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+
+                mu_accounts = db.get_all_accounts()
+                mu_acc = next((a for a in mu_accounts if a["id"] == mu_acc_id), None)
+                if not mu_acc:
+                    return _bot.answer_callback_query(call.id, "❌ کاربر یافت نشد", show_alert=True)
+
+                bal = db.get_token_balance(mu_acc_id)
+                sub_ok = db.is_subscribed(mu_acc_id)
+                remaining = _format_plan_remaining(mu_acc_id)
+                tg_id_val = mu_acc.get("telegram_user_id")
+                is_blocked = db.get_setting(mu_acc_id, "bot_blocked", "0") == "1"
+                is_force_stopped = db.get_setting(mu_acc_id, "owner_force_stop_self", "0") == "1"
+
+                from bot import bot_manager
+                is_running = bot_manager.is_running(mu_acc_id)
+
+                plan_icon = "🟢" if sub_ok else "🔴"
+                plan_text = "فعال" if sub_ok else "غیرفعال"
+                self_icon = "🟢" if (is_running and not is_force_stopped) else "🔴"
+                self_text = "روشن" if (is_running and not is_force_stopped) else ("قفل شده" if is_force_stopped else "خاموش")
+
+                info_text = (
+                    f"👤 <b>مدیریت کاربر: {mu_acc.get('username', '─')}</b>\n\n"
+                    f"🆔 آیدی پنل: <code>{mu_acc_id}</code>\n"
+                    f"📱 آیدی تلگرام: <code>{tg_id_val or '─'}</code>\n"
+                    f"💎 موجودی: <b>{bal} الماس</b>\n"
+                    f"{plan_icon} پلن: <b>{plan_text}</b> — {remaining}\n"
+                    f"{self_icon} سلف: <b>{self_text}</b>\n"
+                    f"🚫 ربات: {'مسدود' if is_blocked else 'آزاد'}\n\n"
+                    f"عملیات مورد نظر را انتخاب کنید:"
+                )
+
+                mu_kb = types.InlineKeyboardMarkup(row_width=2)
+                mu_kb.add(
+                    types.InlineKeyboardButton("➕ افزایش الماس", callback_data=f"admin_mu_add_{mu_acc_id}", style="success"),
+                    types.InlineKeyboardButton("➖ کسر الماس", callback_data=f"admin_mu_ded_{mu_acc_id}", style="danger")
+                )
+                mu_kb.add(
+                    types.InlineKeyboardButton("💸 جریمه (درصد)", callback_data=f"admin_mu_fine_{mu_acc_id}", style="danger")
+                )
+                if is_blocked:
+                    mu_kb.add(types.InlineKeyboardButton("✅ رفع مسدودیت", callback_data=f"admin_mu_block_{mu_acc_id}", style="success"))
+                else:
+                    mu_kb.add(types.InlineKeyboardButton("🚫 مسدود سازی از ربات", callback_data=f"admin_mu_block_{mu_acc_id}", style="danger"))
+                if is_force_stopped:
+                    mu_kb.add(types.InlineKeyboardButton("🟢 روشن کردن سلف", callback_data=f"admin_mu_allow_{mu_acc_id}", style="success"))
+                else:
+                    mu_kb.add(types.InlineKeyboardButton("🔒 خاموش سازی سلف", callback_data=f"admin_mu_fstop_{mu_acc_id}", style="danger"))
+                mu_kb.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_manage_users", style="danger"))
+
+                _bot.edit_message_text(
+                    info_text,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=mu_kb
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_mu_add_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_add_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+                _owner_states[call.from_user.id] = {"state": "mu_add_diamond", "mu_acc_id": mu_acc_id, "msg_id": call.message.message_id, "chat_id": call.message.chat.id}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"admin_mu_{mu_acc_id}", style="danger"))
+                _bot.edit_message_text(
+                    f"➕ <b>افزایش الماس</b>\n\nمقدار الماسی که می‌خواهید اضافه کنید را بنویسید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_mu_ded_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_ded_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+                _owner_states[call.from_user.id] = {"state": "mu_deduct_diamond", "mu_acc_id": mu_acc_id, "msg_id": call.message.message_id, "chat_id": call.message.chat.id}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"admin_mu_{mu_acc_id}", style="danger"))
+                _bot.edit_message_text(
+                    f"➖ <b>کسر الماس</b>\n\nمقدار الماسی که می‌خواهید کسر کنید را بنویسید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_mu_fine_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_fine_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+                bal = db.get_token_balance(mu_acc_id)
+                _owner_states[call.from_user.id] = {"state": "mu_fine", "mu_acc_id": mu_acc_id, "balance": bal, "msg_id": call.message.message_id, "chat_id": call.message.chat.id}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"admin_mu_{mu_acc_id}", style="danger"))
+                _bot.edit_message_text(
+                    f"💸 <b>جریمه کاربر</b>\n\n💎 موجودی فعلی: <b>{bal} الماس</b>\n\n"
+                    f"درصد جریمه را وارد کنید (عدد ۱ تا ۱۰۰):\n<i>مثال: ۵۰ = نصف دارایی کسر می‌شود</i>",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_mu_block_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_block_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+                currently = db.get_setting(mu_acc_id, "bot_blocked", "0") == "1"
+                db.set_setting(mu_acc_id, "bot_blocked", "0" if currently else "1")
+                msg = "✅ مسدودیت رفع شد." if currently else "🚫 کاربر مسدود شد."
+                _bot.answer_callback_query(call.id, msg, show_alert=True)
+                # برگشت به پنل کاربر
+                call.data = f"admin_mu_{mu_acc_id}"
+                callback_admin(call)
+                return
+
+            elif data.startswith("admin_mu_fstop_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_fstop_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+                from bot import bot_manager
+                db.set_setting(mu_acc_id, "owner_force_stop_self", "1")
+                if bot_manager.is_running(mu_acc_id):
+                    bot_manager.stop(mu_acc_id)
+                # اطلاع‌رسانی به کاربر
+                try:
+                    tg_id_val = db.get_telegram_id_by_owner(mu_acc_id)
+                    if tg_id_val:
+                        _bot.send_message(tg_id_val, "🔒 <b>سلف شما توسط مالک خاموش و قفل شد.</b>\nتا زمانی که مالک اجازه ندهد، امکان روشن کردن سلف وجود ندارد.")
+                except Exception:
+                    pass
+                _bot.answer_callback_query(call.id, "🔒 سلف کاربر خاموش و قفل شد.", show_alert=True)
+                call.data = f"admin_mu_{mu_acc_id}"
+                callback_admin(call)
+                return
+
+            elif data.startswith("admin_mu_allow_"):
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
+                try:
+                    mu_acc_id = int(data[len("admin_mu_allow_"):])
+                except Exception:
+                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
+                from bot import bot_manager
+                from app import get_loop
+                db.set_setting(mu_acc_id, "owner_force_stop_self", "0")
+                # اطلاع‌رسانی به کاربر
+                try:
+                    tg_id_val = db.get_telegram_id_by_owner(mu_acc_id)
+                    if tg_id_val:
+                        _bot.send_message(tg_id_val, "🟢 <b>سلف شما توسط مالک آزاد شد.</b>\nاکنون می‌توانید سلف را روشن کنید.")
+                except Exception:
+                    pass
+                _bot.answer_callback_query(call.id, "🟢 قفل سلف کاربر برداشته شد.", show_alert=True)
+                call.data = f"admin_mu_{mu_acc_id}"
+                callback_admin(call)
+                return
+
             else:
                 _bot.answer_callback_query(call.id, "❌ گزینه نامعتبر")
         
@@ -3830,6 +4078,77 @@ def start_token_bot():
 
             elif state == "gift_awaiting_confirm":
                 _bot.reply_to(message, "⏳ لطفاً روی دکمه تایید یا لغو کلیک کنید.")
+
+            # ── مدیریت کاربران: افزایش الماس ─────────────────────────────────────
+            elif state == "mu_add_diamond":
+                mu_acc_id = state_data["mu_acc_id"]
+                try:
+                    amount = int(text)
+                    if amount <= 0:
+                        return _bot.reply_to(message, "❌ مقدار باید بیشتر از صفر باشد:")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید:")
+                db.add_tokens(mu_acc_id, amount)
+                new_bal = db.get_token_balance(mu_acc_id)
+                try:
+                    mu_tg_id = db.get_telegram_id_by_owner(mu_acc_id)
+                    if mu_tg_id:
+                        _bot.send_message(mu_tg_id, f"💎 <b>{amount} الماس</b> توسط مالک به حساب شما اضافه شد.\n💰 موجودی جدید: <b>{new_bal} الماس</b>")
+                except Exception:
+                    pass
+                _bot.reply_to(message, f"✅ <b>{amount} الماس</b> اضافه شد.\n💎 موجودی جدید: <b>{new_bal}</b>", reply_markup=_owner_keyboard())
+                _owner_states.pop(message.from_user.id, None)
+
+            # ── مدیریت کاربران: کسر الماس ────────────────────────────────────────
+            elif state == "mu_deduct_diamond":
+                mu_acc_id = state_data["mu_acc_id"]
+                try:
+                    amount = int(text)
+                    if amount <= 0:
+                        return _bot.reply_to(message, "❌ مقدار باید بیشتر از صفر باشد:")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید:")
+                cur_bal = db.get_token_balance(mu_acc_id)
+                actual = min(amount, cur_bal)
+                db.deduct_tokens(mu_acc_id, actual)
+                new_bal = db.get_token_balance(mu_acc_id)
+                try:
+                    mu_tg_id = db.get_telegram_id_by_owner(mu_acc_id)
+                    if mu_tg_id:
+                        _bot.send_message(mu_tg_id, f"➖ <b>{actual} الماس</b> توسط مالک از حساب شما کسر شد.\n💰 موجودی جدید: <b>{new_bal} الماس</b>")
+                except Exception:
+                    pass
+                _bot.reply_to(message, f"✅ <b>{actual} الماس</b> کسر شد.\n💎 موجودی جدید: <b>{new_bal}</b>", reply_markup=_owner_keyboard())
+                _owner_states.pop(message.from_user.id, None)
+
+            # ── مدیریت کاربران: جریمه (درصد) ────────────────────────────────────
+            elif state == "mu_fine":
+                mu_acc_id = state_data["mu_acc_id"]
+                try:
+                    percent = float(text.replace("٪", "").replace("%", "").strip())
+                    if percent <= 0 or percent > 100:
+                        return _bot.reply_to(message, "❌ درصد باید بین ۱ تا ۱۰۰ باشد:")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید (مثال: ۵۰):")
+                cur_bal = db.get_token_balance(mu_acc_id)
+                fine_amount = int(cur_bal * percent / 100)
+                if fine_amount < 1:
+                    fine_amount = 1 if cur_bal >= 1 else 0
+                if fine_amount > 0:
+                    db.deduct_tokens(mu_acc_id, fine_amount)
+                new_bal = db.get_token_balance(mu_acc_id)
+                try:
+                    mu_tg_id = db.get_telegram_id_by_owner(mu_acc_id)
+                    if mu_tg_id:
+                        _bot.send_message(mu_tg_id, f"⚠️ <b>جریمه:</b> {int(percent)}٪ از موجودی شما ({fine_amount} الماس) توسط مالک کسر شد.\n💰 موجودی جدید: <b>{new_bal} الماس</b>")
+                except Exception:
+                    pass
+                _bot.reply_to(message,
+                    f"💸 جریمه {int(percent)}٪ اعمال شد.\n"
+                    f"➖ کسر شده: <b>{fine_amount} الماس</b>\n"
+                    f"💎 موجودی جدید: <b>{new_bal}</b>",
+                    reply_markup=_owner_keyboard())
+                _owner_states.pop(message.from_user.id, None)
 
             elif state == "set_card":
                 card = text.strip().replace("-", "").replace(" ", "")
