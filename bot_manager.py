@@ -82,10 +82,10 @@ class AdvancedBotManager:
         hb = self._get_hb_manager()
         return hb.get_all_alive()
     
-    def start(self, owner_id: int, loop: asyncio.AbstractEventLoop, check_tokens: bool = True) -> bool:
+    def start(self, owner_id: int, loop: asyncio.AbstractEventLoop, check_tokens: bool = True, is_restart: bool = False) -> bool:
         """شروع یک اکانت با بررسی‌های کامل"""
         
-        print(f"🚀 [{owner_id}] شروع فرآیند استارت...")
+        print(f"🚀 [{owner_id}] شروع فرآیند استارت{'(ریستارت)' if is_restart else ''}...")
         
         # ─── ۱. Duplicate Protection ──────────────────────────────────────────
         # اگر اکانت در حال اجراست، آن را متوقف کن

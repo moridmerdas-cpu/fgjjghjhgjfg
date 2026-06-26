@@ -212,7 +212,7 @@ def get_account_by_tg_id(tg_id: int) -> Optional[Dict]:
 
 def get_all_accounts() -> List[Dict]:
     try:
-        query = "SELECT id, username, created_at FROM amel_accounts ORDER BY created_at"
+        query = "SELECT id, username, telegram_user_id, created_at FROM amel_accounts ORDER BY created_at"
         result = execute_query(query, fetch_all=True)
         return [dict(r) for r in result] if result else []
     except Exception as e:

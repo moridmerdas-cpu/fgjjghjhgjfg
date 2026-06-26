@@ -1934,15 +1934,19 @@ def start_token_bot():
 
             if data == "self_mgmt_stop":
                 from bot import bot_manager
+                import time as _time
                 if not bot_manager.is_running(acc_id):
                     _bot.answer_callback_query(call.id, "⚠️ سلف از قبل خاموش است.", show_alert=True)
                 else:
                     bot_manager.stop(acc_id)
+                    # صبر کوتاه تا state بروز شود
+                    _time.sleep(0.8)
                     _bot.answer_callback_query(call.id, "🔴 سلف خاموش شد.")
 
             elif data == "self_mgmt_start":
                 from bot import bot_manager
                 from app import get_loop
+                import time as _time
                 if not db.get_setting(acc_id, "logged_in", "0") == "1":
                     return _bot.answer_callback_query(
                         call.id, "❌ سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
@@ -1953,6 +1957,8 @@ def start_token_bot():
                     _bot.answer_callback_query(call.id, "✅ سلف از قبل روشن است.", show_alert=True)
                 else:
                     bot_manager.start(acc_id, get_loop(), check_tokens=False, is_restart=True)
+                    # صبر کوتاه تا heartbeat ثبت شود
+                    _time.sleep(1.2)
                     _bot.answer_callback_query(call.id, "🟢 سلف روشن شد!")
 
             # ادیت پیام با وضعیت جدید
@@ -2754,6 +2760,10 @@ def start_token_bot():
         if call.from_user.id != OWNER_TG_ID:
             return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
         
+        # دکمه‌های غیرفعال (نمایشی)
+        if call.data == "admin_users_noop":
+            return _bot.answer_callback_query(call.id)
+        
         try:
             data = call.data
             
@@ -2820,39 +2830,57 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
             
-            elif data == "admin_users":
+            elif data == "admin_users" or data.startswith("admin_users_p"):
                 accounts = db.get_all_accounts()
                 if not accounts:
                     text = "هیچ کاربری ثبت نشده."
-                else:
-                    lines = [f"👥 <b>کاربران ({len(accounts)} نفر)</b>\n"]
-                    for i, acc in enumerate(accounts[:30], 1):
-                        bal = db.get_token_balance(acc["id"])
-                        remaining = _format_plan_remaining(acc["id"])
-                        tg_id_val = db.get_telegram_id_by_owner(acc["id"])
-                        # دریافت یوزرنیم تلگرام (@username) از طریق آیدی
-                        tg_username_line = "👤 تلگرام: ندارد"
-                        if tg_id_val:
-                            try:
-                                tg_chat = _bot.get_chat(tg_id_val)
-                                if tg_chat.username:
-                                    tg_username_line = f"👤 تلگرام: @{tg_chat.username}"
-                                else:
-                                    tg_username_line = f"👤 تلگرام: {tg_chat.first_name or tg_id_val}"
-                            except Exception:
-                                tg_username_line = f"👤 تلگرام: <code>{tg_id_val}</code>"
-                        tg_id_line = f"📱 آیدی: <code>{tg_id_val}</code>" if tg_id_val else "📱 آیدی: ندارد"
-                        lines.append(
-                            f"┌─ <b>#{i} {acc['username']}</b>\n"
-                            f"├ 🆔 پنل: <code>{acc['id']}</code>\n"
-                            f"├ {tg_username_line}\n"
-                            f"├ {tg_id_line}\n"
-                            f"├ 💎 موجودی: <b>{bal} الماس</b>\n"
-                            f"└ ⏳ پلن: {remaining}"
-                        )
-                    text = "\n\n".join(lines)
-                markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه بازگشت با رنگ danger (قرمز)
+                    markup = types.InlineKeyboardMarkup()
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+                    _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                        message_id=call.message.message_id, reply_markup=markup)
+                    _bot.answer_callback_query(call.id)
+                    return
+
+                # Pagination — هر صفحه ۲۰ کاربر
+                PAGE_SIZE = 20
+                total = len(accounts)
+                total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+                try:
+                    page = int(data.split("_p")[-1]) if data.startswith("admin_users_p") else 1
+                except Exception:
+                    page = 1
+                page = max(1, min(page, total_pages))
+                start_idx = (page - 1) * PAGE_SIZE
+                page_accounts = accounts[start_idx: start_idx + PAGE_SIZE]
+
+                lines = [f"👥 <b>کاربران ({total} نفر) — صفحه {page}/{total_pages}</b>\n"]
+                for i, acc in enumerate(page_accounts, start_idx + 1):
+                    bal = db.get_token_balance(acc["id"])
+                    remaining = _format_plan_remaining(acc["id"])
+                    # آیدی تلگرام مستقیماً از query برگشته (بدون query جداگانه)
+                    tg_id_val = acc.get("telegram_user_id")
+                    tg_id_line = f"📱 آیدی تلگرام: <code>{tg_id_val}</code>" if tg_id_val else "📱 آیدی تلگرام: ─"
+                    lines.append(
+                        f"┌─ <b>#{i} {acc['username']}</b>\n"
+                        f"├ 🆔 پنل: <code>{acc['id']}</code>\n"
+                        f"├ {tg_id_line}\n"
+                        f"├ 💎 موجودی: <b>{bal} الماس</b>\n"
+                        f"└ ⏳ پلن: {remaining}"
+                    )
+                text = "\n\n".join(lines)
+
+                markup = types.InlineKeyboardMarkup(row_width=3)
+                nav_buttons = []
+                if page > 1:
+                    nav_buttons.append(types.InlineKeyboardButton(
+                        "◀️ قبلی", callback_data=f"admin_users_p{page - 1}"))
+                nav_buttons.append(types.InlineKeyboardButton(
+                    f"📄 {page}/{total_pages}", callback_data="admin_users_noop"))
+                if page < total_pages:
+                    nav_buttons.append(types.InlineKeyboardButton(
+                        "بعدی ▶️", callback_data=f"admin_users_p{page + 1}"))
+                if nav_buttons:
+                    markup.add(*nav_buttons)
                 markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
