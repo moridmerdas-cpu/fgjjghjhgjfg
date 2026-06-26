@@ -288,21 +288,19 @@ def start_token_bot():
         return True
 
     def _user_keyboard(show_remove_self=True):
-        # ✅ دکمه حذف سلف همیشه نمایش داده می‌شود — بقیه دکمه‌ها InlineKeyboardButton هستند
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
         markup.add(
-            types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
+            types.KeyboardButton("🤖 مدیریت سلف", style="primary")  # 🔵 آبی
         )
         return markup
 
     def _owner_keyboard(show_remove_self=True):
-        # ✅ دکمه مدیریت + حذف سلف همیشه نمایش داده می‌شوند — بقیه دکمه‌ها InlineKeyboardButton هستند
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
         markup.add(
             types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
         )
         markup.add(
-            types.KeyboardButton("🗑 حذف سلف از اکانت تلگرام", style="danger")  # 🔴 قرمز
+            types.KeyboardButton("🤖 مدیریت سلف", style="primary")  # 🔵 آبی
         )
         return markup
 
@@ -1802,6 +1800,180 @@ def start_token_bot():
             pass
 
     # ══════════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🤖 مدیریت سلف — منوی مرکزی
+    # ══════════════════════════════════════════════════════════════════════════
+    def _self_management_keyboard(account_id):
+        """کیبورد منوی مدیریت سلف — وضعیت دینامیک"""
+        from bot import bot_manager
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        is_logged = db.get_setting(account_id, "logged_in", "0") == "1"
+        is_running = bot_manager.is_running(account_id)
+        is_paused  = bot_manager.is_paused(account_id)
+
+        if not is_logged:
+            # سلف وصل نیست — فقط دکمه وصل کردن
+            markup.add(types.InlineKeyboardButton(
+                "🔗 وصل کردن سلف", callback_data="reg_start", style="success"))
+        else:
+            if is_running and not is_paused:
+                # سلف روشن است — دکمه خاموش کردن
+                markup.add(types.InlineKeyboardButton(
+                    "🔴 خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger"))
+            else:
+                # سلف خاموش یا pause است — دکمه روشن کردن
+                markup.add(types.InlineKeyboardButton(
+                    "🟢 روشن کردن سلف", callback_data="self_mgmt_start", style="success"))
+            # حذف سلف همیشه نمایش داده می‌شود
+            markup.add(types.InlineKeyboardButton(
+                "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
+
+        markup.add(types.InlineKeyboardButton(
+            "🔙 بازگشت", callback_data="self_mgmt_back", style="primary"))
+        return markup
+
+    def _self_management_text(account_id):
+        """متن وضعیت سلف"""
+        from bot import bot_manager
+        is_logged  = db.get_setting(account_id, "logged_in", "0") == "1"
+        is_running = bot_manager.is_running(account_id)
+        is_paused  = bot_manager.is_paused(account_id)
+        sub        = db.get_subscription(account_id)
+
+        if not is_logged:
+            status_icon = "⚫️"
+            status_text = "وصل نشده"
+        elif is_running and not is_paused:
+            status_icon = "🟢"
+            status_text = "فعال و در حال اجرا"
+        elif is_running and is_paused:
+            status_icon = "🟡"
+            status_text = "متوقف موقت (پلن منقضی)"
+        else:
+            status_icon = "🔴"
+            status_text = "خاموش"
+
+        # وضعیت اشتراک
+        if sub:
+            import datetime as _dt
+            exp = sub.get("expires_at")
+            if isinstance(exp, str):
+                try:
+                    exp = _dt.datetime.fromisoformat(exp)
+                except Exception:
+                    exp = None
+            if exp:
+                if exp.tzinfo:
+                    exp = exp.replace(tzinfo=None)
+                now_local = _dt.datetime.now()
+                diff = exp - now_local
+                if diff.total_seconds() > 0:
+                    days = diff.days
+                    hours = diff.seconds // 3600
+                    mins  = (diff.seconds % 3600) // 60
+                    if days > 0:
+                        remaining = f"{days} روز و {hours} ساعت"
+                    elif hours > 0:
+                        remaining = f"{hours} ساعت و {mins} دقیقه"
+                    else:
+                        remaining = f"{mins} دقیقه"
+                    sub_line = f"✅ فعال — باقی‌مانده: <b>{remaining}</b>"
+                else:
+                    sub_line = "❌ منقضی شده"
+            else:
+                sub_line = "❓ نامشخص"
+        else:
+            sub_line = "❌ اشتراک ندارید"
+
+        return (
+            f"🤖 <b>مدیریت سلف</b>\n\n"
+            f"{status_icon} وضعیت: <b>{status_text}</b>\n"
+            f"📦 اشتراک: {sub_line}\n\n"
+            f"از دکمه‌های زیر استفاده کنید:"
+        )
+
+    @_bot.message_handler(func=lambda m: m.text == "🤖 مدیریت سلف", chat_types=['private'])
+    def cmd_self_management(message):
+        try:
+            account = _get_account_cached(message.from_user.id)
+            if not account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.",
+                                     reply_markup=_main_inline_keyboard())
+            _bot.send_message(
+                message.chat.id,
+                _self_management_text(account["id"]),
+                reply_markup=_self_management_keyboard(account["id"])
+            )
+        except Exception as e:
+            print(f"❌ خطا در cmd_self_management: {e}")
+
+    @_bot.callback_query_handler(func=lambda call: call.data in (
+        "self_mgmt_stop", "self_mgmt_start", "self_mgmt_back"
+    ))
+    def callback_self_management(call):
+        try:
+            account = _get_account_cached(call.from_user.id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "❌ اکانت یافت نشد.", show_alert=True)
+
+            acc_id = account["id"]
+            data   = call.data
+
+            if data == "self_mgmt_back":
+                _bot.answer_callback_query(call.id)
+                try:
+                    _bot.edit_message_text(
+                        "📋 منوی اصلی:",
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=_main_inline_keyboard(account)
+                    )
+                except Exception:
+                    pass
+                return
+
+            if data == "self_mgmt_stop":
+                from bot import bot_manager
+                if not bot_manager.is_running(acc_id):
+                    _bot.answer_callback_query(call.id, "⚠️ سلف از قبل خاموش است.", show_alert=True)
+                else:
+                    bot_manager.stop(acc_id)
+                    _bot.answer_callback_query(call.id, "🔴 سلف خاموش شد.")
+
+            elif data == "self_mgmt_start":
+                from bot import bot_manager
+                from app import get_loop
+                if not db.get_setting(acc_id, "logged_in", "0") == "1":
+                    return _bot.answer_callback_query(
+                        call.id, "❌ سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
+                if not db.is_subscribed(acc_id):
+                    return _bot.answer_callback_query(
+                        call.id, "❌ اشتراک ندارید یا منقضی شده. ابتدا پلن تهیه کنید.", show_alert=True)
+                if bot_manager.is_running(acc_id) and not bot_manager.is_paused(acc_id):
+                    _bot.answer_callback_query(call.id, "✅ سلف از قبل روشن است.", show_alert=True)
+                else:
+                    bot_manager.start(acc_id, get_loop(), check_tokens=False, is_restart=True)
+                    _bot.answer_callback_query(call.id, "🟢 سلف روشن شد!")
+
+            # ادیت پیام با وضعیت جدید
+            try:
+                _bot.edit_message_text(
+                    _self_management_text(acc_id),
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=_self_management_keyboard(acc_id)
+                )
+            except Exception:
+                pass
+
+        except Exception as e:
+            print(f"❌ خطا در callback_self_management: {e}")
+            try:
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
+            except Exception:
+                pass
+
+    # ══════════════════════════════════════════════════════════════════════════
     # 🗑 حذف سلف از اکانت تلگرام (بدون از دست رفتن دارایی‌ها)
     # ══════════════════════════════════════════════════════════════════════════
     def _logout_telegram_session(session_data):
@@ -1844,32 +2016,6 @@ def start_token_bot():
         # ۳) پاک‌سازی session در دیتابیس — اکانت/دارایی‌ها دست‌نخورده باقی می‌مانند
         db.set_setting(account_id, "session_data", "")
         db.set_setting(account_id, "logged_in", "0")
-
-    @_bot.message_handler(func=lambda m: m.text == "🗑 حذف سلف از اکانت تلگرام", chat_types=['private'])
-    def cmd_remove_self_keyboard(message):
-        try:
-            account = _get_account_cached(message.from_user.id)
-            if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
-            if db.get_setting(account["id"], "logged_in", "0") != "1":
-                return _bot.reply_to(message, "⚠️ سلف فعالی برای حذف وجود ندارد.")
-
-            markup = types.InlineKeyboardMarkup(row_width=2)
-            # 🟢 دکمه تأیید با رنگ success (سبز)
-            markup.add(
-                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
-                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
-            )
-            _bot.reply_to(
-                message,
-                "⚠️ <b>مطمئن هستید؟</b>\n\n"
-                "با تأیید، سلف از اکانت تلگرامی که الان به آن وصل است خارج می‌شود.\n"
-                "💎 الماس‌ها و یوزرنیم پنل شما <b>حفظ می‌شوند</b>.\n\n"
-                "بعد از خروج می‌توانید دوباره با همین اکانت یا یک اکانت تلگرام دیگر، سلف را وصل کنید — بدون نیاز به ساخت اکانت جدید.",
-                reply_markup=markup,
-            )
-        except Exception as e:
-            print(f"❌ خطا در cmd_remove_self_keyboard: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "remove_self_ask")
     def callback_remove_self_ask(call):
