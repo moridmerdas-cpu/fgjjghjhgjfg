@@ -138,6 +138,44 @@ _owner_states = {}
 _active_bets = {}
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 👮 ادمین‌های فرعی (افزوده‌شده توسط مالک) — ذخیره‌سازی پایدار با global_setting
+# ══════════════════════════════════════════════════════════════════════════════
+_SUB_ADMINS_SETTING_KEY = "sub_admins"
+
+def _get_sub_admins():
+    """مجموعه آیدی عددی تلگرام تمام ادمین‌های فرعی را برمی‌گرداند."""
+    try:
+        raw = db.get_global_setting(_SUB_ADMINS_SETTING_KEY, "") or ""
+    except Exception:
+        raw = ""
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.lstrip("-").isdigit():
+            ids.add(int(part))
+    return ids
+
+def _add_sub_admin(tg_id):
+    """یک ادمین فرعی جدید اضافه و در دیتابیس ذخیره می‌کند."""
+    ids = _get_sub_admins()
+    ids.add(int(tg_id))
+    try:
+        db.set_global_setting(_SUB_ADMINS_SETTING_KEY, ",".join(str(i) for i in ids))
+    except Exception as e:
+        print(f"❌ خطا در ذخیره ادمین فرعی: {e}")
+    return ids
+
+def _is_sub_admin(tg_id):
+    try:
+        return int(tg_id) in _get_sub_admins()
+    except Exception:
+        return False
+
+def _is_admin_user(tg_id):
+    """مالک یا هر ادمین فرعی که توسط مالک اضافه شده باشد."""
+    return tg_id == OWNER_TG_ID or _is_sub_admin(tg_id)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 🔐 سیستم ساخت اکانت و لاگین تلگرام از طریق ربات
 # ══════════════════════════════════════════════════════════════════════════════
 _reg_sessions: dict = {}
@@ -360,7 +398,29 @@ def start_token_bot():
             types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
         )
         markup.add(
+            types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success")    # 🟢 سبز
+        )
+        markup.add(
             types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
+        )
+        return markup
+
+    def _sub_admin_panel_keyboard():
+        # ✅ پنل محدودشده برای ادمین‌های فرعی که توسط مالک اضافه شده‌اند
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary"),             # 🔵 آبی
+            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
+        )
+        markup.add(
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
+        )
+        markup.add(
+            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
+        )
+        markup.add(
+            types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
         )
         return markup
 
@@ -2082,7 +2142,7 @@ def start_token_bot():
             cache.invalidate(f"account_{call.from_user.id}")
 
             # آپدیت keyboard پایین صفحه (دکمه حذف سلف همچنان نمایش داده می‌شود)
-            kb = _owner_keyboard() if call.from_user.id == OWNER_TG_ID else _user_keyboard()
+            kb = _owner_keyboard() if _is_admin_user(call.from_user.id) else _user_keyboard()
             try:
                 _bot.send_message(
                     call.message.chat.id,
@@ -2204,7 +2264,7 @@ def start_token_bot():
                 sub_status = "❌ اشتراک ندارید"
 
             if message.chat.type == 'private':
-                kb_markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
+                kb_markup = _owner_keyboard() if _is_admin_user(tg_id) else _user_keyboard()
             else:
                 kb_markup = None
 
@@ -2749,19 +2809,44 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: m.text == "📢 مدیریت", chat_types=['private'])
     def cmd_admin_panel(message):
-        if message.from_user.id != OWNER_TG_ID:
+        tg_id = message.from_user.id
+        if tg_id == OWNER_TG_ID:
+            _bot.reply_to(message, 
+                "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                reply_markup=_admin_panel_keyboard())
+        elif _is_sub_admin(tg_id):
+            _bot.reply_to(message,
+                "📢 <b>پنل مدیریت</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                reply_markup=_sub_admin_panel_keyboard())
+        else:
             return
-        _bot.reply_to(message, 
-            "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
-            reply_markup=_admin_panel_keyboard())
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 Callback handler پنل مدیریت
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_"))
     def callback_admin(call):
-        if call.from_user.id != OWNER_TG_ID:
+        tg_id = call.from_user.id
+        is_owner = (tg_id == OWNER_TG_ID)
+        is_sub = (not is_owner) and _is_sub_admin(tg_id)
+
+        if not is_owner and not is_sub:
             return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
+
+        if is_sub:
+            # ✅ ادمین‌های فرعی فقط به بخش‌های زیر دسترسی دارند:
+            # کاربران، بازی‌های امروز، پیام عمومی، ماموریت‌ها، شرکت‌کنندگان جام جهانی، هدیه
+            _SUB_ADMIN_ALLOWED = (
+                "admin_panel", "admin_back",
+                "admin_users",
+                "admin_today_games", "wc_sendnow_",
+                "admin_broadcast",
+                "admin_missions", "add_mission_prompt", "del_mission_",
+                "admin_wc_participants",
+                "admin_gift",
+            )
+            if not any(call.data == p or call.data.startswith(p) for p in _SUB_ADMIN_ALLOWED):
+                return _bot.answer_callback_query(call.id, "❌ شما به این بخش دسترسی ندارید", show_alert=True)
         
         # دکمه‌های غیرفعال (نمایشی)
         if call.data == "admin_users_noop":
@@ -2771,11 +2856,17 @@ def start_token_bot():
             data = call.data
             
             if data == "admin_panel" or data == "admin_back":
+                if is_owner:
+                    panel_text = "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
+                    panel_kb = _admin_panel_keyboard()
+                else:
+                    panel_text = "📢 <b>پنل مدیریت</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
+                    panel_kb = _sub_admin_panel_keyboard()
                 _bot.edit_message_text(
-                    "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                    panel_text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    reply_markup=_admin_panel_keyboard()
+                    reply_markup=panel_kb
                 )
                 _bot.answer_callback_query(call.id)
                 return
@@ -3371,6 +3462,26 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
 
+            elif data == "admin_add_admin":
+                if not is_owner:
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک می‌تواند ادمین اضافه کند", show_alert=True)
+                _owner_states[call.from_user.id] = {"state": "waiting_add_admin"}
+                markup = types.InlineKeyboardMarkup()
+                # 🔴 دکمه لغو با رنگ danger (قرمز)
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    "➕ <b>افزودن ادمین</b>\n\n"
+                    "📝 پیام کاربر مورد نظر را فوروارد کنید، یا آیدی عددی تلگرام او را ارسال کنید:\n\n"
+                    "پس از افزودن، این کاربر به پنل مدیریت با دسترسی‌های زیر دسترسی خواهد یافت:\n"
+                    "👥 کاربران، 📅 بازی‌های امروز، 📣 پیام عمومی، 🎯 ماموریت‌ها، "
+                    "👥 شرکت‌کنندگان جام جهانی، 🎁 هدیه",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
             elif data == "admin_missions":
                 missions = db.get_active_missions()
                 markup = types.InlineKeyboardMarkup(row_width=1)
@@ -3425,7 +3536,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 📨 State handler
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.from_user.id == OWNER_TG_ID and m.from_user.id in _owner_states, chat_types=['private'],
+    @_bot.message_handler(func=lambda m: m.from_user.id in _owner_states, chat_types=['private'],
                           content_types=["text", "photo", "document"])
     def handle_owner_state(message):
         try:
@@ -3464,6 +3575,53 @@ def start_token_bot():
                 else:
                     _bot.reply_to(message, f"⚠️ خطا یا تکراری است.", reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
+
+            elif state == "waiting_add_admin":
+                _owner_states.pop(message.from_user.id, None)
+                new_admin_id = None
+                new_admin_name = ""
+
+                if message.forward_from:
+                    new_admin_id = message.forward_from.id
+                    new_admin_name = (message.forward_from.first_name or "").strip()
+                elif text.lstrip("-").isdigit():
+                    new_admin_id = int(text)
+
+                if not new_admin_id:
+                    _bot.reply_to(
+                        message,
+                        "❌ نتوانستم آیدی کاربر را تشخیص دهم.\n"
+                        "پیام او را فوروارد کنید یا آیدی عددی تلگرام او را ارسال کنید.",
+                        reply_markup=_owner_keyboard()
+                    )
+                    return
+
+                if new_admin_id == OWNER_TG_ID:
+                    _bot.reply_to(message, "ℹ️ این کاربر همان مالک است.", reply_markup=_owner_keyboard())
+                    return
+
+                _add_sub_admin(new_admin_id)
+
+                name_part = f" ({new_admin_name})" if new_admin_name else ""
+                _bot.reply_to(
+                    message,
+                    f"✅ کاربر <code>{new_admin_id}</code>{name_part} به عنوان ادمین اضافه شد و به پنل مدیریت دسترسی یافت.",
+                    reply_markup=_owner_keyboard()
+                )
+
+                try:
+                    _bot.send_message(
+                        new_admin_id,
+                        "🎉 <b>شما توسط مالک به عنوان ادمین انتخاب شدید!</b>\n\n"
+                        "هم‌اکنون به پنل مدیریت با دسترسی‌های زیر دسترسی دارید:\n"
+                        "👥 کاربران، 📅 بازی‌های امروز، 📣 پیام عمومی، 🎯 ماموریت‌ها، "
+                        "👥 شرکت‌کنندگان جام جهانی، 🎁 هدیه\n\n"
+                        "برای ورود روی دکمه «📢 مدیریت» در زیر صفحه بزنید.",
+                        reply_markup=_owner_keyboard()
+                    )
+                except Exception:
+                    pass
+                return
             
             elif state == "wc_team1":
                 state_data["data"]["team1"] = text
@@ -3828,7 +3986,7 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             
-            kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
+            kb = _owner_keyboard() if _is_admin_user(message.from_user.id) else _user_keyboard()
             _bot.reply_to(message, "⚠️ دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
         except Exception as e:
             print(f"❌ خطا در cmd_unknown: {e}")
