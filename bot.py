@@ -1,17 +1,3 @@
-"""
-bot.py - کلاینت تلگرام و هندلرها (نسخه اصلاح‌شده)
-────────────────────────────────────────────────────────────
-اصلاحات انجام‌شده:
-✅ رفع asyncio.get_event_loop() در محیط چند Thread
-✅ مدیریت صحیح CancelledError با asyncio.gather
-✅ استفاده از asyncio.create_task به‌جای ensure_future
-✅ محدود کردن FloodWait به حداکثر 60 ثانیه
-✅ افزودن try/except به تمام int() ها
-✅ استفاده از logging به‌جای print
-✅ یکسان‌سازی ساختار entry با bot_manager.py
-✅ اعتبارسنجی owner_id در تمام توابع
-✅ سازگاری کامل با bot_manager.py (AdvancedBotManager)
-"""
 import asyncio
 import re
 import os
@@ -19,28 +5,15 @@ import datetime
 import random
 import threading
 import time
-import logging
-from typing import Dict, Any, Optional, List
-
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
-from telethon.errors import FloodWaitError, UnauthorizedError
-
+from telethon.errors import FloodWaitError
 import database as db
 import config
-from texts import ENEMY_REPLIES, FRIEND_REPLIES
-
-# ─── راه‌اندازی logging ──────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from texts import ENEMY_REPLIES, FRIEND_REPLIES  
 
 # ─── فونت‌ها ───────────────────────────────────────────────────────────────────
-_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
 FONTS = {
     "0": lambda t: t,
     "1": lambda t: _convert_font(t, "𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇"),
@@ -49,26 +22,27 @@ FONTS = {
     "4": lambda t: _convert_font(t, "ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ"),
     "5": lambda t: _convert_font(t, "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳"),
     "6": lambda t: _convert_font(t, "𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏"),
-    "7": lambda t: " ".join(c + "\u0336" for c in t),
-    "8": lambda t: " ".join(c + "\u0332" for c in t),
+    "7": lambda t: "".join(c + "\u0336" for c in t),
+    "8": lambda t: "".join(c + "\u0332" for c in t),
 }
+_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 LINK_PATTERN = re.compile(
-    r"(https?://\S+|t.me/\S+|telegram.me/\S+|www.\S+)", re.IGNORECASE
+    r"(https?://\S+|t\.me/\S+|telegram\.me/\S+|www\.\S+)", re.IGNORECASE
 )
+
+# لینک یک پست خاص، مثل: https://t.me/channelname/123 یا t.me/channelname/123
 _POST_LINK_RE = re.compile(
-    r"^(?:https?://)?t.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
+    r"^(?:https?://)?t\.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
 )
 
-# ─── سیستم محدودیت زمانی ──────────────────────────────────────────────────────
-_last_secretary_reply: Dict[int, float] = {}
-_last_friend_reply: Dict[int, float] = {}
-SECRETARY_COOLDOWN = getattr(config, "SECRETARY_COOLDOWN", 86400)  # 24 ساعت
-FRIEND_COOLDOWN = getattr(config, "FRIEND_COOLDOWN", 3600)  # 1 ساعت
+# ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
+_last_secretary_reply = {}  # {chat_id: timestamp}
+_last_friend_reply = {}     # {sender_id: timestamp}
+SECRETARY_COOLDOWN = 86400  # 24 ساعت
+FRIEND_COOLDOWN = 3600      # 1 ساعت
 
-
-def _convert_font(text: str, chars: str) -> str:
-    """تبدیل متن به فونت خاص"""
+def _convert_font(text, chars):
     result = []
     for ch in text:
         if ch in _ALPHA:
@@ -78,14 +52,13 @@ def _convert_font(text: str, chars: str) -> str:
     return "".join(result)
 
 
-def _apply_font(owner_id: int, text: str) -> str:
-    """اعمال فونت انتخابی کاربر"""
+def _apply_font(owner_id, text):
     font_id = db.get_setting(owner_id, "selected_font", "0")
     fn = FONTS.get(font_id, FONTS["0"])
     return fn(text)
 
 
-# ─── فونت‌های ساعت ─────────────────────────────────────────────────────────────
+# ─── فونت‌های مخصوص ساعت (فقط روی ارقام اعمال می‌شود) ──────────────────────────
 CLOCK_FONTS = {
     "0": "0123456789",
     "1": "⓿❶❷❸❹❺❻❼❽❾",
@@ -100,8 +73,7 @@ CLOCK_FONTS = {
 }
 
 
-def _apply_clock_font(owner_id: int, text: str) -> str:
-    """اعمال فونت ساعت"""
+def _apply_clock_font(owner_id, text):
     font_id = db.get_setting(owner_id, "selected_clock_font", "0")
     digits = CLOCK_FONTS.get(font_id, CLOCK_FONTS["0"])
     return "".join(digits[int(ch)] if ch.isdigit() else ch for ch in text)
@@ -109,104 +81,287 @@ def _apply_clock_font(owner_id: int, text: str) -> str:
 
 _SUPER = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 
-
-def persian_time() -> str:
-    """دریافت زمان فعلی ایران"""
+def persian_time():
     iran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
     now = datetime.datetime.now(iran_tz)
     return f"{now.hour:02d}:{now.minute:02d}".translate(_SUPER)
 
 
-# ─── توابع کمکی ───────────────────────────────────────────────────────────────
-def _validate_owner_id(owner_id: int) -> bool:
-    """اعتبارسنجی owner_id"""
-    return isinstance(owner_id, int) and owner_id > 0
+# ─── BotManager: مدیریت چندین کلاینت همزمان ────────────────────────────────────
+class BotManager:
+    def __init__(self):
+        self._bots = {}
+        self._timers = {}
 
+    def is_running(self, owner_id: int) -> bool:
+        entry = self._bots.get(owner_id)
+        return bool(entry and not entry["task"].done())
 
-def _safe_int(value: Any, default: int = 0) -> int:
-    """تبدیل امن به int با مدیریت خطا"""
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return default
+    def get_client(self, owner_id: int):
+        entry = self._bots.get(owner_id)
+        return entry["client"] if entry else None
 
+    def _cancel_timer(self, owner_id: int):
+        t = self._timers.pop(owner_id, None)
+        if t:
+            t.cancel()
 
-def _get_media_dir(owner_id: int) -> str:
-    """دریافت مسیر ذخیره مدیا با اعتبارسنجی"""
-    if not _validate_owner_id(owner_id):
-        raise ValueError(f"owner_id نامعتبر: {owner_id}")
-    media_dir = os.path.join("saved_media", str(owner_id))
-    os.makedirs(media_dir, exist_ok=True)
-    return media_dir
+    def session_end_time(self, owner_id: int):
+        t = self._timers.get(owner_id)
+        if t and t.is_alive():
+            remaining = t.interval - (time.time() - t._timer_start if hasattr(t, '_timer_start') else 0)
+            return max(0, remaining)
+        return None
 
+    def start(self, owner_id: int, loop: asyncio.AbstractEventLoop, check_tokens: bool = True,
+              is_restart: bool = False) -> bool:
+        """
+        is_restart=True یعنی این استارت یک «اتصال مجدد خودکار» است (مثلاً بعد از بالا آمدن
+        دوباره‌ی سرور روی Render). در این حالت سلف کاربر همیشه باید روشن بماند و کاربر
+        نباید مجبور باشد دوباره چیزی بزند؛ پس این حالت هیچ‌وقت استارت را مسدود نمی‌کند:
+        اگر از زمان شروع سشن قبلی (ذخیره‌شده در Supabase) کمتر از SESSION_HOURS گذشته باشد،
+        فقط زمان واقعی باقی‌مانده به تایمر داده می‌شود؛ اگر هم تمام شده باشد، به‌جای قطع کردن
+        کاربر، یک پنجره‌ی تازه (fresh) برایش شروع می‌شود تا ری‌استارت سرور هیچ‌وقت سلف را
+        برای کاربر خاموش نکند.
+        """
+        if self.is_running(owner_id):
+            self.stop(owner_id)
 
-def _is_owner_account(me: Any) -> bool:
-    """تشخیص اینکه آیا یک کاربر تلگرام، مالک اصلی ربات است"""
-    try:
-        me_phone = (getattr(me, "phone", None) or "").lstrip("+")
-        owner_phone = getattr(config, "OWNER_PHONE", "").lstrip("+")
-        return (
-            getattr(me, "id", None) == getattr(config, "OWNER_TG_ID", None)
-            or (bool(owner_phone) and me_phone == owner_phone)
-            or getattr(me, "username", None) == getattr(config, "OWNER_USERNAME", "")
+        tg_id = db.get_telegram_id_by_owner(owner_id)
+        is_owner = (tg_id is not None and tg_id == config.OWNER_TG_ID)
+
+        # ─── چک اشتراک (پلن) ──────────────────────────────────────────────────
+        if not is_owner and not db.is_subscribed(owner_id):
+            return False
+
+        # ─── محاسبه‌ی زمان باقی‌مانده‌ی سشن (قبل از وصل شدن) ────────────────────
+        now_ts = time.time()
+        remaining = None
+        reset_started_at = False
+        if config.BOT_TOKEN and not is_owner:
+            if is_restart:
+                started_raw = db.get_setting(owner_id, "session_started_at", "")
+                try:
+                    started_at = float(started_raw) if started_raw else None
+                except (TypeError, ValueError):
+                    started_at = None
+                if started_at is None:
+                    started_at = now_ts
+                remaining = (config.SESSION_HOURS * 3600) - (now_ts - started_at)
+                if remaining <= 0:
+                    # سشن قبلی تموم شده، ولی چون این یک اتصال مجدد خودکار بعد از
+                    # ری‌استارت سرور است، کاربر را قطع نمی‌کنیم — یک پنجره‌ی تازه می‌دهیم
+                    remaining = config.SESSION_HOURS * 3600
+                    reset_started_at = True
+            else:
+                remaining = config.SESSION_HOURS * 3600
+                reset_started_at = True
+
+        tokens_deducted = 0
+        if config.BOT_TOKEN and check_tokens and not is_owner:
+            balance = db.get_token_balance(owner_id)
+            if balance < config.TOKENS_PER_SESSION:
+                return False
+            db.deduct_tokens(owner_id, config.TOKENS_PER_SESSION)
+            tokens_deducted = config.TOKENS_PER_SESSION
+
+        entry = {"client": None, "task": None, "stop": False, "is_owner": is_owner,
+                 "tokens_deducted": tokens_deducted, "owner_refunded": False, "paused": False}
+        self._bots[owner_id] = entry
+        task = asyncio.run_coroutine_threadsafe(
+            self._run_bot(owner_id), loop
         )
-    except Exception as e:
-        logger.warning("خطا در تشخیص مالک: %s", e)
-        return False
+        entry["task"] = task
 
+        if config.BOT_TOKEN and not is_owner:
+            self._cancel_timer(owner_id)
+            if reset_started_at:
+                # شروع تازه‌ی سشن (لاگین جدید، استارت دستی، یا ری‌استارت بعد از تمام
+                # شدن پنجره‌ی قبلی) → زمان شروع جدید در Supabase ثبت می‌شود
+                db.set_setting(owner_id, "session_started_at", str(now_ts))
+            timer = threading.Timer(
+                remaining, self.stop, args=[owner_id]
+            )
+            timer.daemon = True
+            timer._timer_start = now_ts
+            timer.start()
+            self._timers[owner_id] = timer
 
-# ─── توابع کمکی هندلر ─────────────────────────────────────────────────────────
-async def _safe_edit(event, owner_id: int, text: str, font_fn=None):
-    """ویرایش امن پیام با مدیریت FloodWait"""
-    try:
-        if font_fn is None:
-            fn = FONTS.get(db.get_setting(owner_id, "selected_font", "0"), FONTS["0"])
-            text = fn(text)
+        # ─── تایمر چک دوره‌ای اشتراک (هر ۵ دقیقه) ──────────────────────────
+        if not is_owner:
+            self._start_subscription_watcher(owner_id)
+
+        return True
+
+    def pause(self, owner_id: int):
+        """کانکشن تلگرام رو نگه می‌داره ولی تمام عملیات سلف رو متوقف می‌کنه"""
+        entry = self._bots.get(owner_id)
+        if not entry or entry.get("is_owner"):
+            return
+        if not entry.get("paused"):
+            entry["paused"] = True
+            print(f"⏸️  [{owner_id}] پلن منقضی — سلف موقتاً متوقف شد (اتصال زنده‌ست)")
+
+    def resume(self, owner_id: int):
+        """بعد از تمدید پلن، سلف رو دوباره فعال می‌کنه"""
+        entry = self._bots.get(owner_id)
+        if not entry:
+            return
+        if entry.get("paused"):
+            entry["paused"] = False
+            print(f"▶️  [{owner_id}] پلن تمدید شد — سلف دوباره فعال شد")
+
+    def is_paused(self, owner_id: int) -> bool:
+        entry = self._bots.get(owner_id)
+        return bool(entry and entry.get("paused"))
+
+    def _subscription_check(self, owner_id: int):
+        """هر ۵ دقیقه پلن رو چک می‌کنه — pause/resume می‌کنه، disconnect نمی‌کنه"""
+        if not self.is_running(owner_id):
+            return
+        entry = self._bots.get(owner_id)
+        if entry and entry.get("is_owner"):
+            return
+        if not db.is_subscribed(owner_id):
+            self.pause(owner_id)
         else:
-            text = font_fn(text)
-        await event.edit(text)
-    except FloodWaitError as e:
-        wait_time = min(e.seconds + 1, 60)  # حداکثر 60 ثانیه
-        logger.warning("[%s] FloodWait: %s ثانیه", owner_id, wait_time)
-        await asyncio.sleep(wait_time)
-    except Exception as e:
-        logger.error("[%s] خطا در edit: %s", owner_id, e)
+            # اگه پلن تمدید شده بود، resume کن
+            self.resume(owner_id)
+        # چک بعدی ۵ دقیقه دیگه
+        self._start_subscription_watcher(owner_id)
+
+    def _start_subscription_watcher(self, owner_id: int):
+        """یک تایمر ۵ دقیقه‌ای برای چک پلن راه‌اندازی می‌کنه"""
+        t = threading.Timer(300, self._subscription_check, args=[owner_id])
+        t.daemon = True
+        t.start()
+        # نگه داشتن رفرنس در یک دیکشنری جداگانه
+        if not hasattr(self, '_sub_watchers'):
+            self._sub_watchers = {}
+        self._sub_watchers[owner_id] = t
+
+    def stop(self, owner_id: int):
+        self._cancel_timer(owner_id)
+        # لغو watcher پلن
+        if hasattr(self, '_sub_watchers'):
+            w = self._sub_watchers.pop(owner_id, None)
+            if w:
+                w.cancel()
+        entry = self._bots.get(owner_id)
+        if not entry:
+            return
+        entry["stop"] = True
+        cl = entry.get("client")
+        if cl and cl.is_connected():
+            try:
+                asyncio.run_coroutine_threadsafe(cl.disconnect(), asyncio.get_event_loop())
+            except Exception:
+                pass
+
+    def stop_all(self):
+        for oid in list(self._bots.keys()):
+            self.stop(oid)
+
+    async def _run_bot(self, owner_id: int):
+        entry = self._bots[owner_id]
+        retry_delay = 5
+
+        while not entry["stop"]:
+            try:
+                session_data = db.get_setting(owner_id, "session_data", "")
+                if not session_data:
+                    await asyncio.sleep(10)
+                    continue
+
+                cl = TelegramClient(
+                    StringSession(session_data),
+                    config.API_ID,
+                    config.API_HASH,
+                )
+                entry["client"] = cl
+                _register_handlers(cl, owner_id, entry)
+
+                await cl.start()
+                me = await cl.get_me()
+                print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
+
+                db.save_telegram_user_id(owner_id, me.id)
+
+                # ✅ تشخیص مالک - اصلاح شده با ۳ روش
+                me_phone = (me.phone or "").lstrip("+")
+                owner_phone = getattr(config, "OWNER_PHONE", "").lstrip("+")
+                
+                is_now_owner = (
+                    me.id == config.OWNER_TG_ID or
+                    (bool(owner_phone) and me_phone == owner_phone) or
+                    me.username == getattr(config, "OWNER_USERNAME", "")
+                )
+
+                if is_now_owner:
+                    entry["is_owner"] = True
+                    self._cancel_timer(owner_id)
+                    if not entry.get("owner_refunded") and entry.get("tokens_deducted", 0) > 0:
+                        db.add_tokens(owner_id, entry["tokens_deducted"])
+                        entry["owner_refunded"] = True
+                        print(f"👑 [{owner_id}] مالک تشخیص داده شد - {entry['tokens_deducted']} توکن برگشت داده شد")
+                    print(f"👑 [{owner_id}] مالک: @{me.username} (ID: {me.id}) — تایمر لغو — رایگان ♾️")
+
+                # ✅ استارت ساعت با دقت بالا
+                clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
+                sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
+
+                retry_delay = 5
+                await cl.run_until_disconnected()
+
+                clock_task.cancel()
+                sched_task.cancel()
+
+                if entry["stop"]:
+                    break
+
+                # ✅ چک کن session هنوز در دیتابیس وجود داره
+                try:
+                    session_data = db.get_setting(owner_id, "session_data", "")
+                    if not session_data:
+                        print(f"⚠️  [{owner_id}] session حذف شده — توقف کامل")
+                        break
+                except Exception:
+                    break
+
+                print(f"⚠️  [{owner_id}] اتصال قطع شد، اتصال مجدد...")
+
+            except Exception as e:
+                err_str = str(e)
+                print(f"❌ [{owner_id}] خطا: {e}")
+
+                # ✅ اگه session توسط تلگرام باطل شده، نیاز به لاگین مجدد
+                if any(k in err_str for k in ("AUTH_KEY_UNREGISTERED", "SESSION_REVOKED",
+                                               "USER_DEACTIVATED", "UnauthorizedError")):
+                    print(f"❌ [{owner_id}] Session باطل شده — نیاز به لاگین مجدد")
+                    db.set_setting(owner_id, "logged_in", "0")
+                    db.set_setting(owner_id, "session_data", "")
+                    break
+
+                if entry["stop"]:
+                    break
+
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 120)
+
+        print(f"🛑 [{owner_id}] بات متوقف شد.")
 
 
-async def _resolve_target(event, parts: List[str]) -> Optional[Dict[str, Any]]:
-    """دریافت هدف از ریپلای یا آیدی عددی"""
-    replied = await event.get_reply_message()
-    if replied:
-        sender = await replied.get_sender()
-        if sender:
-            return {
-                "id": sender.id,
-                "username": getattr(sender, "username", None),
-                "name": getattr(sender, "first_name", str(sender.id)),
-            }
-    for p in parts[1:]:
-        if p.lstrip("-").isdigit():
-            return {"id": _safe_int(p), "username": None, "name": p}
-    return None
+bot_manager = BotManager()
 
 
-# ─── ثبت هندلرها (per-user) ───────────────────────────────────────────────────
-def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any]):
-    """
-    ثبت تمام هندلرهای بات برای یک کلاینت
-    ⚠️ این تابع sync است (bot_manager.py آن را sync فراخوانی می‌کند)
-    """
-    if not _validate_owner_id(owner_id):
-        logger.error("owner_id نامعتبر برای ثبت هندلرها: %s", owner_id)
-        return
+# ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
+def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.NewMessage(incoming=True))
     async def on_incoming(event):
-        """پردازش پیام‌های ورودی"""
-        # اگر پلن منقضی شده، هیچ کاری نکن
+        # اگه پلن منقضی شده، هیچ کاری نکن (اتصال زنده‌ست)
         if entry.get("paused"):
             return
-
         msg = event.message
         sender = await event.get_sender()
         chat = await event.get_chat()
@@ -214,7 +369,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
         chat_id = getattr(chat, "id", 0)
         text = msg.text or ""
 
-        # بررسی تگ شدن در گروه‌ها
+        # ✅ بررسی آیا ربات تگ شده است (برای گروه‌ها)
         is_tagged = False
         if not event.is_private:
             me = await cl.get_me()
@@ -229,20 +384,21 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
 
-        # اگر در گروه است و تگ نشده، فقط کارهای خودکار
+        # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
             if db.get_setting(owner_id, "auto_seen_active") == "1":
                 try:
                     await cl.send_read_acknowledge(chat_id, msg)
                 except Exception:
                     pass
-
+            
             if db.get_setting(owner_id, "auto_save_media") == "1" and msg.media:
                 try:
-                    media_dir = _get_media_dir(owner_id)
+                    media_dir = f"saved_media/{owner_id}"
+                    os.makedirs(media_dir, exist_ok=True)
                     await cl.download_media(msg, file=media_dir + "/")
-                except Exception as e:
-                    logger.error("[%s] خطا در دانلود مدیا: %s", owner_id, e)
+                except Exception:
+                    pass
             return
 
         if db.is_silent_chat(owner_id, chat_id) or db.is_silent_user(owner_id, sender_id):
@@ -251,10 +407,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
         # ذخیره خودکار مدیا
         if db.get_setting(owner_id, "auto_save_media") == "1" and msg.media:
             try:
-                media_dir = _get_media_dir(owner_id)
+                media_dir = f"saved_media/{owner_id}"
+                os.makedirs(media_dir, exist_ok=True)
                 await cl.download_media(msg, file=media_dir + "/")
-            except Exception as e:
-                logger.error("[%s] خطا در ذخیره مدیا: %s", owner_id, e)
+            except Exception:
+                pass
 
         # ذخیره مدیای تایمدار
         if event.is_private and msg.media:
@@ -262,15 +419,14 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
             if ttl:
                 try:
                     me = await cl.get_me()
-                    media_dir = _get_media_dir(owner_id)
+                    media_dir = f"saved_media/{owner_id}"
+                    os.makedirs(media_dir, exist_ok=True)
                     path = await cl.download_media(msg, file=media_dir + "/")
                     if path:
-                        await cl.send_file(
-                            me.id, path,
-                            caption=f"📥 مدیای تایمدار ذخیره شد\n👤 از: {getattr(sender, 'first_name', sender_id)} ({sender_id})"
-                        )
-                except Exception as e:
-                    logger.error("[%s] خطا در ذخیره مدیای تایمدار: %s", owner_id, e)
+                        await cl.send_file(me.id, path,
+                            caption=f"📥 مدیای تایمدار ذخیره شد\n👤 از: {getattr(sender, 'first_name', sender_id)} ({sender_id})")
+                except Exception:
+                    pass
 
         # سین خودکار
         if db.get_setting(owner_id, "auto_seen_active") == "1":
@@ -279,7 +435,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
             except Exception:
                 pass
 
-        # جوین اجباری (فقط پیوی)
+        # ✅ جوین اجباری (فقط پیوی)
         if event.is_private and db.get_setting(owner_id, "force_join_active") == "1":
             channel_id = db.get_setting(owner_id, "force_join_channel", "")
             if channel_id:
@@ -288,31 +444,29 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
                     from telethon.tl.functions.channels import GetParticipantRequest
                     from telethon.errors import UserNotParticipantError, ChannelPrivateError
                     try:
-                        channel_entity = await cl.get_entity(
-                            _safe_int(channel_id.lstrip("-")) * (-1 if channel_id.startswith("-") else 1)
-                            if channel_id.lstrip("-").isdigit() else channel_id
-                        )
+                        channel_entity = await cl.get_entity(int(channel_id) if channel_id.lstrip("-").isdigit() else channel_id)
                         await cl(GetParticipantRequest(channel_entity, sender_id))
                         is_member = True
                     except (UserNotParticipantError, KeyError):
                         is_member = False
                     except ChannelPrivateError:
-                        is_member = True
+                        is_member = True  # کانال خصوصی — نمی‌تونیم چک کنیم، رد می‌کنیم
                     except Exception:
-                        is_member = True
+                        is_member = True  # خطای ناشناخته — رد می‌کنیم تا اشتباهاً بلاک نشه
                 except Exception:
                     is_member = True
 
                 if not is_member:
+                    # پیام رو حذف کن
                     try:
                         await msg.delete()
                     except Exception:
                         pass
-                    join_msg = db.get_setting(
-                        owner_id, "force_join_message",
-                        "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید."
-                    )
+                    # پیام هشدار با دکمه رنگی جوین
+                    join_msg = db.get_setting(owner_id, "force_join_message",
+                        "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
                     try:
+                        # ساخت دکمه لینک کانال
                         channel_link = db.get_setting(owner_id, "force_join_link", "")
                         from telethon.tl.types import (
                             ReplyInlineMarkup, KeyboardButtonUrl, KeyboardButtonRow
@@ -333,20 +487,21 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
                         pass
                     return
 
-        # منشی (فقط پیوی)
+        # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت)
         if db.get_setting(owner_id, "secretary_active") == "1" and event.is_private:
             now = time.time()
             last_reply = _last_secretary_reply.get(chat_id, 0)
+            
             if now - last_reply >= SECRETARY_COOLDOWN:
                 sec_msg = db.get_setting(owner_id, "secretary_message", "در حال حاضر در دسترس نیستم.")
                 try:
                     await event.reply(sec_msg)
                     _last_secretary_reply[chat_id] = now
-                except Exception as e:
-                    logger.error("[%s] خطا در منشی: %s", owner_id, e)
+                except Exception:
+                    pass
             return
 
-        # ری‌اکشن خودکار
+        # ✅ ری‌اکشن خودکار
         if db.get_setting(owner_id, "auto_reaction_active") == "1":
             emoji = db.get_setting(owner_id, "auto_reaction_emoji", "❤️")
             try:
@@ -360,25 +515,26 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
                     add_to_recent=True
                 ))
             except Exception as e:
-                logger.warning("[%s] خطا در ری‌اکشن: %s", owner_id, e)
+                print(f"⚠️ خطا در ری‌اکشن: {e}")
 
-        # پاسخ به دوستان
+        # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
         if event.is_private and db.is_friend(owner_id, sender_id):
             now = time.time()
             last_reply = _last_friend_reply.get(sender_id, 0)
+            
             if now - last_reply >= FRIEND_COOLDOWN:
                 try:
                     await event.reply(random.choice(FRIEND_REPLIES))
                     _last_friend_reply[sender_id] = now
-                except Exception as e:
-                    logger.error("[%s] خطا در پاسخ به دوست: %s", owner_id, e)
+                except Exception:
+                    pass
 
         # پاسخ به دشمن
         if db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
             try:
                 await event.reply(random.choice(ENEMY_REPLIES))
-            except Exception as e:
-                logger.error("[%s] خطا در پاسخ به دشمن: %s", owner_id, e)
+            except Exception:
+                pass
 
         # ضد لینک (فقط پیوی)
         if db.get_setting(owner_id, "anti_link_active") == "1" and event.is_private and LINK_PATTERN.search(text):
@@ -387,7 +543,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
             except Exception:
                 pass
 
-        # قفل پیوی
+        # قفل پیوی (حذف پیام ورودی در پیوی)
         if db.get_setting(owner_id, "private_lock_active") == "1" and event.is_private:
             try:
                 await msg.delete()
@@ -396,7 +552,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
 
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
-        """پردازش پیام‌های خروجی (دستورات)"""
         text = event.raw_text.strip()
 
         # دستورات همیشه فعال
@@ -409,20 +564,19 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
             await _safe_edit(event, owner_id, "❌ سلف‌بات خاموش شد.")
             return
 
-        # اگر پلن منقضی شده، فقط دستور وضعیت را اجرا کن
+        # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن
         if entry.get("paused"):
             if text in ("وضعیت", "راهنما", "help"):
-                pass
+                pass  # اجازه بده ادامه پیدا کنه
             else:
-                await _safe_edit(
-                    event, owner_id,
+                await _safe_edit(event, owner_id,
                     "⛔ اشتراک شما منقضی شده است.\n"
                     "برای تمدید پلن با ادمین در تماس باشید.\n"
                     "بعد از تمدید، سلف تا ۵ دقیقه دیگر خودکار فعال می‌شود."
                 )
                 return
 
-        # لیست دستورات تنظیماتی
+        # لیست دستورات تنظیماتی که همیشه فعال هستند
         config_commands = [
             "منشی روشن", "منشی خاموش", "پیام منشی",
             "ضد حذف روشن", "ضد حذف خاموش",
@@ -437,15 +591,15 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
             "تنظیم دشمن", "حذف دشمن", "نمایش لیست دشمن", "پاک کردن لیست دشمن",
             "تنظیم دوست", "حذف دوست", "نمایش لیست دوست", "پاک کردن لیست دوست",
             "سایلنت چت روشن", "سایلنت چت خاموش", "سایلنت کاربر", "لغو سایلنت کاربر",
-            "فونت", "لیست فونت", "فونت متن روشن", "فونت متن خاموش", "بنویس",
-            "بولد", "ایتالیک", "مونو", "اسپویلر", "کوت", "خط‌خورده", "زیرخط",
-            "ذخیره", "ارسال ذخیره",
-            "ترجمه", "هوا", "قیمت دلار", "ارز",
+            "فونت ", "لیست فونت", "فونت متن روشن", "فونت متن خاموش", "بنویس ",
+            "بولد ", "ایتالیک ", "مونو ", "اسپویلر ", "کوت ", "خط‌خورده ", "زیرخط ",
+            "ذخیره ", "ارسال ذخیره ",
+            "ترجمه ", "هوا ", "قیمت دلار", "ارز",
             "وضعیت", "راهنما", "help",
-            "حذف بعد",
+            "حذف بعد ",
             "سیو کانال", "توقف سیو",
-            "تنظیم کانال", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
-            "پیام جوین", "لینک کانال جوین",
+            "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
+            "پیام جوین ", "لینک کانال جوین ",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -456,12 +610,9 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: Dict[str, Any])
 
         await _handle_command(cl, event, text, owner_id, entry)
 
-    logger.debug("[%s] هندلرها ثبت شدند", owner_id)
 
-
-# ─── پردازش دستورات ──────────────────────────────────────────────────────────
-async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, Any]):
-    """پردازش دستورات کاربر"""
+# ─── پردازش دستورات ────────────────────────────────────────────────────────────
+async def _handle_command(cl, event, text, owner_id, entry):
     msg = event.message
 
     def gs(key, default=None):
@@ -537,67 +688,52 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
 
     # ─── منشی ────────────────────────────────────────────────────────────────
     elif text == "منشی روشن":
-        ss("secretary_active", "1")
-        await edit("🤖 منشی خودکار روشن شد.\n💡 هر کاربر فقط هر 24 ساعت یک بار پاسخ می‌گیرد.")
+        ss("secretary_active", "1"); await edit("🤖 منشی خودکار روشن شد.\n💡 هر کاربر فقط هر 24 ساعت یک بار پاسخ می‌گیرد.")
     elif text == "منشی خاموش":
-        ss("secretary_active", "0")
-        await edit("🤖 منشی خودکار خاموش شد.")
+        ss("secretary_active", "0"); await edit("🤖 منشی خودکار خاموش شد.")
     elif text.startswith("پیام منشی "):
         ss("secretary_message", text[len("پیام منشی "):].strip())
         await edit("✅ پیام منشی تنظیم شد.")
 
     # ─── ضد حذف ──────────────────────────────────────────────────────────────
     elif text == "ضد حذف روشن":
-        ss("anti_delete_active", "1")
-        await edit("🛡️ ضد حذف روشن شد.")
+        ss("anti_delete_active", "1"); await edit("🛡️ ضد حذف روشن شد.")
     elif text == "ضد حذف خاموش":
-        ss("anti_delete_active", "0")
-        await edit("🛡️ ضد حذف خاموش شد.")
+        ss("anti_delete_active", "0"); await edit("🛡️ ضد حذف خاموش شد.")
 
     # ─── ضد لینک ─────────────────────────────────────────────────────────────
     elif text == "ضد لینک روشن":
-        ss("anti_link_active", "1")
-        await edit("🔗 ضد لینک روشن شد.")
+        ss("anti_link_active", "1"); await edit("🔗 ضد لینک روشن شد.")
     elif text == "ضد لینک خاموش":
-        ss("anti_link_active", "0")
-        await edit("🔗 ضد لینک خاموش شد.")
+        ss("anti_link_active", "0"); await edit("🔗 ضد لینک خاموش شد.")
 
     # ─── قفل پیوی ────────────────────────────────────────────────────────────
     elif text == "قفل پیوی روشن":
-        ss("private_lock_active", "1")
-        await edit("🔒 قفل پیوی روشن شد.")
+        ss("private_lock_active", "1"); await edit("🔒 قفل پیوی روشن شد.")
     elif text == "قفل پیوی خاموش":
-        ss("private_lock_active", "0")
-        await edit("🔓 قفل پیوی خاموش شد.")
+        ss("private_lock_active", "0"); await edit("🔓 قفل پیوی خاموش شد.")
 
     # ─── سین خودکار ──────────────────────────────────────────────────────────
     elif text == "سین خودکار روشن":
-        ss("auto_seen_active", "1")
-        await edit("👁️ سین خودکار روشن شد.")
+        ss("auto_seen_active", "1"); await edit("👁️ سین خودکار روشن شد.")
     elif text == "سین خودکار خاموش":
-        ss("auto_seen_active", "0")
-        await edit("👁️ سین خودکار خاموش شد.")
+        ss("auto_seen_active", "0"); await edit("👁️ سین خودکار خاموش شد.")
 
     # ─── ری‌اکشن ─────────────────────────────────────────────────────────────
     elif text == "ری‌اکشن روشن":
-        ss("auto_reaction_active", "1")
-        await edit("❤️ ری‌اکشن خودکار روشن شد.")
+        ss("auto_reaction_active", "1"); await edit("❤️ ری‌اکشن خودکار روشن شد.")
     elif text == "ری‌اکشن خاموش":
-        ss("auto_reaction_active", "0")
-        await edit("❤️ ری‌اکشن خودکار خاموش شد.")
+        ss("auto_reaction_active", "0"); await edit("❤️ ری‌اکشن خودکار خاموش شد.")
     elif text.startswith("ری‌اکشن "):
         emoji = text[len("ری‌اکشن "):].strip()
-        ss("auto_reaction_emoji", emoji)
-        await edit(f"✅ ری‌اکشن پیش‌فرض: {emoji}")
+        ss("auto_reaction_emoji", emoji); await edit(f"✅ ری‌اکشن پیش‌فرض: {emoji}")
 
     # ─── ذخیره مدیا ──────────────────────────────────────────────────────────
     elif text == "ذخیره مدیا روشن":
-        _get_media_dir(owner_id)
-        ss("auto_save_media", "1")
-        await edit("💾 ذخیره خودکار مدیا روشن شد.")
+        os.makedirs(f"saved_media/{owner_id}", exist_ok=True)
+        ss("auto_save_media", "1"); await edit("💾 ذخیره خودکار مدیا روشن شد.")
     elif text == "ذخیره مدیا خاموش":
-        ss("auto_save_media", "0")
-        await edit("💾 ذخیره خودکار مدیا خاموش شد.")
+        ss("auto_save_media", "0"); await edit("💾 ذخیره خودکار مدیا خاموش شد.")
 
     # ─── سیو کانال ───────────────────────────────────────────────────────────
     elif text == "سیو کانال" or text.startswith("سیو کانال "):
@@ -613,47 +749,34 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
             )
         elif _POST_LINK_RE.match(channel_input):
             await edit("⏳ در حال ذخیره این پست...")
-            asyncio.create_task(_save_channel_media(cl, channel_input, None, owner_id))
+            asyncio.ensure_future(_save_channel_media(cl, channel_input, None, owner_id))
         else:
-            limit = _safe_int(parts[3], 100) if len(parts) >= 4 else 100
+            limit = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 100
             await edit(f"⏳ در حال پردازش کانال، تا {limit} مدیا ذخیره می‌شود...")
-            asyncio.create_task(_save_channel_media(cl, channel_input, limit, owner_id))
+            asyncio.ensure_future(_save_channel_media(cl, channel_input, limit, owner_id))
 
     elif text == "توقف سیو":
-        ss("channel_save_active", "0")
-        await edit("🛑 سیو کانال متوقف شد.")
+        ss("channel_save_active", "0"); await edit("🛑 سیو کانال متوقف شد.")
 
     # ─── سایلنت ──────────────────────────────────────────────────────────────
     elif text == "سایلنت چت روشن":
         chat = await event.get_chat()
-        db.add_silent_chat(owner_id, chat.id)
-        await edit("🔇 این چت سایلنت شد.")
+        db.add_silent_chat(owner_id, chat.id); await edit("🔇 این چت سایلنت شد.")
     elif text == "سایلنت چت خاموش":
         chat = await event.get_chat()
-        db.remove_silent_chat(owner_id, chat.id)
-        await edit("🔔 سایلنت این چت برداشته شد.")
+        db.remove_silent_chat(owner_id, chat.id); await edit("🔔 سایلنت این چت برداشته شد.")
     elif text.startswith("سایلنت کاربر "):
-        uid = _safe_int(text.split()[-1])
-        if uid:
-            db.add_silent_user(owner_id, uid)
-            await edit(f"🔇 کاربر {uid} سایلنت شد.")
-        else:
-            await edit("❗ آیدی عددی معتبر وارد کنید.")
+        uid = int(text.split()[-1])
+        db.add_silent_user(owner_id, uid); await edit(f"🔇 کاربر {uid} سایلنت شد.")
     elif text.startswith("لغو سایلنت کاربر "):
-        uid = _safe_int(text.split()[-1])
-        if uid:
-            db.remove_silent_user(owner_id, uid)
-            await edit(f"🔔 سایلنت کاربر {uid} برداشته شد.")
-        else:
-            await edit("❗ آیدی عددی معتبر وارد کنید.")
+        uid = int(text.split()[-1])
+        db.remove_silent_user(owner_id, uid); await edit(f"🔔 سایلنت کاربر {uid} برداشته شد.")
 
     # ─── پاسخ دشمن ───────────────────────────────────────────────────────────
     elif text == "پاسخ دشمن روشن":
-        ss("enemy_reply_active", "1")
-        await edit("⚔️ پاسخ خودکار به دشمن روشن شد.")
+        ss("enemy_reply_active", "1"); await edit("⚔️ پاسخ خودکار به دشمن روشن شد.")
     elif text == "پاسخ دشمن خاموش":
-        ss("enemy_reply_active", "0")
-        await edit("⚔️ پاسخ خودکار به دشمن خاموش شد.")
+        ss("enemy_reply_active", "0"); await edit("⚔️ پاسخ خودکار به دشمن خاموش شد.")
 
     # ─── فونت متن (حالت خودکار) ──────────────────────────────────────────────
     elif text == "فونت متن روشن":
@@ -668,6 +791,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         await edit("❌ فونت متن خودکار خاموش شد.\nپیام‌ها دیگه ادیت نمی‌شن.")
 
     elif text.startswith("بنویس "):
+        # «بنویس [متن]» — متن رو با فونت فعلی برمی‌گردونه
         raw = text[len("بنویس "):].strip()
         if not raw:
             await edit("❗ فرمت: بنویس [متن]")
@@ -677,7 +801,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
             styled = fn(raw)
             await edit(styled)
 
-    # ─── قالب‌بندی تلگرام ────────────────────────────────────────────────────
+    # ─── قالب‌بندی تلگرام (entities) — کار با فارسی هم دارد ────────────────────
     elif text.startswith("بولد "):
         raw = text[len("بولد "):].strip()
         if raw:
@@ -717,6 +841,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
                 from telethon.tl.types import MessageEntityBlockquote
                 await event.edit(raw, formatting_entities=[MessageEntityBlockquote(0, len(raw), collapsed=False)])
             except Exception:
+                # fallback برای نسخه‌های قدیمی‌تر telethon
                 await event.edit(f"❝ {raw} ❞")
         else:
             await edit("❗ فرمت: کوت [متن]")
@@ -742,15 +867,15 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         font_id = text.split()[-1]
         if font_id in CLOCK_FONTS:
             ss("selected_clock_font", font_id)
+            digits = CLOCK_FONTS[font_id]
             sample = _apply_clock_font(owner_id, "12:34")
             await edit(f"⏰ فونت ساعت {font_id} انتخاب شد:\n`{sample}`")
         else:
             await edit("❗ شماره فونت ساعت باید بین ۰ تا ۹ باشد.")
-
     elif text == "لیست فونت ساعت":
         lines = ["⏰ **فونت‌های ساعت موجود:**\n"]
         for k, digits in CLOCK_FONTS.items():
-            sample = " ".join(digits[_safe_int(ch)] for ch in "1234567890")
+            sample = "".join(digits[int(ch)] for ch in "1234567890")
             lines.append(f"`فونت ساعت {k}` — `{sample}`")
         lines.append("\n💡 برای انتخاب: `فونت ساعت [شماره]`")
         await edit("\n".join(lines))
@@ -758,30 +883,26 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
     # ─── فونت ────────────────────────────────────────────────────────────────
     elif text.startswith("فونت "):
         parts = text.split()
+        # "فونت 4" یا "فونت amel 4"
         font_id = parts[-1]
-        preview_words = parts[1:-1]
+        preview_words = parts[1:-1]  # کلمات بین "فونت" و شماره
         if font_id in FONTS:
             ss("selected_font", font_id)
             fn = FONTS[font_id]
             if preview_words:
+                # نمایش متن با فونت انتخابی
                 preview_text = " ".join(preview_words)
                 styled = fn(preview_text)
                 await edit(f"🔤 فونت {font_id} انتخاب شد:\n`{styled}`")
             else:
-                font_names = {
-                    "0": "Normal", "1": "Bold", "2": "Italic", "3": "Mono",
-                    "4": "Full", "5": "Serif", "6": "Script", "7": "Strike", "8": "Under"
-                }
+                # نمایش نام فونت با خودش
+                font_names = {"0":"Normal","1":"Bold","2":"Italic","3":"Mono","4":"Full","5":"Serif","6":"Script","7":"Strike","8":"Under"}
                 styled = fn(font_names.get(font_id, f"Font{font_id}"))
                 await edit(f"🔤 فونت {font_id} انتخاب شد:\n`{styled}`")
         else:
             await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
-
     elif text == "لیست فونت":
-        font_names = {
-            "0": "Normal", "1": "Bold", "2": "Italic", "3": "Mono",
-            "4": "Full", "5": "Serif", "6": "Script", "7": "Strike", "8": "Under"
-        }
+        font_names = {"0":"Normal","1":"Bold","2":"Italic","3":"Mono","4":"Full","5":"Serif","6":"Script","7":"Strike","8":"Under"}
         lines = ["📝 **فونت‌های موجود:**\n"]
         for k, name in font_names.items():
             fn = FONTS[k]
@@ -792,39 +913,36 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
 
     # ─── ساعت ────────────────────────────────────────────────────────────────
     elif text == "ساعت نام روشن":
-        ss("clock_name_active", "1")
-        await edit("⏰ ساعت در نام روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
+        ss("clock_name_active", "1"); await edit("⏰ ساعت در نام روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
     elif text == "ساعت نام خاموش":
-        ss("clock_name_active", "0")
-        await edit("⏰ ساعت در نام خاموش شد.")
+        ss("clock_name_active", "0"); await edit("⏰ ساعت در نام خاموش شد.")
     elif text == "ساعت بیو روشن":
-        ss("clock_bio_active", "1")
-        await edit("⏰ ساعت در بیو روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
+        ss("clock_bio_active", "1"); await edit("⏰ ساعت در بیو روشن شد.\n💡 برای تغییر فونت ساعت: `فونت ساعت [0-9]`")
     elif text == "ساعت بیو خاموش":
-        ss("clock_bio_active", "0")
-        await edit("⏰ ساعت در بیو خاموش شد.")
+        ss("clock_bio_active", "0"); await edit("⏰ ساعت در بیو خاموش شد.")
 
     # ─── اسپم ────────────────────────────────────────────────────────────────
     elif text.startswith("اسپم "):
+        # فرمت دقیق: "اسپم [عدد] [متن]"
+        # اگه دقیقاً این فرمت نباشه (مثلاً "اسپمش کردم") جوابی نده
         parts = text.split(" ", 2)
         if len(parts) >= 3 and parts[1].isdigit() and len(parts[2].strip()) > 0:
-            count = _safe_int(parts[1])
+            count = int(parts[1])          # نامحدود — هر عددی قبول می‌شه
             spam_text = parts[2]
             ss("spam_active", "1")
             label = f"{count} بار" if count <= 9999 else "نامحدود"
             await edit(f"💣 اسپم شروع شد — {label}\nبرای توقف: توقف اسپم")
             chat = await event.get_chat()
-            asyncio.create_task(_do_spam(cl, owner_id, chat.id, spam_text, count))
-
+            asyncio.ensure_future(_do_spam(cl, owner_id, chat.id, spam_text, count))
+        # اگه فرمت درست نیست → هیچ کاری نکن (بی‌صدا)
     elif text == "توقف اسپم":
-        ss("spam_active", "0")
-        await edit("🛑 اسپم متوقف شد.")
+        ss("spam_active", "0"); await edit("🛑 اسپم متوقف شد.")
 
     # ─── حذف خودکار ──────────────────────────────────────────────────────────
     elif text.startswith("حذف بعد "):
         parts = text.split()
         if len(parts) >= 3 and parts[2].isdigit():
-            secs = _safe_int(parts[2])
+            secs = int(parts[2])
             await edit(f"⏱️ پیام بعد از {secs} ثانیه حذف می‌شود.")
             await asyncio.sleep(secs)
             try:
@@ -836,7 +954,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
     elif text.startswith("ذخیره "):
         parts = text.split()
         if len(parts) >= 2 and parts[1].isdigit():
-            slot = _safe_int(parts[1])
+            slot = int(parts[1])
             if 1 <= slot <= 10:
                 replied = await event.get_reply_message()
                 if replied:
@@ -850,7 +968,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
     elif text.startswith("ارسال ذخیره "):
         parts = text.split()
         if len(parts) >= 3 and parts[2].isdigit():
-            slot = _safe_int(parts[2])
+            slot = int(parts[2])
             saved = db.get_message_slot(owner_id, slot)
             if saved:
                 chat = await event.get_chat()
@@ -878,7 +996,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
     # ─── قیمت ارز ────────────────────────────────────────────────────────────
     elif text == "ارز" or text == "قیمت دلار" or text.startswith("ارز "):
         sub = text[len("ارز"):].strip() if text != "قیمت دلار" else "دلار"
-        sub = sub.replace("‌", " ").replace("‏", " ")
+        sub = sub.replace("‌", " ").replace("‏", "")  # حذف نیم‌فاصله/کاراکترهای نامرئی
         if any(k in sub for k in ("بیت کوین", "بیتکوین", "bitcoin", "btc")):
             target = "btc"
         elif any(k in sub for k in ("تتر", "tether", "usdt")):
@@ -890,7 +1008,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         elif any(k in sub for k in ("دلار", "usd")):
             target = "usd"
         else:
-            target = None
+            target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
         await edit(await _get_currency_text(target))
 
     # ─── جوین اجباری ─────────────────────────────────────────────────────────
@@ -899,12 +1017,14 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         if not channel_raw:
             await edit("❗ فرمت: تنظیم کانال [آیدی یا @یوزرنیم]")
         else:
+            # نرمال‌سازی: آیدی عددی یا @username
             channel_input = channel_raw
             try:
                 entity = await cl.get_entity(
-                    _safe_int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
+                    int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
                     if channel_input.lstrip("-").isdigit() else channel_input
                 )
+                # ذخیره آیدی عددی برای دقت بیشتر
                 real_id = str(entity.id)
                 title = getattr(entity, "title", channel_input)
                 ss("force_join_channel", real_id)
@@ -913,8 +1033,8 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
                     f"✅ کانال جوین اجباری تنظیم شد:\n"
                     f"📢 {title} (ID: {real_id})\n\n"
                     f"💡 دستورات:\n"
-                    f" > `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
-                    f" > `پیام جوین [متن]` — تغییر پیام هشدار"
+                    f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
+                    f"> `پیام جوین [متن]` — تغییر پیام هشدار"
                 )
             except Exception as e:
                 await edit(f"❌ کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
@@ -949,6 +1069,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         if not link:
             await edit("❗ فرمت: لینک کانال جوین [لینک]\nمثال: لینک کانال جوین https://t.me/mychannel")
         else:
+            # اطمینان از فرمت لینک
             if not link.startswith("http"):
                 link = "https://t.me/" + link.lstrip("@")
             ss("force_join_link", link)
@@ -969,7 +1090,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
             icon = "✅" if gs(key) == "1" else "❌"
             lines.append(f"{icon} {label}")
         lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
-        lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto', '0') == '1' else '❌ خاموش'}")
+        lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto','0')=='1' else '❌ خاموش'}")
         lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
         fj_ch = gs("force_join_channel", "")
         if fj_ch:
@@ -978,7 +1099,7 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
 
-    # ─── راهنما ──────────────────────────────────────────────────────────────
+    # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
 
@@ -992,10 +1113,11 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
         else:
             await edit("❗ فرمت: ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن")
 
-    # ─── پیام عادی — اعمال فونت اگه حالت خودکار روشنه ───────────────────────
+    # ─── پیام عادی (دستور نیست) — اعمال فونت اگه حالت خودکار روشنه ─────────────
     else:
         font_id = gs("selected_font", "0")
         auto_active = gs("text_font_auto", "0") == "1"
+        # فونت خودکار: فقط وقتی "فونت متن روشن" باشه، همه پیام‌ها ادیت می‌شن
         if auto_active and font_id != "0" and text:
             fn = FONTS.get(font_id, FONTS["0"])
             styled = fn(text)
@@ -1003,16 +1125,41 @@ async def _handle_command(cl, event, text: str, owner_id: int, entry: Dict[str, 
                 try:
                     await event.edit(styled)
                 except FloodWaitError as e:
-                    wait_time = min(e.seconds + 1, 60)
-                    await asyncio.sleep(wait_time)
+                    await asyncio.sleep(e.seconds + 1)
                 except Exception:
                     pass
 
 
-# ─── توابع کمکی ───────────────────────────────────────────────────────────────
-async def _do_spam(cl, owner_id: int, chat_id: int, text: str, count: int):
-    """اسپم با مدیریت FloodWait"""
-    delay = float(db.get_setting(owner_id, "spam_delay", "1") or "1")
+# ─── توابع کمکی ────────────────────────────────────────────────────────────────
+async def _safe_edit(event, owner_id, text):
+    try:
+        fn = FONTS.get(db.get_setting(owner_id, "selected_font", "0"), FONTS["0"])
+        await event.edit(fn(text))
+    except FloodWaitError as e:
+        await asyncio.sleep(e.seconds + 1)
+    except Exception:
+        pass
+
+
+async def _resolve_target(event, parts):
+    replied = await event.get_reply_message()
+    if replied:
+        sender = await replied.get_sender()
+        if sender:
+            return {
+                "id": sender.id,
+                "username": getattr(sender, "username", None),
+                "name": getattr(sender, "first_name", str(sender.id)),
+            }
+    for p in parts[1:]:
+        if p.lstrip("-").isdigit():
+            return {"id": int(p), "username": None, "name": p}
+    return None
+
+
+async def _do_spam(cl, owner_id, chat_id, text, count):
+    # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
+    delay = float(db.get_setting(owner_id, "spam_delay", "1"))
     sent = 0
     while True:
         if db.get_setting(owner_id, "spam_active") != "1":
@@ -1024,25 +1171,23 @@ async def _do_spam(cl, owner_id: int, chat_id: int, text: str, count: int):
             sent += 1
             await asyncio.sleep(delay)
         except FloodWaitError as e:
-            wait_time = min(e.seconds + 1, 60)
-            await asyncio.sleep(wait_time)
-        except Exception as e:
-            logger.error("[%s] خطا در اسپم: %s", owner_id, e)
+            await asyncio.sleep(e.seconds + 1)
+        except Exception:
             break
     db.set_setting(owner_id, "spam_active", "0")
 
 
-async def _save_channel_media(cl, channel_input: str, limit: Optional[int], owner_id: int):
-    """ذخیره مدیا از کانال"""
+async def _save_channel_media(cl, channel_input, limit, owner_id):
     db.set_setting(owner_id, "channel_save_active", "1")
-    media_dir = _get_media_dir(owner_id)
+    media_dir = f"saved_media/{owner_id}"
+    os.makedirs(media_dir, exist_ok=True)
     try:
         me = await cl.get_me()
 
-        # حالت ۱: لینک یک پست خاص
+        # ─── حالت ۱: لینک یک پست خاص ────────────────────────────────────
         post_match = _POST_LINK_RE.match(channel_input)
         if post_match:
-            channel_username, post_id = post_match.group(1), _safe_int(post_match.group(2))
+            channel_username, post_id = post_match.group(1), int(post_match.group(2))
             try:
                 target_msg = await cl.get_messages(channel_username, ids=post_id)
             except Exception as e:
@@ -1065,7 +1210,7 @@ async def _save_channel_media(cl, channel_input: str, limit: Optional[int], owne
             db.set_setting(owner_id, "channel_save_active", "0")
             return
 
-        # حالت ۲: کانال + تعداد
+        # ─── حالت ۲: کانال + تعداد ──────────────────────────────────────
         limit = limit or 100
         if channel_input.startswith("https://t.me/"):
             channel_input = channel_input.replace("https://t.me/", "")
@@ -1087,15 +1232,15 @@ async def _save_channel_media(cl, channel_input: str, limit: Optional[int], owne
                         saved += 1
                         await asyncio.sleep(1.5)
                 except FloodWaitError as e:
-                    wait_time = min(e.seconds + 2, 60)
-                    await asyncio.sleep(wait_time)
+                    await asyncio.sleep(e.seconds + 2)
                 except Exception:
                     skipped += 1
             else:
                 skipped += 1
 
         db.set_setting(owner_id, "channel_save_active", "0")
-        await cl.send_message(me.id, f"✅ سیو کانال تموم شد\n💾 ذخیره شد: {saved}\n⏭ رد شد: {skipped}")
+        await cl.send_message(me.id,
+            f"✅ سیو کانال تموم شد\n💾 ذخیره شد: {saved}\n⏭ رد شد: {skipped}")
     except Exception as e:
         db.set_setting(owner_id, "channel_save_active", "0")
         try:
@@ -1105,8 +1250,7 @@ async def _save_channel_media(cl, channel_input: str, limit: Optional[int], owne
             pass
 
 
-async def _translate(text: str) -> str:
-    """ترجمه متن به فارسی"""
+async def _translate(text):
     try:
         import urllib.request, urllib.parse, json
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=fa&dt=t&q={urllib.parse.quote(text)}"
@@ -1117,8 +1261,7 @@ async def _translate(text: str) -> str:
         return "⚠️ خطا در ترجمه"
 
 
-async def _get_weather(city: str) -> str:
-    """دریافت اطلاعات هواشناسی"""
+async def _get_weather(city):
     try:
         import urllib.request, urllib.parse, json
         api_key = config.WEATHER_API_KEY
@@ -1127,31 +1270,35 @@ async def _get_weather(city: str) -> str:
         url = f"https://api.openweathermap.org/data/2.5/weather?q={urllib.parse.quote(city)}&appid={api_key}&units=metric&lang=fa"
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.loads(resp.read().decode())
-            return (
-                f"🌤️ هوای {city}:\n"
-                f"وضعیت: {data['weather'][0]['description']}\n"
-                f"دما: {data['main']['temp']}°C\n"
-                f"رطوبت: {data['main']['humidity']}%"
-            )
+            return (f"🌤️ هوای {city}:\n"
+                    f"وضعیت: {data['weather'][0]['description']}\n"
+                    f"دما: {data['main']['temp']}°C\n"
+                    f"رطوبت: {data['main']['humidity']}%")
     except Exception:
         return "⚠️ خطا در دریافت اطلاعات هوا"
 
 
 _CURRENCY_LABELS = {
-    "usd": "💵 دلار آمریکا",
-    "eur": "💶 یورو",
-    "gbp": "💷 پوند انگلیس",
+    "usd":  "💵 دلار آمریکا",
+    "eur":  "💶 یورو",
+    "gbp":  "💷 پوند انگلیس",
     "usdt": "💎 تتر (USDT)",
-    "btc": "₿ بیت‌کوین",
-    "eth": "⟠ اتریوم",
+    "btc":  "₿ بیت‌کوین",
+    "eth":  "⟠ اتریوم",
 }
 _CURRENCY_DEFAULT_LIST = ("usd", "eur", "gbp", "usdt", "btc", "eth")
-_currency_cache = {"data": {}, "ts": 0.0}
-_CURRENCY_CACHE_TTL = 60
 
+_currency_cache = {"data": {}, "ts": 0.0}
+_CURRENCY_CACHE_TTL = 60  # ثانیه
 
 async def _fetch_currency_prices() -> dict:
-    """دریافت قیمت ارزها به تومان"""
+    """
+    دریافت قیمت ارزها به تومان:
+    - دلار آزاد → Nobitex (usdt-rls) که برابر نرخ آزاد است
+    - یورو/پوند → open.er-api.com (رایگان) × نرخ دلار
+    - بیت‌کوین/اتریوم → CoinGecko × نرخ دلار
+    - کش ۶۰ ثانیه‌ای
+    """
     now = time.time()
     if now - _currency_cache["ts"] < _CURRENCY_CACHE_TTL and _currency_cache["data"]:
         return _currency_cache["data"]
@@ -1159,9 +1306,9 @@ async def _fetch_currency_prices() -> dict:
     loop = asyncio.get_event_loop()
     result = {}
 
-    # مرحله ۱: نرخ دلار آزاد از Nobitex
+    # ─── مرحله ۱: نرخ دلار آزاد از Nobitex ──────────────────────────────────
     usd_toman = 0
-    for src in ("usdt", "btc", "eth"):
+    for src, pair in [("usdt", "usdt-rls"), ("btc", "btc-rls"), ("eth", "eth-rls")]:
         try:
             nb = await loop.run_in_executor(
                 None, lambda s=src: _fetch_json_sync(
@@ -1169,16 +1316,16 @@ async def _fetch_currency_prices() -> dict:
                     json_body={"srcCurrency": s, "dstCurrency": "rls"}, timeout=8
                 )
             )
-            rial = float(nb["stats"][f"{src}-rls"]["latest"])
+            rial = float(nb["stats"][f"{s}-rls"]["latest"])
             val = int(rial / 10)
             result[src] = val
             if src == "usdt":
                 usd_toman = val
                 result["usd"] = val
         except Exception as e:
-            logger.warning("Nobitex %s: %s", src, e)
+            print(f"⚠️ Nobitex {src}: {e}")
 
-    # مرحله ۲: نرخ یورو/پوند
+    # ─── مرحله ۲: نرخ یورو/پوند از exchangerate-api ─────────────────────────
     if usd_toman:
         try:
             fx = await loop.run_in_executor(
@@ -1194,17 +1341,17 @@ async def _fetch_currency_prices() -> dict:
             if rates.get("AED"):
                 result["aed"] = int(usd_toman * rates["AED"])
         except Exception as e:
-            logger.warning("exchangerate EUR/GBP: %s", e)
+            print(f"⚠️ exchangerate EUR/GBP: {e}")
             result.setdefault("eur", int(usd_toman * 1.08))
             result.setdefault("gbp", int(usd_toman * 1.27))
 
-    # مرحله ۳: BTC/ETH از CoinGecko
+    # ─── مرحله ۳: BTC/ETH دقیق‌تر از CoinGecko ──────────────────────────────
     if usd_toman and ("btc" not in result or "eth" not in result):
         try:
             cg = await loop.run_in_executor(
                 None, lambda: _fetch_json_sync(
-                    "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd",
-                    timeout=10
+                    "https://api.coingecko.com/api/v3/simple/price"
+                    "?ids=bitcoin,ethereum&vs_currencies=usd", timeout=10
                 )
             )
             btc_usd = cg.get("bitcoin", {}).get("usd", 0)
@@ -1214,7 +1361,7 @@ async def _fetch_currency_prices() -> dict:
             if eth_usd:
                 result["eth"] = int(eth_usd * usd_toman)
         except Exception as e:
-            logger.warning("CoinGecko: %s", e)
+            print(f"⚠️ CoinGecko: {e}")
 
     if not result:
         return _currency_cache.get("data") or {}
@@ -1225,7 +1372,7 @@ async def _fetch_currency_prices() -> dict:
 
 
 def _fetch_json_sync(url, json_body=None, timeout=6, retries=3):
-    """درخواست HTTP همگام"""
+    """درخواست HTTP همگام (در executor اجرا می‌شود تا event loop بلاک نشود)"""
     import urllib.request, json as _json, time as _time
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
     req = urllib.request.Request(url, headers=headers)
@@ -1240,15 +1387,19 @@ def _fetch_json_sync(url, json_body=None, timeout=6, retries=3):
         except Exception as e:
             last_err = e
             if attempt < retries - 1:
-                _time.sleep(2 ** attempt)
+                _time.sleep(2 ** attempt)  # 1s, 2s
     raise last_err
 
 
 async def _get_currency_text(target: str = None) -> str:
-    """دریافت متن قیمت ارز"""
+    """
+    target=None → نمایش لیست ارزهای مهم (دلار، تتر، یورو، پوند)
+    target='usd'/'eur'/'gbp'/'usdt'/'btc' → فقط همان یک ارز
+    """
     prices = await _fetch_currency_prices()
     if not prices:
         return "❌ دریافت قیمت ممکن نیست"
+
     if target:
         if target not in prices:
             return "❌ دریافت قیمت ممکن نیست"
@@ -1261,10 +1412,15 @@ async def _get_currency_text(target: str = None) -> str:
     return "\n".join(lines) if lines else "❌ دریافت قیمت ممکن نیست"
 
 
-def _help_text() -> str:
-    """متن راهنما"""
+def _help_text():
+    # هر دستور در یک بلوک quote + mono جداگانه
     sections = [
-        ("🔹 اصلی", ["سلف روشن", "سلف خاموش", "وضعیت", "راهنما"]),
+        ("🔹 اصلی", [
+            "سلف روشن",
+            "سلف خاموش",
+            "وضعیت",
+            "راهنما",
+        ]),
         ("🔹 لیست‌ها", [
             "تنظیم دشمن  ← ریپلای روی پیام",
             "حذف دشمن  ← ریپلای یا آیدی",
@@ -1282,25 +1438,35 @@ def _help_text() -> str:
             "💡 هر کاربر هر ۲۴ ساعت یک بار پاسخ می‌گیرد",
         ]),
         ("🔹 امنیت", [
-            "ضد حذف روشن", "ضد حذف خاموش",
-            "ضد لینک روشن", "ضد لینک خاموش",
-            "قفل پیوی روشن", "قفل پیوی خاموش",
-            "پاسخ دشمن روشن", "پاسخ دشمن خاموش",
+            "ضد حذف روشن",
+            "ضد حذف خاموش",
+            "ضد لینک روشن",
+            "ضد لینک خاموش",
+            "قفل پیوی روشن",
+            "قفل پیوی خاموش",
+            "پاسخ دشمن روشن",
+            "پاسخ دشمن خاموش",
         ]),
         ("🔹 جوین اجباری", [
-            "تنظیم کانال [آیدی یا @یوزرنیم]",
-            "لینک کانال جوین [لینک]",
-            "پیام جوین [متن]",
+            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
+            "لینک کانال جوین [لینک]  ← لینک دکمه رنگی جوین",
+            "پیام جوین [متن]  ← تغییر متن پیام هشدار",
             "جوین اجباری روشن / خاموش",
             "حذف کانال اجباری",
+            "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
         ]),
         ("🔹 اتوماسیون", [
-            "سین خودکار روشن", "سین خودکار خاموش",
-            "ری‌اکشن روشن", "ری‌اکشن خاموش",
-            "ری‌اکشن [ایموجی]",
-            "ذخیره مدیا روشن", "ذخیره مدیا خاموش",
-            "ساعت نام روشن", "ساعت نام خاموش",
-            "ساعت بیو روشن", "ساعت بیو خاموش",
+            "سین خودکار روشن",
+            "سین خودکار خاموش",
+            "ری‌اکشن روشن",
+            "ری‌اکشن خاموش",
+            "ری‌اکشن [ایموجی]  ← تغییر ایموجی",
+            "ذخیره مدیا روشن",
+            "ذخیره مدیا خاموش",
+            "ساعت نام روشن",
+            "ساعت نام خاموش",
+            "ساعت بیو روشن",
+            "ساعت بیو خاموش",
         ]),
         ("🔹 ابزار", [
             "ترجمه [متن]",
@@ -1311,6 +1477,7 @@ def _help_text() -> str:
         ("🔹 اسپم", [
             "اسپم [تعداد] [متن]  ← مثال: اسپم 100 سلام",
             "توقف اسپم",
+            "💡 تعداد نامحدود — فرمت باید دقیق باشه",
         ]),
         ("🔹 پیام", [
             "ذخیره [1-10]  ← ریپلای",
@@ -1323,504 +1490,94 @@ def _help_text() -> str:
             "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
             "توقف سیو",
         ]),
-        ("🔹 قالب‌بندی", [
-            "بولد [متن]", "ایتالیک [متن]", "مونو [متن]",
-            "اسپویلر [متن]", "کوت [متن]", "خط‌خورده [متن]", "زیرخط [متن]",
+        ("🔹 قالب‌بندی (فارسی/انگلیسی)", [
+            "بولد [متن]  ← متن ضخیم",
+            "ایتالیک [متن]  ← متن کج",
+            "مونو [متن]  ← متن کد",
+            "اسپویلر [متن]  ← متن مخفی",
+            "کوت [متن]  ← نقل قول",
+            "خط‌خورده [متن]  ← متن خط‌خورده",
+            "زیرخط [متن]  ← متن زیرخط",
+            "💡 روی متن فارسی هم کار می‌کند",
         ]),
         ("🔹 فونت", [
-            "فونت [0-8]", "فونت [متن] [0-8]", "لیست فونت",
-            "فونت متن روشن", "فونت متن خاموش", "بنویس [متن]",
-            "فونت ساعت [0-9]", "لیست فونت ساعت",
+            "فونت [0-8]  ← انتخاب فونت",
+            "فونت [متن] [0-8]  ← نوشتن یه کلمه با فونت",
+            "لیست فونت  ← نمایش همه فونت‌ها",
+            "──────────────────",
+            "فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
+            "فونت متن خاموش  ← خاموش کردن حالت خودکار",
+            "بنویس [متن]  ← نوشتن با فونت فعلی (بدون روشن کردن خودکار)",
+            "──────────────────",
+            "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
+            "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
+        ]),
+        ("💡 نکات", [
+            "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
+            "پاسخ به دوستان هر ۱ ساعت یک بار",
         ]),
     ]
-    parts = ["📖 راهنمای NexoSelf\n"]
+    parts = ["📖 **راهنمای NexoSelf**\n"]
     for title, cmds in sections:
         parts.append(f"\n{title}")
         for cmd in cmds:
-            parts.append(f" > `{cmd}`")
+            parts.append(f"> `{cmd}`")
     return "\n".join(parts)
 
 
-# ─── حلقه‌های پس‌زمینه ─────────────────────────────────────────────────────────
-async def _clock_loop(cl: TelegramClient, owner_id: int):
-    """به‌روزرسانی ساعت نام/بیو"""
+# ─── حلقه‌های پس‌زمینه ──────────────────────────────────────────────────────────
+async def _clock_loop(cl, owner_id):
+    """به‌روزرسانی ساعت نام/بیو با دقت بالا - بدون تاخیر"""
     last_minute = -1
+    
     while True:
         try:
+            # ✅ زمان ایران
             iran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
             now = datetime.datetime.now(iran_tz)
             current_minute = now.minute
-
+            
+            # ✅ فقط در دقیقه‌های جدید به‌روزرسانی کن
             if current_minute != last_minute:
                 last_minute = current_minute
                 time_str = f"{now.hour:02d}:{now.minute:02d}"
+                
+                # اعمال فونت مخصوص ساعت
                 styled_time = _apply_clock_font(owner_id, time_str)
-
+                
+                # به‌روزرسانی نام
                 if db.get_setting(owner_id, "clock_name_active") == "1":
                     try:
                         await cl(UpdateProfileRequest(last_name=styled_time[:64]))
-                        logger.debug("[%s] ساعت نام به‌روز شد", owner_id)
+                        print(f"⏰ [{owner_id}] ساعت نام به‌روز شد: {styled_time}")
                     except Exception as e:
-                        logger.warning("[%s] خطا در به‌روزرسانی نام: %s", owner_id, e)
-
+                        print(f"❌ خطا در به‌روزرسانی نام: {e}")
+                
+                # به‌روزرسانی بیو
                 if db.get_setting(owner_id, "clock_bio_active") == "1":
                     try:
                         await cl(UpdateProfileRequest(about=f"⏰ {styled_time}"[:70]))
-                        logger.debug("[%s] ساعت بیو به‌روز شد", owner_id)
+                        print(f"⏰ [{owner_id}] ساعت بیو به‌روز شد: {styled_time}")
                     except Exception as e:
-                        logger.warning("[%s] خطا در به‌روزرسانی بیو: %s", owner_id, e)
-
+                        print(f"❌ خطا در به‌روزرسانی بیو: {e}")
+            
+            # ✅ چک کردن هر 5 ثانیه برای دقت بالا
             await asyncio.sleep(5)
-
-        except asyncio.CancelledError:
-            break
+            
         except Exception as e:
-            logger.error("[%s] خطا در _clock_loop: %s", owner_id, e)
+            print(f"❌ خطا در _clock_loop: {e}")
             await asyncio.sleep(10)
 
 
-async def _scheduler_loop(cl: TelegramClient, owner_id: int):
-    """ارسال پیام‌های زمان‌بندی‌شده"""
+async def _scheduler_loop(cl, owner_id):
     while True:
         try:
             for p in db.get_pending_scheduled(owner_id):
                 try:
                     await cl.send_message(p["chat_id"], p["message"])
                     db.mark_scheduled_sent(p["id"])
-                except Exception as e:
-                    logger.error("[%s] خطا در ارسال پیام زمان‌بندی: %s", owner_id, e)
-
-            await asyncio.sleep(30)
-
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error("[%s] خطا در _scheduler_loop: %s", owner_id, e)
-            await asyncio.sleep(30)
-
-
-# ─── BotManager (سازگار با bot_manager.py) ────────────────────────────────────
-class BotManager:
-    """مدیریت چندین کلاینت تلگرام همزمان (نسخه سازگار با AdvancedBotManager)"""
-
-    def __init__(self):
-        self._bots: Dict[int, Dict[str, Any]] = {}
-        self._timers: Dict[int, threading.Timer] = {}
-        self._timer_starts: Dict[int, float] = {}
-        self._sub_watchers: Dict[int, threading.Timer] = {}
-        self._lock = threading.RLock()
-
-    def is_running(self, owner_id: int) -> bool:
-        """بررسی آیا بات در حال اجراست"""
-        if not _validate_owner_id(owner_id):
-            return False
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            return bool(entry and not entry.get("task", None) or not entry.get("task", None).done())
-
-    def get_client(self, owner_id: int) -> Optional[TelegramClient]:
-        """دریافت کلاینت یک بات"""
-        if not _validate_owner_id(owner_id):
-            return None
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            return entry["client"] if entry else None
-
-    def _cancel_timer(self, owner_id: int):
-        """لغو تایمر انقضا"""
-        with self._lock:
-            t = self._timers.pop(owner_id, None)
-            self._timer_starts.pop(owner_id, None)
-        if t:
-            try:
-                t.cancel()
-                logger.debug("[%s] تایمر لغو شد", owner_id)
-            except Exception as e:
-                logger.warning("[%s] خطا در لغو تایمر: %s", owner_id, e)
-
-    def session_end_time(self, owner_id: int) -> Optional[float]:
-        """دریافت زمان باقی‌مانده تا انقضای سشن"""
-        if not _validate_owner_id(owner_id):
-            return None
-        with self._lock:
-            start = self._timer_starts.get(owner_id)
-            if start is None:
-                return None
-            elapsed = time.time() - start
-            remaining = (config.SESSION_HOURS * 3600) - elapsed
-            return max(0.0, remaining)
-
-    def start(self, owner_id: int, loop: asyncio.AbstractEventLoop,
-              check_tokens: bool = True, is_restart: bool = False) -> bool:
-        """شروع یک بات"""
-        if not _validate_owner_id(owner_id):
-            logger.error("owner_id نامعتبر: %s", owner_id)
-            return False
-
-        logger.info("[%s] شروع فرآیند استارت%s", owner_id, " (ریستارت)" if is_restart else "")
-
-        if self.is_running(owner_id):
-            self.stop(owner_id)
-            time.sleep(0.3)
-
-        # بررسی اشتراک
-        try:
-            tg_id = db.get_telegram_id_by_owner(owner_id)
-            is_owner = (tg_id is not None and tg_id == config.OWNER_TG_ID)
-
-            if not is_owner and not db.is_subscribed(owner_id):
-                logger.warning("[%s] اشتراک منقضی شده", owner_id)
-                return False
-        except Exception as e:
-            logger.error("[%s] خطا در بررسی اشتراک: %s", owner_id, e)
-            return False
-
-        # محاسبه زمان باقی‌مانده
-        now_ts = time.time()
-        remaining = None
-        reset_started_at = False
-
-        if config.BOT_TOKEN and not is_owner:
-            if is_restart:
-                started_raw = db.get_setting(owner_id, "session_started_at", "")
-                try:
-                    started_at = float(started_raw) if started_raw else None
-                except (TypeError, ValueError):
-                    started_at = None
-
-                if started_at is None:
-                    started_at = now_ts
-
-                remaining = (config.SESSION_HOURS * 3600) - (now_ts - started_at)
-                if remaining <= 0:
-                    remaining = config.SESSION_HOURS * 3600
-                    reset_started_at = True
-            else:
-                remaining = config.SESSION_HOURS * 3600
-                reset_started_at = True
-
-        # کسر توکن
-        tokens_deducted = 0
-        if config.BOT_TOKEN and check_tokens and not is_owner:
-            try:
-                balance = db.get_token_balance(owner_id)
-                if balance < config.TOKENS_PER_SESSION:
-                    logger.error("[%s] توکن کافی نیست: %s < %s", owner_id, balance, config.TOKENS_PER_SESSION)
-                    return False
-                db.deduct_tokens(owner_id, config.TOKENS_PER_SESSION)
-                tokens_deducted = config.TOKENS_PER_SESSION
-                logger.info("[%s] %s توکن کسر شد", owner_id, tokens_deducted)
-            except Exception as e:
-                logger.error("[%s] خطا در کسر توکن: %s", owner_id, e)
-                return False
-
-        # ساخت entry (سازگار با AdvancedBotManager)
-        entry = {
-            "client": None,
-            "task": None,
-            "stop": False,
-            "is_owner": is_owner,
-            "tokens_deducted": tokens_deducted,
-            "owner_refunded": False,
-            "paused": False,
-            "loop": loop,
-            "state": None,  # برای سازگاری با BotState
-            "retry_count": 0,
-            "start_time": now_ts,
-            "last_heartbeat": now_ts,
-        }
-
-        with self._lock:
-            self._bots[owner_id] = entry
-
-        # استارت تسک
-        try:
-            task = asyncio.run_coroutine_threadsafe(self._run_bot(owner_id), loop)
-            with self._lock:
-                if owner_id in self._bots:
-                    self._bots[owner_id]["task"] = task
-        except Exception as e:
-            logger.error("[%s] خطا در استارت تسک: %s", owner_id, e)
-            with self._lock:
-                self._bots.pop(owner_id, None)
-            return False
-
-        # تنظیم تایمر
-        if config.BOT_TOKEN and not is_owner:
-            self._cancel_timer(owner_id)
-            if reset_started_at:
-                db.set_setting(owner_id, "session_started_at", str(now_ts))
-
-            timer = threading.Timer(remaining, self.stop, args=[owner_id])
-            timer.daemon = True
-            timer.start()
-
-            with self._lock:
-                self._timers[owner_id] = timer
-                self._timer_starts[owner_id] = now_ts
-
-            logger.info("[%s] تایمر %s ساعته تنظیم شد", owner_id, config.SESSION_HOURS)
-
-        # تایمر چک اشتراک
-        if not is_owner:
-            self._start_subscription_watcher(owner_id)
-
-        logger.info("[%s] بات با موفقیت استارت شد", owner_id)
-        return True
-
-    def pause(self, owner_id: int):
-        """متوقف کردن موقت عملیات"""
-        if not _validate_owner_id(owner_id):
-            return
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            if entry and not entry.get("is_owner"):
-                entry["paused"] = True
-                logger.info("[%s] سلف موقتاً متوقف شد", owner_id)
-
-    def resume(self, owner_id: int):
-        """از سرگیری عملیات"""
-        if not _validate_owner_id(owner_id):
-            return
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            if entry and entry.get("paused"):
-                entry["paused"] = False
-                logger.info("[%s] سلف دوباره فعال شد", owner_id)
-
-    def is_paused(self, owner_id: int) -> bool:
-        """بررسی وضعیت pause"""
-        if not _validate_owner_id(owner_id):
-            return False
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            return bool(entry and entry.get("paused"))
-
-    def _subscription_check(self, owner_id: int):
-        """بررسی دوره‌ای اشتراک"""
-        if not self.is_running(owner_id):
-            return
-
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            if entry and entry.get("is_owner"):
-                return
-
-        try:
-            subscribed = db.is_subscribed(owner_id)
-            if not subscribed:
-                self.pause(owner_id)
-            else:
-                self.resume(owner_id)
-        except Exception as e:
-            logger.error("[%s] خطا در بررسی اشتراک: %s", owner_id, e)
-
-        self._start_subscription_watcher(owner_id)
-
-    def _start_subscription_watcher(self, owner_id: int):
-        """شروع تایمر چک اشتراک"""
-        with self._lock:
-            old = self._sub_watchers.pop(owner_id, None)
-        if old:
-            try:
-                old.cancel()
-            except Exception:
-                pass
-
-        timer = threading.Timer(300, self._subscription_check, args=[owner_id])
-        timer.daemon = True
-        timer.start()
-
-        with self._lock:
-            self._sub_watchers[owner_id] = timer
-
-    def stop(self, owner_id: int):
-        """متوقف کردن کامل بات"""
-        if not _validate_owner_id(owner_id):
-            return
-
-        logger.info("[%s] در حال توقف...", owner_id)
-
-        # لغو تایمرها
-        self._cancel_timer(owner_id)
-
-        # لغو watcher
-        with self._lock:
-            watcher = self._sub_watchers.pop(owner_id, None)
-        if watcher:
-            try:
-                watcher.cancel()
-            except Exception:
-                pass
-
-        with self._lock:
-            entry = self._bots.get(owner_id)
-            if not entry:
-                return
-            entry["stop"] = True
-            client = entry.get("client")
-            loop = entry.get("loop")
-
-        # disconnect کلاینت
-        if client and loop:
-            try:
-                if client.is_connected():
-                    future = asyncio.run_coroutine_threadsafe(client.disconnect(), loop)
-                    try:
-                        future.result(timeout=5.0)
-                    except Exception as e:
-                        logger.warning("[%s] خطا در disconnect: %s", owner_id, e)
-            except Exception as e:
-                logger.warning("[%s] خطا در ارسال disconnect: %s", owner_id, e)
-
-        with self._lock:
-            self._bots.pop(owner_id, None)
-
-        logger.info("[%s] بات متوقف شد", owner_id)
-
-    def stop_all(self):
-        """متوقف کردن همه بات‌ها"""
-        logger.info("توقف همه بات‌ها...")
-        with self._lock:
-            owners = list(self._bots.keys())
-
-        for oid in owners:
-            try:
-                self.stop(oid)
-            except Exception as e:
-                logger.error("[%s] خطا در توقف: %s", oid, e)
-
-        logger.info("همه بات‌ها متوقف شدند")
-
-    async def _run_bot(self, owner_id: int):
-        """اجرای اصلی بات با Auto Reconnect"""
-        MAX_RETRIES = getattr(config, "MAX_RECONNECT_RETRIES", 10)
-        retry_count = 0
-        retry_delay = 5
-
-        while retry_count < MAX_RETRIES:
-            with self._lock:
-                entry = self._bots.get(owner_id)
-                if not entry or entry["stop"]:
-                    break
-
-            try:
-                # دریافت session
-                session_data = db.get_setting(owner_id, "session_data", "")
-                if not session_data:
-                    logger.warning("[%s] session یافت نشد", owner_id)
-                    retry_count += 1
-                    await asyncio.sleep(min(retry_delay * (2 ** min(retry_count, 3)), 30))
-                    continue
-
-                # ساخت کلاینت
-                cl = TelegramClient(
-                    StringSession(session_data),
-                    config.API_ID,
-                    config.API_HASH,
-                    connection_retries=5,
-                    retry_delay=2,
-                    auto_reconnect=True,
-                )
-
-                with self._lock:
-                    if owner_id in self._bots:
-                        self._bots[owner_id]["client"] = cl
-
-                # ثبت هندلرها
-                _register_handlers(cl, owner_id, entry)
-
-                # اتصال
-                await cl.start()
-                me = await cl.get_me()
-                logger.info("[%s] بات متصل شد — @%s", owner_id, me.username or me.first_name)
-
-                db.save_telegram_user_id(owner_id, me.id)
-
-                # تشخیص مالک
-                if _is_owner_account(me):
-                    with self._lock:
-                        if owner_id in self._bots:
-                            self._bots[owner_id]["is_owner"] = True
-                    self._cancel_timer(owner_id)
-
-                    with self._lock:
-                        refunded = entry.get("owner_refunded", False)
-                        deducted = entry.get("tokens_deducted", 0)
-
-                    if not refunded and deducted > 0:
-                        try:
-                            db.add_tokens(owner_id, deducted)
-                            with self._lock:
-                                if owner_id in self._bots:
-                                    self._bots[owner_id]["owner_refunded"] = True
-                            logger.info("[%s] مالک — %s توکن برگشت", owner_id, deducted)
-                        except Exception as e:
-                            logger.error("[%s] خطا در برگشت توکن: %s", owner_id, e)
-
-                # استارت تسک‌های پس‌زمینه
-                clock_task = asyncio.create_task(_clock_loop(cl, owner_id))
-                sched_task = asyncio.create_task(_scheduler_loop(cl, owner_id))
-
-                retry_count = 0
-                retry_delay = 5
-
-                # منتظر قطع شدن
-                await cl.run_until_disconnected()
-
-                # لغو تسک‌های پس‌زمینه با مدیریت صحیح
-                clock_task.cancel()
-                sched_task.cancel()
-                await asyncio.gather(clock_task, sched_task, return_exceptions=True)
-
-                with self._lock:
-                    entry = self._bots.get(owner_id)
-                    if not entry or entry["stop"]:
-                        break
-
-                # بررسی session
-                session_data = db.get_setting(owner_id, "session_data", "")
-                if not session_data:
-                    logger.warning("[%s] session حذف شده — توقف کامل", owner_id)
-                    break
-
-                logger.warning("[%s] اتصال قطع شد، تلاش مجدد...", owner_id)
-
-            except UnauthorizedError:
-                logger.error("[%s] Session نامعتبر — نیاز به لاگین مجدد", owner_id)
-                db.set_setting(owner_id, "logged_in", "0")
-                db.set_setting(owner_id, "session_data", "")
-                break
-
-            except asyncio.CancelledError:
-                logger.warning("[%s] تسک لغو شد", owner_id)
-                break
-
-            except Exception as e:
-                err_str = str(e)
-                logger.error("[%s] خطا: %s", owner_id, e, exc_info=True)
-
-                fatal_errors = ("AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "USER_DEACTIVATED")
-                if any(k in err_str for k in fatal_errors):
-                    logger.error("[%s] Session باطل شده — توقف کامل", owner_id)
-                    db.set_setting(owner_id, "logged_in", "0")
-                    db.set_setting(owner_id, "session_data", "")
-                    break
-
-                retry_count += 1
-                if retry_count >= MAX_RETRIES:
-                    logger.error("[%s] بیش از حد مجاز تلاش — توقف", owner_id)
-                    break
-
-            wait = min(retry_delay * (2 ** min(retry_count, 3)), 120)
-            logger.info("[%s] تلاش مجدد در %.1f ثانیه...", owner_id, wait)
-            await asyncio.sleep(wait)
-            retry_delay = min(retry_delay * 2, 120)
-
-        logger.info("[%s] بات متوقف شد", owner_id)
-        with self._lock:
-            self._bots.pop(owner_id, None)
-
-
-# Singleton
-bot_manager = BotManager()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        await asyncio.sleep(30)
