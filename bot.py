@@ -600,6 +600,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
+            "تقلب روشن", "تقلب خاموش",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -609,6 +610,68 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             return
 
         await _handle_command(cl, event, text, owner_id, entry)
+
+    # ─── هندلر تقلب تاس/بسکتبال/پنالتی/دارت ─────────────────────────────────────
+    @cl.on(events.NewMessage(outgoing=True))
+    async def on_outgoing_dice(event):
+        if not event.message.media:
+            return
+        if entry.get("paused"):
+            return
+        if db.get_setting(owner_id, "cheat_active") != "1":
+            return
+
+        from telethon.tl.types import MessageMediaDice
+
+        media = event.message.media
+        if not isinstance(media, MessageMediaDice):
+            return
+
+        emoji = media.emoticon
+        WIN_VALUES = {
+            "🎲": 6,
+            "🏀": 5,
+            "⚽": 5,
+            "🎯": 6,
+        }
+        if emoji not in WIN_VALUES:
+            return
+
+        # ── بررسی استثنا: گروه مدیریت و @gp_selfnexo ──────────────────────────
+        try:
+            chat = await event.get_chat()
+            chat_username = getattr(chat, "username", "") or ""
+            EXCLUDED_USERNAMES = {"gp_selfnexo"}
+            if chat_username.lower().lstrip("@") in EXCLUDED_USERNAMES:
+                return
+        except Exception:
+            return
+
+        target_value = WIN_VALUES[emoji]
+        current_value = media.value
+
+        if current_value == target_value:
+            return  # همون اول برنده شد
+
+        # حذف پیام اشتباه و loop بدون محدودیت تا مقدار درست بیاد
+        try:
+            await event.message.delete()
+        except Exception:
+            return
+
+        while True:
+            try:
+                sent = await cl.send_file(chat.id, media=emoji)
+                if hasattr(sent, "media") and isinstance(sent.media, MessageMediaDice):
+                    if sent.media.value == target_value:
+                        break
+                    await sent.delete()
+                else:
+                    break
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds + 1)
+            except Exception:
+                break
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -1099,6 +1162,22 @@ async def _handle_command(cl, event, text, owner_id, entry):
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
 
+    # ─── تقلب (تاس/بسکتبال/پنالتی/دارت) ────────────────────────────────────
+    elif text == "تقلب روشن":
+        ss("cheat_active", "1")
+        await edit(
+            "🎰 <b>حالت تقلب روشن شد!</b>\n\n"
+            "🎲 تاس ← همیشه ۶\n"
+            "🏀 بسکتبال ← همیشه گل\n"
+            "⚽ پنالتی ← همیشه گل\n"
+            "🎯 دارت ← همیشه مرکز\n\n"
+            "برای خاموش کردن: <code>تقلب خاموش</code>"
+        )
+
+    elif text == "تقلب خاموش":
+        ss("cheat_active", "0")
+        await edit("🎰 حالت تقلب خاموش شد.")
+
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
@@ -1562,7 +1641,7 @@ async def _clock_loop(cl, owner_id):
                         print(f"❌ خطا در به‌روزرسانی بیو: {e}")
             
             # ✅ چک کردن هر 5 ثانیه برای دقت بالا
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)
             
         except Exception as e:
             print(f"❌ خطا در _clock_loop: {e}")
