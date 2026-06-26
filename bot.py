@@ -1562,7 +1562,7 @@ async def _clock_loop(cl, owner_id):
                         print(f"❌ خطا در به‌روزرسانی بیو: {e}")
             
             # ✅ چک کردن هر 5 ثانیه برای دقت بالا
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
             
         except Exception as e:
             print(f"❌ خطا در _clock_loop: {e}")
