@@ -2854,62 +2854,22 @@ def start_token_bot():
                 page_accounts = accounts[start_idx: start_idx + PAGE_SIZE]
 
                 lines = [f"👥 <b>کاربران ({total} نفر) — صفحه {page}/{total_pages}</b>\n"]
-                pm_buttons = []
                 for i, acc in enumerate(page_accounts, start_idx + 1):
                     bal = db.get_token_balance(acc["id"])
                     remaining = _format_plan_remaining(acc["id"])
+                    # آیدی تلگرام مستقیماً از query برگشته (بدون query جداگانه)
                     tg_id_val = acc.get("telegram_user_id")
                     tg_id_line = f"📱 آیدی تلگرام: <code>{tg_id_val}</code>" if tg_id_val else "📱 آیدی تلگرام: ─"
-
-                    # یوزرنیم تلگرام را از ربات بگیر
-                    tg_username_line = "🔖 یوزرنیم: ─"
-                    if tg_id_val:
-                        try:
-                            tg_chat = _bot.get_chat(tg_id_val)
-                            if tg_chat.username:
-                                tg_username_line = f"🔖 یوزرنیم: @{tg_chat.username}"
-                            else:
-                                tg_username_line = f"🔖 یوزرنیم: ─ ({tg_chat.first_name or ''})"
-                        except Exception:
-                            tg_username_line = "🔖 یوزرنیم: ─"
-
                     lines.append(
                         f"┌─ <b>#{i} {acc['username']}</b>\n"
                         f"├ 🆔 پنل: <code>{acc['id']}</code>\n"
                         f"├ {tg_id_line}\n"
-                        f"├ {tg_username_line}\n"
                         f"├ 💎 موجودی: <b>{bal} الماس</b>\n"
                         f"└ ⏳ پلن: {remaining}"
                     )
-
-                    # دکمه پیام مستقیم (پیوی) برای هر کاربر
-                    if tg_id_val:
-                        try:
-                            tg_chat = _bot.get_chat(tg_id_val)
-                            if tg_chat.username:
-                                pm_buttons.append(types.InlineKeyboardButton(
-                                    f"📩 #{i} {acc['username']}",
-                                    url=f"https://t.me/{tg_chat.username}"
-                                ))
-                            else:
-                                pm_buttons.append(types.InlineKeyboardButton(
-                                    f"📩 #{i} {acc['username']}",
-                                    url=f"tg://user?id={tg_id_val}"
-                                ))
-                        except Exception:
-                            pm_buttons.append(types.InlineKeyboardButton(
-                                f"📩 #{i} {acc['username']}",
-                                url=f"tg://user?id={tg_id_val}"
-                            ))
-
                 text = "\n\n".join(lines)
 
-                markup = types.InlineKeyboardMarkup(row_width=2)
-                # دکمه‌های پیام مستقیم (۲ تایی در هر ردیف)
-                for j in range(0, len(pm_buttons), 2):
-                    row = pm_buttons[j:j+2]
-                    markup.add(*row)
-
+                markup = types.InlineKeyboardMarkup(row_width=3)
                 nav_buttons = []
                 if page > 1:
                     nav_buttons.append(types.InlineKeyboardButton(
