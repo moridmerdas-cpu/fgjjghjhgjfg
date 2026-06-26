@@ -356,7 +356,7 @@ bot_manager = BotManager()
 
 # ─── تابع کمکی: ارسال تاس/بازی تا رسیدن به مقدار هدف ──────────────────────────
 async def _send_dice_until(cl, chat_id, emoji: str, target: int):
-    """پیام متنی رو حذف می‌کنه و تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد"""
+    """تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد — با تاخیر 0.3 ثانیه بین هر تلاش"""
     from telethon.tl.types import MessageMediaDice
     while True:
         try:
@@ -365,6 +365,7 @@ async def _send_dice_until(cl, chat_id, emoji: str, target: int):
                 if sent.media.value == target:
                     break
                 await sent.delete()
+                await asyncio.sleep(0.3)
             else:
                 break
         except FloodWaitError as e:
@@ -1204,10 +1205,9 @@ async def _handle_command(cl, event, text, owner_id, entry):
     # ─── دستورات مستقیم تاس با عدد دلخواه ───────────────────────────────────
     elif text.startswith("تاس"):
         chat = await event.get_chat()
-        parts = text.split()
-        # تاس [عدد] — مثلاً: تاس 6 یا تاس 3
-        if len(parts) == 2 and parts[1].isdigit() and 1 <= int(parts[1]) <= 6:
-            target_val = int(parts[1])
+        match = re.match(r"^تاس\s*([1-6])$", text)
+        if match:
+            target_val = int(match.group(1))
         else:
             target_val = 6  # پیش‌فرض: ۶
         await event.message.delete()
