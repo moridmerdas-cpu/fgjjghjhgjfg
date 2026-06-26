@@ -242,7 +242,7 @@ def start_token_bot():
         return
 
     try:
-        _bot = telebot.TeleBot(config.BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=4)
+        _bot = telebot.TeleBot(config.BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=8)
         me = _bot.get_me()
         BOT_USERNAME = me.username
         print(f"🤖 ربات الماس: @{BOT_USERNAME}")
@@ -1829,7 +1829,7 @@ def start_token_bot():
                 "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
 
         markup.add(types.InlineKeyboardButton(
-            "🔙 بازگشت", callback_data="self_mgmt_back", style="primary"))
+            "🔙 بازگشت", callback_data="self_mgmt_back", style="danger"))
         return markup
 
     def _self_management_text(account_id):
@@ -2859,7 +2859,13 @@ def start_token_bot():
                     remaining = _format_plan_remaining(acc["id"])
                     # آیدی تلگرام مستقیماً از query برگشته (بدون query جداگانه)
                     tg_id_val = acc.get("telegram_user_id")
-                    tg_id_line = f"📱 آیدی تلگرام: <code>{tg_id_val}</code>" if tg_id_val else "📱 آیدی تلگرام: ─"
+                    tg_username_val = acc.get("tg_username") or ""
+                    if tg_id_val:
+                        pv_link = f"tg://user?id={tg_id_val}"
+                        username_part = f"@{tg_username_val} | " if tg_username_val else ""
+                        tg_id_line = f"📱 <a href='{pv_link}'>{username_part}پیوی کاربر</a> (<code>{tg_id_val}</code>)"
+                    else:
+                        tg_id_line = "📱 تلگرام: ─"
                     lines.append(
                         f"┌─ <b>#{i} {acc['username']}</b>\n"
                         f"├ 🆔 پنل: <code>{acc['id']}</code>\n"
@@ -4755,10 +4761,11 @@ def start_token_bot():
         while True:
             try:
                 _bot.infinity_polling(
-                    timeout=20,
-                    long_polling_timeout=15,
+                    timeout=10,
+                    long_polling_timeout=5,
                     restart_on_change=False,
-                    skip_pending=True
+                    skip_pending=True,
+                    interval=0
                 )
             except Exception as e:
                 if "409" in str(e):

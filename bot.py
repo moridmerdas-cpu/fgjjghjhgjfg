@@ -592,6 +592,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "تنظیم دوست", "حذف دوست", "نمایش لیست دوست", "پاک کردن لیست دوست",
             "سایلنت چت روشن", "سایلنت چت خاموش", "سایلنت کاربر", "لغو سایلنت کاربر",
             "فونت ", "لیست فونت", "فونت متن روشن", "فونت متن خاموش", "بنویس ",
+            "بولد ", "ایتالیک ", "مونو ", "اسپویلر ", "کوت ", "خط‌خورده ", "زیرخط ",
             "ذخیره ", "ارسال ذخیره ",
             "ترجمه ", "هوا ", "قیمت دلار", "ارز",
             "وضعیت", "راهنما", "help",
@@ -799,6 +800,67 @@ async def _handle_command(cl, event, text, owner_id, entry):
             fn = FONTS.get(font_id, FONTS["0"])
             styled = fn(raw)
             await edit(styled)
+
+    # ─── قالب‌بندی تلگرام (entities) — کار با فارسی هم دارد ────────────────────
+    elif text.startswith("بولد "):
+        raw = text[len("بولد "):].strip()
+        if raw:
+            from telethon.tl.types import MessageEntityBold
+            await event.edit(raw, formatting_entities=[MessageEntityBold(0, len(raw))])
+        else:
+            await edit("❗ فرمت: بولد [متن]")
+
+    elif text.startswith("ایتالیک "):
+        raw = text[len("ایتالیک "):].strip()
+        if raw:
+            from telethon.tl.types import MessageEntityItalic
+            await event.edit(raw, formatting_entities=[MessageEntityItalic(0, len(raw))])
+        else:
+            await edit("❗ فرمت: ایتالیک [متن]")
+
+    elif text.startswith("مونو "):
+        raw = text[len("مونو "):].strip()
+        if raw:
+            from telethon.tl.types import MessageEntityCode
+            await event.edit(raw, formatting_entities=[MessageEntityCode(0, len(raw))])
+        else:
+            await edit("❗ فرمت: مونو [متن]")
+
+    elif text.startswith("اسپویلر "):
+        raw = text[len("اسپویلر "):].strip()
+        if raw:
+            from telethon.tl.types import MessageEntitySpoiler
+            await event.edit(raw, formatting_entities=[MessageEntitySpoiler(0, len(raw))])
+        else:
+            await edit("❗ فرمت: اسپویلر [متن]")
+
+    elif text.startswith("کوت "):
+        raw = text[len("کوت "):].strip()
+        if raw:
+            try:
+                from telethon.tl.types import MessageEntityBlockquote
+                await event.edit(raw, formatting_entities=[MessageEntityBlockquote(0, len(raw), collapsed=False)])
+            except Exception:
+                # fallback برای نسخه‌های قدیمی‌تر telethon
+                await event.edit(f"❝ {raw} ❞")
+        else:
+            await edit("❗ فرمت: کوت [متن]")
+
+    elif text.startswith("خط‌خورده "):
+        raw = text[len("خط‌خورده "):].strip()
+        if raw:
+            from telethon.tl.types import MessageEntityStrike
+            await event.edit(raw, formatting_entities=[MessageEntityStrike(0, len(raw))])
+        else:
+            await edit("❗ فرمت: خط‌خورده [متن]")
+
+    elif text.startswith("زیرخط "):
+        raw = text[len("زیرخط "):].strip()
+        if raw:
+            from telethon.tl.types import MessageEntityUnderline
+            await event.edit(raw, formatting_entities=[MessageEntityUnderline(0, len(raw))])
+        else:
+            await edit("❗ فرمت: زیرخط [متن]")
 
     # ─── فونت ساعت ──────────────────────────────────────────────────────────
     elif text.startswith("فونت ساعت "):
@@ -1427,6 +1489,16 @@ def _help_text():
             "سیو کانال [لینک پست]  ← ذخیره یک پست",
             "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
             "توقف سیو",
+        ]),
+        ("🔹 قالب‌بندی (فارسی/انگلیسی)", [
+            "بولد [متن]  ← متن ضخیم",
+            "ایتالیک [متن]  ← متن کج",
+            "مونو [متن]  ← متن کد",
+            "اسپویلر [متن]  ← متن مخفی",
+            "کوت [متن]  ← نقل قول",
+            "خط‌خورده [متن]  ← متن خط‌خورده",
+            "زیرخط [متن]  ← متن زیرخط",
+            "💡 روی متن فارسی هم کار می‌کند",
         ]),
         ("🔹 فونت", [
             "فونت [0-8]  ← انتخاب فونت",
