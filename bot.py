@@ -356,13 +356,14 @@ bot_manager = BotManager()
 
 # ─── تابع کمکی: ارسال تاس/بازی تا رسیدن به مقدار هدف ──────────────────────────
 async def _send_dice_until(cl, chat_id, emoji: str, target: int):
-    """تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد — با تاخیر 0.3 ثانیه بین هر تلاش"""
+    """تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد، بعد یک پیام تایید می‌فرسته — با تاخیر 0.3 ثانیه بین هر تلاش"""
     from telethon.tl.types import MessageMediaDice
     while True:
         try:
             sent = await cl.send_file(chat_id, media=emoji)
             if hasattr(sent, "media") and isinstance(sent.media, MessageMediaDice):
                 if sent.media.value == target:
+                    await cl.send_message(chat_id, f"{emoji} {target}")
                     break
                 await sent.delete()
                 await asyncio.sleep(0.3)
