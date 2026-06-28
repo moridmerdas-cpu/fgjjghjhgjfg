@@ -285,11 +285,11 @@ class BotManager:
 
                 await cl.start()
                 me = await cl.get_me()
-                print(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
+                print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
 
                 db.save_telegram_user_id(owner_id, me.id)
 
-                # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> تشخیص مالک - اصلاح شده با ۳ روش
+                # ✅ تشخیص مالک - اصلاح شده با ۳ روش
                 me_phone = (me.phone or "").lstrip("+")
                 owner_phone = getattr(config, "OWNER_PHONE", "").lstrip("+")
                 
@@ -305,10 +305,10 @@ class BotManager:
                     if not entry.get("owner_refunded") and entry.get("tokens_deducted", 0) > 0:
                         db.add_tokens(owner_id, entry["tokens_deducted"])
                         entry["owner_refunded"] = True
-                        print(f"<tg-emoji emoji-id='5834643712189141114'>👑</tg-emoji> [{owner_id}] مالک تشخیص داده شد - {entry['tokens_deducted']} توکن برگشت داده شد")
-                    print(f"<tg-emoji emoji-id='5834643712189141114'>👑</tg-emoji> [{owner_id}] مالک: @{me.username} (ID: {me.id}) — تایمر لغو — رایگان ♾️")
+                        print(f"👑 [{owner_id}] مالک تشخیص داده شد - {entry['tokens_deducted']} توکن برگشت داده شد")
+                    print(f"👑 [{owner_id}] مالک: @{me.username} (ID: {me.id}) — تایمر لغو — رایگان ♾️")
 
-                # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> استارت ساعت با دقت بالا
+                # ✅ استارت ساعت با دقت بالا
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
 
@@ -321,25 +321,25 @@ class BotManager:
                 if entry["stop"]:
                     break
 
-                # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> چک کن session هنوز در دیتابیس وجود داره
+                # ✅ چک کن session هنوز در دیتابیس وجود داره
                 try:
                     session_data = db.get_setting(owner_id, "session_data", "")
                     if not session_data:
-                        print(f"<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji>  [{owner_id}] session حذف شده — توقف کامل")
+                        print(f"⚠️  [{owner_id}] session حذف شده — توقف کامل")
                         break
                 except Exception:
                     break
 
-                print(f"<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji>  [{owner_id}] اتصال قطع شد، اتصال مجدد...")
+                print(f"⚠️  [{owner_id}] اتصال قطع شد، اتصال مجدد...")
 
             except Exception as e:
                 err_str = str(e)
-                print(f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> [{owner_id}] خطا: {e}")
+                print(f"❌ [{owner_id}] خطا: {e}")
 
-                # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> اگه session توسط تلگرام باطل شده، نیاز به لاگین مجدد
+                # ✅ اگه session توسط تلگرام باطل شده، نیاز به لاگین مجدد
                 if any(k in err_str for k in ("AUTH_KEY_UNREGISTERED", "SESSION_REVOKED",
                                                "USER_DEACTIVATED", "UnauthorizedError")):
-                    print(f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> [{owner_id}] Session باطل شده — نیاز به لاگین مجدد")
+                    print(f"❌ [{owner_id}] Session باطل شده — نیاز به لاگین مجدد")
                     db.set_setting(owner_id, "logged_in", "0")
                     db.set_setting(owner_id, "session_data", "")
                     break
@@ -372,7 +372,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         chat_id = getattr(chat, "id", 0)
         text = msg.text or ""
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> سکوت: اگه فرستنده توی لیست سکوت باشه و پیوی باشه، پیام دوطرفه پاک می‌شه
+        # ✅ سکوت: اگه فرستنده توی لیست سکوت باشه و پیوی باشه، پیام دوطرفه پاک می‌شه
         if event.is_private and sender_id and _is_silence_user(owner_id, sender_id):
             try:
                 await msg.delete(revoke=True)
@@ -380,7 +380,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 pass
             return
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> بررسی آیا ربات تگ شده است (برای گروه‌ها)
+        # ✅ بررسی آیا ربات تگ شده است (برای گروه‌ها)
         is_tagged = False
         if not event.is_private:
             me = await cl.get_me()
@@ -395,7 +395,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
+        # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
             if db.get_setting(owner_id, "auto_seen_active") == "1":
                 try:
@@ -435,7 +435,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     path = await cl.download_media(msg, file=media_dir + "/")
                     if path:
                         await cl.send_file(me.id, path,
-                            caption=f"📥 مدیای تایمدار ذخیره شد\n<tg-emoji emoji-id='5814392969799507221'>👤</tg-emoji> از: {getattr(sender, 'first_name', sender_id)} ({sender_id})")
+                            caption=f"📥 مدیای تایمدار ذخیره شد\n👤 از: {getattr(sender, 'first_name', sender_id)} ({sender_id})")
                 except Exception:
                     pass
 
@@ -446,7 +446,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> جوین اجباری (فقط پیوی)
+        # ✅ جوین اجباری (فقط پیوی)
         if event.is_private and db.get_setting(owner_id, "force_join_active") == "1":
             channel_id = db.get_setting(owner_id, "force_join_channel", "")
             if channel_id:
@@ -486,7 +486,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                             buttons = ReplyInlineMarkup(rows=[
                                 KeyboardButtonRow(buttons=[
                                     KeyboardButtonUrl(
-                                        text="<tg-emoji emoji-id='5830203935775789535'>📢</tg-emoji> عضویت در کانال <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji>",
+                                        text="📢 عضویت در کانال ✅",
                                         url=channel_link
                                     )
                                 ])
@@ -498,7 +498,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         pass
                     return
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> منشی (فقط پیوی - با محدودیت 24 ساعت)
+        # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت)
         if db.get_setting(owner_id, "secretary_active") == "1" and event.is_private:
             now = time.time()
             last_reply = _last_secretary_reply.get(chat_id, 0)
@@ -512,7 +512,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     pass
             return
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> ری‌اکشن خودکار
+        # ✅ ری‌اکشن خودکار
         if db.get_setting(owner_id, "auto_reaction_active") == "1":
             emoji = db.get_setting(owner_id, "auto_reaction_emoji", "❤️")
             try:
@@ -526,9 +526,9 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     add_to_recent=True
                 ))
             except Exception as e:
-                print(f"<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> خطا در ری‌اکشن: {e}")
+                print(f"⚠️ خطا در ری‌اکشن: {e}")
 
-        # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
+        # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
         if event.is_private and db.is_friend(owner_id, sender_id):
             now = time.time()
             last_reply = _last_friend_reply.get(sender_id, 0)
@@ -568,11 +568,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         # دستورات همیشه فعال
         if text == "سلف روشن":
             db.set_setting(owner_id, "self_bot_active", "1")
-            await _safe_edit(event, owner_id, "<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> سلف‌بات روشن شد.")
+            await _safe_edit(event, owner_id, "✅ سلف‌بات روشن شد.")
             return
         if text == "سلف خاموش":
             db.set_setting(owner_id, "self_bot_active", "0")
-            await _safe_edit(event, owner_id, "<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> سلف‌بات خاموش شد.")
+            await _safe_edit(event, owner_id, "❌ سلف‌بات خاموش شد.")
             return
 
         # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن
@@ -670,7 +670,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
         target = await _resolve_target(event, text.split())
         if target:
             db.add_enemy(owner_id, target["id"], target.get("username"), target.get("name"))
-            await edit(f"<tg-emoji emoji-id='5830204369567485741'>🔴</tg-emoji> {target.get('name', target['id'])} به لیست دشمن اضافه شد.")
+            await edit(f"🔴 {target.get('name', target['id'])} به لیست دشمن اضافه شد.")
         else:
             await edit("❗ روی پیام کاربر ریپلای کن یا آیدی عددی بنویس.")
 
@@ -678,16 +678,16 @@ async def _handle_command(cl, event, text, owner_id, entry):
         target = await _resolve_target(event, text.split())
         if target:
             removed = db.remove_enemy(owner_id, target["id"])
-            await edit("<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> از لیست دشمن حذف شد." if removed else "❗ در لیست نبود.")
+            await edit("✅ از لیست دشمن حذف شد." if removed else "❗ در لیست نبود.")
         else:
             await edit("❗ روی پیام کاربر ریپلای کن یا آیدی عددی بنویس.")
 
     elif text == "نمایش لیست دشمن":
         enemies = db.get_enemies(owner_id)
         if not enemies:
-            await edit("<tg-emoji emoji-id='5830256132513338127'>📋</tg-emoji> لیست دشمن خالی است.")
+            await edit("📋 لیست دشمن خالی است.")
         else:
-            lines = [f"<tg-emoji emoji-id='5830204369567485741'>🔴</tg-emoji> لیست دشمن ({len(enemies)} نفر):\n"]
+            lines = [f"🔴 لیست دشمن ({len(enemies)} نفر):\n"]
             for e in enemies:
                 lines.append(f"• {e['name'] or e['username'] or e['user_id']} — `{e['user_id']}`")
             await edit("\n".join(lines))
@@ -709,14 +709,14 @@ async def _handle_command(cl, event, text, owner_id, entry):
         target = await _resolve_target(event, text.split())
         if target:
             removed = db.remove_friend(owner_id, target["id"])
-            await edit("<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> از لیست دوست حذف شد." if removed else "❗ در لیست نبود.")
+            await edit("✅ از لیست دوست حذف شد." if removed else "❗ در لیست نبود.")
         else:
             await edit("❗ روی پیام کاربر ریپلای کن یا آیدی عددی بنویس.")
 
     elif text == "نمایش لیست دوست":
         friends = db.get_friends(owner_id)
         if not friends:
-            await edit("<tg-emoji emoji-id='5830256132513338127'>📋</tg-emoji> لیست دوست خالی است.")
+            await edit("📋 لیست دوست خالی است.")
         else:
             lines = [f"💚 لیست دوست ({len(friends)} نفر):\n"]
             for f in friends:
@@ -729,12 +729,12 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     # ─── منشی ────────────────────────────────────────────────────────────────
     elif text == "منشی روشن":
-        ss("secretary_active", "1"); await edit("<tg-emoji emoji-id='5816941935759200153'>🤖</tg-emoji> منشی خودکار روشن شد.\n💡 هر کاربر فقط هر 24 ساعت یک بار پاسخ می‌گیرد.")
+        ss("secretary_active", "1"); await edit("🤖 منشی خودکار روشن شد.\n💡 هر کاربر فقط هر 24 ساعت یک بار پاسخ می‌گیرد.")
     elif text == "منشی خاموش":
-        ss("secretary_active", "0"); await edit("<tg-emoji emoji-id='5816941935759200153'>🤖</tg-emoji> منشی خودکار خاموش شد.")
+        ss("secretary_active", "0"); await edit("🤖 منشی خودکار خاموش شد.")
     elif text.startswith("پیام منشی "):
         ss("secretary_message", text[len("پیام منشی "):].strip())
-        await edit("<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> پیام منشی تنظیم شد.")
+        await edit("✅ پیام منشی تنظیم شد.")
 
     # ─── ضد حذف ──────────────────────────────────────────────────────────────
     elif text == "ضد حذف روشن":
@@ -767,7 +767,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
         ss("auto_reaction_active", "0"); await edit("❤️ ری‌اکشن خودکار خاموش شد.")
     elif text.startswith("ری‌اکشن "):
         emoji = text[len("ری‌اکشن "):].strip()
-        ss("auto_reaction_emoji", emoji); await edit(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> ری‌اکشن پیش‌فرض: {emoji}")
+        ss("auto_reaction_emoji", emoji); await edit(f"✅ ری‌اکشن پیش‌فرض: {emoji}")
 
     # ─── ذخیره مدیا ──────────────────────────────────────────────────────────
     elif text == "ذخیره مدیا روشن":
@@ -838,7 +838,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "لیست سکوت":
         users = _get_silence_users(owner_id)
         if not users:
-            await edit("<tg-emoji emoji-id='5830256132513338127'>📋</tg-emoji> لیست سکوت خالی است.")
+            await edit("📋 لیست سکوت خالی است.")
         else:
             lines = [f"🔇 لیست سکوت ({len(users)} نفر):\n"]
             for u in users:
@@ -857,11 +857,11 @@ async def _handle_command(cl, event, text, owner_id, entry):
         font_id = gs("selected_font", "0")
         fn = FONTS.get(font_id, FONTS["0"])
         sample = fn("Hello World")
-        await edit(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> فونت متن خودکار روشن شد.\n✏️ از این به بعد هر پیامی که بنویسی با فونت {font_id} ادیت می‌شه.\nنمونه: `{sample}`")
+        await edit(f"✅ فونت متن خودکار روشن شد.\n✏️ از این به بعد هر پیامی که بنویسی با فونت {font_id} ادیت می‌شه.\nنمونه: `{sample}`")
 
     elif text == "فونت متن خاموش":
         ss("text_font_auto", "0")
-        await edit("<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> فونت متن خودکار خاموش شد.\nپیام‌ها دیگه ادیت نمی‌شن.")
+        await edit("❌ فونت متن خودکار خاموش شد.\nپیام‌ها دیگه ادیت نمی‌شن.")
 
     elif text.startswith("بنویس "):
         # «بنویس [متن]» — متن رو با فونت فعلی برمی‌گردونه
@@ -964,10 +964,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
             fn = FONTS[font_id]
             if preview_words:
                 preview = fn(" ".join(preview_words))
-                await edit(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> فونت {font_id} انتخاب شد:\n`{preview}`")
+                await edit(f"✅ فونت {font_id} انتخاب شد:\n`{preview}`")
             else:
                 sample = fn("Hello World")
-                await edit(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> فونت {font_id} انتخاب شد.\nنمونه: `{sample}`")
+                await edit(f"✅ فونت {font_id} انتخاب شد.\nنمونه: `{sample}`")
         else:
             await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
 
@@ -1096,14 +1096,14 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 ss("force_join_channel", real_id)
                 ss("force_join_active", "1")
                 await edit(
-                    f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> کانال جوین اجباری تنظیم شد:\n"
-                    f"<tg-emoji emoji-id='5830203935775789535'>📢</tg-emoji> {title} (ID: {real_id})\n\n"
+                    f"✅ کانال جوین اجباری تنظیم شد:\n"
+                    f"📢 {title} (ID: {real_id})\n\n"
                     f"💡 دستورات:\n"
                     f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
                     f"> `پیام جوین [متن]` — تغییر پیام هشدار"
                 )
             except Exception as e:
-                await edit(f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
+                await edit(f"❌ کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
 
     elif text == "حذف کانال اجباری":
         ss("force_join_channel", "")
@@ -1116,11 +1116,11 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit("❗ اول کانال رو تنظیم کن: `تنظیم کانال [آیدی]`")
         else:
             ss("force_join_active", "1")
-            await edit("<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> جوین اجباری روشن شد.")
+            await edit("✅ جوین اجباری روشن شد.")
 
     elif text == "جوین اجباری خاموش":
         ss("force_join_active", "0")
-        await edit("<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> جوین اجباری خاموش شد.")
+        await edit("❌ جوین اجباری خاموش شد.")
 
     elif text.startswith("پیام جوین "):
         new_msg = text[len("پیام جوین "):].strip()
@@ -1128,7 +1128,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit("❗ فرمت: پیام جوین [متن پیام]")
         else:
             ss("force_join_message", new_msg)
-            await edit(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> پیام جوین اجباری تنظیم شد:\n\n{new_msg}")
+            await edit(f"✅ پیام جوین اجباری تنظیم شد:\n\n{new_msg}")
 
     elif text.startswith("لینک کانال جوین "):
         link = text[len("لینک کانال جوین "):].strip()
@@ -1139,7 +1139,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             if not link.startswith("http"):
                 link = "https://t.me/" + link.lstrip("@")
             ss("force_join_link", link)
-            await edit(f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> لینک دکمه جوین تنظیم شد:\n{link}")
+            await edit(f"✅ لینک دکمه جوین تنظیم شد:\n{link}")
 
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
@@ -1151,16 +1151,16 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "auto_save_media": "ذخیره مدیا", "clock_name_active": "ساعت نام",
             "clock_bio_active": "ساعت بیو", "force_join_active": "جوین اجباری",
         }
-        lines = [f"<tg-emoji emoji-id='5814171260946485530'>📊</tg-emoji> وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
+        lines = [f"📊 وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
         for key, label in status_map.items():
-            icon = "<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji>" if gs(key) == "1" else "<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji>"
+            icon = "✅" if gs(key) == "1" else "❌"
             lines.append(f"{icon} {label}")
         lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
-        lines.append(f"✏️ فونت متن خودکار: {'<tg-emoji emoji-id=\"5830326445422940546\">✅</tg-emoji> روشن' if gs('text_font_auto','0')=='1' else '<tg-emoji emoji-id=\"5832353674281620438\">❌</tg-emoji> خاموش'}")
+        lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto','0')=='1' else '❌ خاموش'}")
         lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
         fj_ch = gs("force_join_channel", "")
         if fj_ch:
-            lines.append(f"<tg-emoji emoji-id='5830203935775789535'>📢</tg-emoji> کانال جوین اجباری: {fj_ch}")
+            lines.append(f"📢 کانال جوین اجباری: {fj_ch}")
         lines.append(f"👥 دشمن: {len(db.get_enemies(owner_id))} نفر")
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
@@ -1321,7 +1321,7 @@ async def _save_channel_media(cl, channel_input, limit, owner_id):
             try:
                 target_msg = await cl.get_messages(channel_username, ids=post_id)
             except Exception as e:
-                await cl.send_message(me.id, f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> پست پیدا نشد: {e}")
+                await cl.send_message(me.id, f"❌ پست پیدا نشد: {e}")
                 db.set_setting(owner_id, "channel_save_active", "0")
                 return
 
@@ -1334,9 +1334,9 @@ async def _save_channel_media(cl, channel_input, limit, owner_id):
                     if target_msg.text:
                         caption += f"\n📝 {target_msg.text[:100]}"
                     await cl.send_file(me.id, path, caption=caption)
-                    await cl.send_message(me.id, "<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> پست با موفقیت ذخیره شد.")
+                    await cl.send_message(me.id, "✅ پست با موفقیت ذخیره شد.")
                 except Exception as e:
-                    await cl.send_message(me.id, f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> خطا در ذخیره پست: {e}")
+                    await cl.send_message(me.id, f"❌ خطا در ذخیره پست: {e}")
             db.set_setting(owner_id, "channel_save_active", "0")
             return
 
@@ -1370,12 +1370,12 @@ async def _save_channel_media(cl, channel_input, limit, owner_id):
 
         db.set_setting(owner_id, "channel_save_active", "0")
         await cl.send_message(me.id,
-            f"<tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> سیو کانال تموم شد\n💾 ذخیره شد: {saved}\n⏭ رد شد: {skipped}")
+            f"✅ سیو کانال تموم شد\n💾 ذخیره شد: {saved}\n⏭ رد شد: {skipped}")
     except Exception as e:
         db.set_setting(owner_id, "channel_save_active", "0")
         try:
             me = await cl.get_me()
-            await cl.send_message(me.id, f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> خطا در سیو کانال: {e}")
+            await cl.send_message(me.id, f"❌ خطا در سیو کانال: {e}")
         except Exception:
             pass
 
@@ -1388,7 +1388,7 @@ async def _translate(text):
             data = json.loads(resp.read().decode())
             return data[0][0][0]
     except Exception:
-        return "<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> خطا در ترجمه"
+        return "⚠️ خطا در ترجمه"
 
 
 async def _get_weather(city):
@@ -1396,7 +1396,7 @@ async def _get_weather(city):
         import urllib.request, urllib.parse, json
         api_key = config.WEATHER_API_KEY
         if not api_key:
-            return "<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> کلید API هواشناسی تنظیم نشده."
+            return "⚠️ کلید API هواشناسی تنظیم نشده."
         url = f"https://api.openweathermap.org/data/2.5/weather?q={urllib.parse.quote(city)}&appid={api_key}&units=metric&lang=fa"
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.loads(resp.read().decode())
@@ -1405,14 +1405,14 @@ async def _get_weather(city):
                     f"دما: {data['main']['temp']}°C\n"
                     f"رطوبت: {data['main']['humidity']}%")
     except Exception:
-        return "<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> خطا در دریافت اطلاعات هوا"
+        return "⚠️ خطا در دریافت اطلاعات هوا"
 
 
 _CURRENCY_LABELS = {
     "usd":  "💵 دلار آمریکا",
     "eur":  "💶 یورو",
     "gbp":  "💷 پوند انگلیس",
-    "usdt": "<tg-emoji emoji-id='5814670671153730702'>💎</tg-emoji> تتر (USDT)",
+    "usdt": "💎 تتر (USDT)",
     "btc":  "₿ بیت‌کوین",
     "eth":  "⟠ اتریوم",
 }
@@ -1453,7 +1453,7 @@ async def _fetch_currency_prices() -> dict:
                 usd_toman = val
                 result["usd"] = val
         except Exception as e:
-            print(f"<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> Nobitex {src}: {e}")
+            print(f"⚠️ Nobitex {src}: {e}")
 
     # ─── مرحله ۲: نرخ یورو/پوند از exchangerate-api ─────────────────────────
     if usd_toman:
@@ -1471,7 +1471,7 @@ async def _fetch_currency_prices() -> dict:
             if rates.get("AED"):
                 result["aed"] = int(usd_toman * rates["AED"])
         except Exception as e:
-            print(f"<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> exchangerate EUR/GBP: {e}")
+            print(f"⚠️ exchangerate EUR/GBP: {e}")
             result.setdefault("eur", int(usd_toman * 1.08))
             result.setdefault("gbp", int(usd_toman * 1.27))
 
@@ -1491,7 +1491,7 @@ async def _fetch_currency_prices() -> dict:
             if eth_usd:
                 result["eth"] = int(eth_usd * usd_toman)
         except Exception as e:
-            print(f"<tg-emoji emoji-id='5830451652309553634'><tg-emoji emoji-id='5830451652309553634'>⚠</tg-emoji>️</tg-emoji> CoinGecko: {e}")
+            print(f"⚠️ CoinGecko: {e}")
 
     if not result:
         return _currency_cache.get("data") or {}
@@ -1528,18 +1528,18 @@ async def _get_currency_text(target: str = None) -> str:
     """
     prices = await _fetch_currency_prices()
     if not prices:
-        return "<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> دریافت قیمت ممکن نیست"
+        return "❌ دریافت قیمت ممکن نیست"
 
     if target:
         if target not in prices:
-            return "<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> دریافت قیمت ممکن نیست"
+            return "❌ دریافت قیمت ممکن نیست"
         return f"- {_CURRENCY_LABELS[target]}: {prices[target]:,} تومان"
 
     lines = [
         f"- {_CURRENCY_LABELS[c]}: {prices[c]:,} تومان"
         for c in _CURRENCY_DEFAULT_LIST if c in prices
     ]
-    return "\n".join(lines) if lines else "<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> دریافت قیمت ممکن نیست"
+    return "\n".join(lines) if lines else "❌ دریافت قیمت ممکن نیست"
 
 
 def _help_text():
@@ -1670,12 +1670,12 @@ async def _clock_loop(cl, owner_id):
     
     while True:
         try:
-            # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> زمان ایران
+            # ✅ زمان ایران
             iran_tz = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
             now = datetime.datetime.now(iran_tz)
             current_minute = now.minute
             
-            # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> فقط در دقیقه‌های جدید به‌روزرسانی کن
+            # ✅ فقط در دقیقه‌های جدید به‌روزرسانی کن
             if current_minute != last_minute:
                 last_minute = current_minute
                 time_str = f"{now.hour:02d}:{now.minute:02d}"
@@ -1689,7 +1689,7 @@ async def _clock_loop(cl, owner_id):
                         await cl(UpdateProfileRequest(last_name=styled_time[:64]))
                         print(f"⏰ [{owner_id}] ساعت نام به‌روز شد: {styled_time}")
                     except Exception as e:
-                        print(f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> خطا در به‌روزرسانی نام: {e}")
+                        print(f"❌ خطا در به‌روزرسانی نام: {e}")
                 
                 # به‌روزرسانی بیو
                 if db.get_setting(owner_id, "clock_bio_active") == "1":
@@ -1697,13 +1697,13 @@ async def _clock_loop(cl, owner_id):
                         await cl(UpdateProfileRequest(about=f"⏰ {styled_time}"[:70]))
                         print(f"⏰ [{owner_id}] ساعت بیو به‌روز شد: {styled_time}")
                     except Exception as e:
-                        print(f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> خطا در به‌روزرسانی بیو: {e}")
+                        print(f"❌ خطا در به‌روزرسانی بیو: {e}")
             
-            # <tg-emoji emoji-id='5830326445422940546'>✅</tg-emoji> چک کردن هر 5 ثانیه برای دقت بالا
+            # ✅ چک کردن هر 5 ثانیه برای دقت بالا
             await asyncio.sleep(5)
             
         except Exception as e:
-            print(f"<tg-emoji emoji-id='5832353674281620438'>❌</tg-emoji> خطا در _clock_loop: {e}")
+            print(f"❌ خطا در _clock_loop: {e}")
             await asyncio.sleep(10)
 
 
