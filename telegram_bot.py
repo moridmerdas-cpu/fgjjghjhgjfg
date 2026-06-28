@@ -709,7 +709,7 @@ def start_token_bot():
                         except Exception:
                             pass
 
-                return _bot.reply_to(message, msg)
+                return _bot.reply_to(message, msg, parse_mode="HTML")
 
             # ── حالت معمول: «انتقال [یوزرنیم] [عدد]» ─────────────────────────
             if len(parts) < 3:
@@ -748,7 +748,7 @@ def start_token_bot():
                     except:
                         pass
             
-            _bot.reply_to(message, msg)
+            _bot.reply_to(message, msg, parse_mode="HTML")
             
         except Exception as e:
             print(f"❌ خطا در cmd_transfer: {e}")
