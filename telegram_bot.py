@@ -370,6 +370,9 @@ def start_token_bot():
             types.InlineKeyboardButton("✏️ تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary") # 🔵 آبی
         )
         markup.add(
+            types.InlineKeyboardButton("🎰 قرعه‌کشی", callback_data="admin_lottery", style="success")           # 🟢 سبز
+        )
+        markup.add(
             types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
         )
         return markup
@@ -2265,7 +2268,7 @@ def start_token_bot():
                     sponsors_text = "🤝 <b>اسپانسرهای رسمی پروژه:</b>\n"
                     for sp in sponsors:
                         sponsors_text += f"🔸 @{sp['username']}\n"
-                    sponsors_text += f"\n👑 <b>مالک و پشتیبانی:</b> @{config.OWNER_USERNAME}"
+                    sponsors_text += f"\n👑 <b>مالک:</b> @{config.OWNER_USERNAME}\n🛟 <b>پشتیبانی:</b> @{getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')}"
                     _bot.send_message(message.chat.id, sponsors_text)
         except Exception as e:
             print(f"❌ خطا در cmd_start: {e}")
@@ -2658,7 +2661,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             payment["tg_id"],
-                            "❌ <b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید."
+                            "❌ <b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید: @" + getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')
                         )
                     except Exception: pass
                     # 🔴 دکمه رد با رنگ danger (قرمز)
@@ -2821,7 +2824,7 @@ def start_token_bot():
                 return perm
         return None
 
-    @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_") or call.data in ("guide_type_media", "guide_type_text") or call.data.startswith("admin_perm_"))
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_") or call.data in ("guide_type_media", "guide_type_text") or call.data.startswith("admin_perm_") or call.data.startswith("lottery_"))
     def callback_admin(call):
         uid = call.from_user.id
         data = call.data
@@ -3834,6 +3837,132 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
 
+            elif data == "admin_lottery":
+                import json as _json
+                # نمایش قرعه‌کشی‌های فعال
+                active = []
+                try:
+                    raw = db.get_global_setting("lotteries", "[]")
+                    active = _json.loads(raw)
+                except Exception:
+                    active = []
+                
+                now_teh = _now_tehran()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(types.InlineKeyboardButton("➕ ایجاد قرعه‌کشی جدید", callback_data="lottery_create", style="success"))
+                
+                text = "🎰 <b>مدیریت قرعه‌کشی</b>\n\n"
+                if active:
+                    text += "📋 قرعه‌کشی‌های فعال:\n"
+                    for lot in active:
+                        status = "🟢 فعال" if lot.get("status") == "active" else "✅ پایان یافته"
+                        text += f"\n• {lot.get('start_time','?')} تا {lot.get('end_time','?')} — {lot.get('winners_count','?')} برنده — {status}"
+                        if lot.get("status") == "active":
+                            markup.add(types.InlineKeyboardButton(
+                                f"❌ لغو قرعه‌کشی {lot.get('start_time','?')}",
+                                callback_data=f"lottery_cancel_{lot.get('id','')}",
+                                style="danger"
+                            ))
+                else:
+                    text += "هیچ قرعه‌کشی فعالی وجود ندارد."
+                
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(text, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data == "lottery_create":
+                _owner_states[uid] = {"state": "lottery_start_time", "data": {}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger"))
+                _bot.edit_message_text(
+                    "🎰 <b>ایجاد قرعه‌کشی</b>\n\n"
+                    "📝 <b>مرحله ۱ از ۵: ساعت شروع</b>\n\n"
+                    "ساعت شروع قرعه‌کشی را ارسال کنید:\n"
+                    "مثال: <code>22:00</code>",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+
+            elif data.startswith("lottery_cancel_"):
+                import json as _json
+                lot_id = data[len("lottery_cancel_"):]
+                try:
+                    raw = db.get_global_setting("lotteries", "[]")
+                    lotteries = _json.loads(raw)
+                    lotteries = [l for l in lotteries if str(l.get("id","")) != lot_id]
+                    db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
+                except Exception:
+                    pass
+                _bot.answer_callback_query(call.id, "✅ قرعه‌کشی لغو شد", show_alert=True)
+                # برگشت به صفحه قرعه‌کشی
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(types.InlineKeyboardButton("➕ ایجاد قرعه‌کشی جدید", callback_data="lottery_create", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text("🎰 <b>مدیریت قرعه‌کشی</b>\n\n✅ قرعه‌کشی لغو شد.",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+            elif data == "lottery_confirm":
+                import json as _json
+                import uuid as _uuid
+                state_data = _owner_states.get(uid, {})
+                lot_data = state_data.get("data", {})
+                
+                start_h, start_m = map(int, lot_data["start_time"].split(":"))
+                end_h, end_m = map(int, lot_data["end_time"].split(":"))
+                now_teh = _now_tehran()
+                
+                # تنظیم زمان شروع و پایان برای امروز
+                start_dt = now_teh.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+                end_dt = now_teh.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+                if end_dt <= start_dt:
+                    end_dt += datetime.timedelta(days=1)
+                if start_dt <= now_teh:
+                    start_dt += datetime.timedelta(days=1)
+                    end_dt += datetime.timedelta(days=1)
+                
+                lot_id = str(_uuid.uuid4())[:8]
+                lottery_entry = {
+                    "id": lot_id,
+                    "start_time": lot_data["start_time"],
+                    "end_time": lot_data["end_time"],
+                    "winners_count": lot_data["winners_count"],
+                    "prizes": lot_data["prizes"],
+                    "start_ts": start_dt.isoformat(),
+                    "end_ts": end_dt.isoformat(),
+                    "status": "active",
+                    "participants": [],
+                    "channel": getattr(config, "WC_CHANNEL_ID", "")
+                }
+                
+                # ذخیره در دیتابیس
+                try:
+                    raw = db.get_global_setting("lotteries", "[]")
+                    lotteries = _json.loads(raw)
+                except Exception:
+                    lotteries = []
+                lotteries.append(lottery_entry)
+                db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
+                _owner_states.pop(uid, None)
+                
+                _bot.answer_callback_query(call.id, "✅ قرعه‌کشی ثبت شد!", show_alert=True)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🎰 مدیریت قرعه‌کشی", callback_data="admin_lottery", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    f"✅ <b>قرعه‌کشی با موفقیت ثبت شد!</b>\n\n"
+                    f"⏰ شروع: <b>{lot_data['start_time']}</b>\n"
+                    f"⏰ پایان: <b>{lot_data['end_time']}</b>\n"
+                    f"🏆 تعداد برنده: <b>{lot_data['winners_count']} نفر</b>\n"
+                    f"🎁 جوایز: {' | '.join(lot_data['prizes'])}\n\n"
+                    f"ربات در ساعت {lot_data['start_time']} قرعه‌کشی را اعلام می‌کند.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+
             else:
                 _bot.answer_callback_query(call.id, "❌ گزینه نامعتبر")
         
@@ -4284,6 +4413,92 @@ def start_token_bot():
                 _bot.reply_to(message,
                     f"✅ آموزش متنی «<b>{guide_name}</b>» ذخیره شد.",
                     reply_markup=_owner_keyboard())
+
+            # ── قرعه‌کشی states ─────────────────────────────────────────────
+            elif state == "lottery_start_time":
+                import re as _re
+                t = text.strip()
+                if not _re.match(r"^\d{1,2}:\d{2}$", t):
+                    return _bot.reply_to(message, "❌ فرمت اشتباه است.\nمثال: <code>22:00</code>")
+                h, m = map(int, t.split(":"))
+                if not (0 <= h <= 23 and 0 <= m <= 59):
+                    return _bot.reply_to(message, "❌ ساعت نامعتبر است.")
+                state_data["data"]["start_time"] = t
+                state_data["state"] = "lottery_end_time"
+                _bot.reply_to(message,
+                    f"✅ ساعت شروع: <b>{t}</b>\n\n"
+                    "📝 <b>مرحله ۲ از ۵: ساعت پایان</b>\n\n"
+                    "ساعت پایان قرعه‌کشی را ارسال کنید:\n"
+                    "مثال: <code>23:00</code>")
+
+            elif state == "lottery_end_time":
+                import re as _re
+                t = text.strip()
+                if not _re.match(r"^\d{1,2}:\d{2}$", t):
+                    return _bot.reply_to(message, "❌ فرمت اشتباه است.\nمثال: <code>23:00</code>")
+                h, m = map(int, t.split(":"))
+                if not (0 <= h <= 23 and 0 <= m <= 59):
+                    return _bot.reply_to(message, "❌ ساعت نامعتبر است.")
+                state_data["data"]["end_time"] = t
+                state_data["state"] = "lottery_winners_count"
+                _bot.reply_to(message,
+                    f"✅ ساعت پایان: <b>{t}</b>\n\n"
+                    "📝 <b>مرحله ۳ از ۵: تعداد برنده</b>\n\n"
+                    "تعداد برندگان را وارد کنید:\n"
+                    "مثال: <code>3</code>")
+
+            elif state == "lottery_winners_count":
+                if not text.isdigit() or int(text) < 1 or int(text) > 20:
+                    return _bot.reply_to(message, "❌ عدد معتبر بین ۱ تا ۲۰ وارد کنید.")
+                cnt = int(text)
+                state_data["data"]["winners_count"] = cnt
+                state_data["data"]["prizes"] = []
+                state_data["data"]["current_prize"] = 1
+                state_data["state"] = "lottery_prize"
+                _bot.reply_to(message,
+                    f"✅ تعداد برنده: <b>{cnt} نفر</b>\n\n"
+                    "📝 <b>مرحله ۴ از ۵: تعیین جوایز</b>\n\n"
+                    f"جایزه نفر <b>اول</b> را وارد کنید:\n"
+                    "مثال: <code>۱ میلیون تومان</code>")
+
+            elif state == "lottery_prize":
+                prize = text.strip()
+                if not prize:
+                    return _bot.reply_to(message, "❌ جایزه نمی‌تواند خالی باشد.")
+                prizes = state_data["data"]["prizes"]
+                prizes.append(prize)
+                current = state_data["data"]["current_prize"]
+                total = state_data["data"]["winners_count"]
+                
+                if current < total:
+                    state_data["data"]["current_prize"] = current + 1
+                    ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم"]
+                    next_ord = ordinals[current] if current < len(ordinals) else f"{current+1}م"
+                    _bot.reply_to(message,
+                        f"✅ جایزه نفر {ordinals[current-1]}: <b>{prize}</b>\n\n"
+                        f"جایزه نفر <b>{next_ord}</b> را وارد کنید:")
+                else:
+                    # همه جوایز ثبت شد — نمایش تأیید
+                    state_data["state"] = "lottery_awaiting_confirm"
+                    d = state_data["data"]
+                    prize_text = ""
+                    ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم"]
+                    for i, p in enumerate(d["prizes"]):
+                        ord_name = ordinals[i] if i < len(ordinals) else f"{i+1}م"
+                        prize_text += f"\n🥇 نفر {ord_name}: <b>{p}</b>"
+                    
+                    markup = types.InlineKeyboardMarkup(row_width=2)
+                    markup.add(
+                        types.InlineKeyboardButton("✅ تأیید و ثبت", callback_data="lottery_confirm", style="success"),
+                        types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger")
+                    )
+                    _bot.reply_to(message,
+                        f"📋 <b>مرحله ۵ از ۵: تأیید قرعه‌کشی</b>\n\n"
+                        f"⏰ زمان: <b>{d['start_time']}</b> تا <b>{d['end_time']}</b>\n"
+                        f"🏆 تعداد برنده: <b>{d['winners_count']} نفر</b>\n"
+                        f"🎁 جوایز:{prize_text}\n\n"
+                        "آیا تأیید می‌کنید؟",
+                        reply_markup=markup)
         
         except Exception as e:
             print(f"❌ خطا در handle_owner_state: {e}")
@@ -6073,6 +6288,192 @@ def start_token_bot():
 
         except Exception as e:
             print(f"❌ _rps_finish: {e}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 🎰 قرعه‌کشی — Scheduler
+    # ══════════════════════════════════════════════════════════════════════════
+    def _lottery_scheduler():
+        """
+        هر ۳۰ ثانیه چک می‌کند:
+        - آیا وقت شروع قرعه‌کشی رسیده؟ → پیام اعلام در کانال + دکمه شرکت
+        - آیا وقت پایان قرعه‌کشی رسیده؟ → قرعه‌کشی نهایی و اعلام برندگان
+        """
+        import json as _json
+        import uuid as _uuid
+
+        while True:
+            try:
+                time.sleep(30)
+                now_teh = _now_tehran()
+                raw = db.get_global_setting("lotteries", "[]")
+                try:
+                    lotteries = _json.loads(raw)
+                except Exception:
+                    lotteries = []
+
+                changed = False
+                for lot in lotteries:
+                    if lot.get("status") != "active":
+                        continue
+
+                    start_ts = lot.get("start_ts")
+                    end_ts = lot.get("end_ts")
+                    channel = lot.get("channel") or getattr(config, "WC_CHANNEL_ID", "")
+
+                    if not channel:
+                        continue
+
+                    # تبدیل رشته به datetime
+                    try:
+                        start_dt = datetime.datetime.fromisoformat(start_ts)
+                        end_dt = datetime.datetime.fromisoformat(end_ts)
+                    except Exception:
+                        continue
+
+                    # اطمینان از timezone
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=_TEHRAN_OFFSET)
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=_TEHRAN_OFFSET)
+
+                    # ── اعلام شروع قرعه‌کشی ──────────────────────────────
+                    if not lot.get("announced") and now_teh >= start_dt:
+                        try:
+                            prizes = lot.get("prizes", [])
+                            ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم",
+                                        "ششم", "هفتم", "هشتم", "نهم", "دهم"]
+                            prize_lines = ""
+                            for i, p in enumerate(prizes):
+                                ord_name = ordinals[i] if i < len(ordinals) else f"{i+1}م"
+                                medals = ["🥇","🥈","🥉","🏅","🏅","🏅","🏅","🏅","🏅","🏅"]
+                                medal = medals[i] if i < len(medals) else "🎁"
+                                prize_lines += f"\n{medal} نفر {ord_name}: <b>{p}</b>"
+
+                            msg_text = (
+                                "🎰 <b>قرعه‌کشی شروع شد!</b>\n\n"
+                                f"⏰ مهلت شرکت: تا ساعت <b>{lot['end_time']}</b>\n"
+                                f"🏆 تعداد برنده: <b>{lot['winners_count']} نفر</b>\n"
+                                f"🎁 جوایز:{prize_lines}\n\n"
+                                "👇 برای شرکت روی دکمه کلیک کنید:"
+                            )
+                            markup = types.InlineKeyboardMarkup()
+                            markup.add(types.InlineKeyboardButton(
+                                "🎰 شرکت در قرعه‌کشی",
+                                callback_data=f"join_lottery_{lot['id']}"
+                            ))
+                            sent_msg = _bot.send_message(channel, msg_text,
+                                parse_mode="HTML", reply_markup=markup)
+                            lot["announced"] = True
+                            lot["announce_msg_id"] = sent_msg.message_id
+                            lot["announce_chat_id"] = sent_msg.chat.id
+                            changed = True
+                            print(f"✅ قرعه‌کشی {lot['id']} اعلام شد")
+                        except Exception as e:
+                            print(f"❌ خطا در اعلام قرعه‌کشی: {e}")
+
+                    # ── پایان قرعه‌کشی و انتخاب برندگان ─────────────────
+                    if lot.get("announced") and not lot.get("finished") and now_teh >= end_dt:
+                        try:
+                            participants = lot.get("participants", [])
+                            winners_count = lot.get("winners_count", 1)
+                            prizes = lot.get("prizes", [])
+
+                            if not participants:
+                                result_text = (
+                                    "🎰 <b>نتیجه قرعه‌کشی</b>\n\n"
+                                    "😔 متأسفانه هیچ‌کس در قرعه‌کشی شرکت نکرد."
+                                )
+                            else:
+                                # انتخاب تصادفی برندگان
+                                pool = list(participants)
+                                random.shuffle(pool)
+                                selected = pool[:min(winners_count, len(pool))]
+                                # مرتب کردن تصادفی برای رتبه‌بندی
+                                random.shuffle(selected)
+
+                                ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم",
+                                            "ششم", "هفتم", "هشتم", "نهم", "دهم"]
+                                medals = ["🥇","🥈","🥉","🏅","🏅","🏅","🏅","🏅","🏅","🏅"]
+
+                                winner_lines = ""
+                                for i, winner in enumerate(selected):
+                                    ord_name = ordinals[i] if i < len(ordinals) else f"{i+1}م"
+                                    medal = medals[i] if i < len(medals) else "🎁"
+                                    prize = prizes[i] if i < len(prizes) else "—"
+                                    name = winner.get("name", "کاربر")
+                                    username = winner.get("username")
+                                    mention = f"@{username}" if username else name
+                                    winner_lines += f"\n{medal} نفر {ord_name}: {mention} — <b>{prize}</b>"
+
+                                result_text = (
+                                    "🎉 <b>نتایج قرعه‌کشی اعلام شد!</b>\n\n"
+                                    f"🏆 برندگان ({len(selected)} نفر):{winner_lines}\n\n"
+                                    "🎊 تبریک به برندگان عزیز!"
+                                )
+
+                            _bot.send_message(channel, result_text, parse_mode="HTML")
+                            lot["finished"] = True
+                            lot["status"] = "done"
+                            changed = True
+                            print(f"✅ قرعه‌کشی {lot['id']} پایان یافت")
+                        except Exception as e:
+                            print(f"❌ خطا در پایان قرعه‌کشی: {e}")
+
+                if changed:
+                    db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
+
+            except Exception as e:
+                print(f"❌ خطا در lottery_scheduler: {e}")
+
+    # ── handler شرکت در قرعه‌کشی (از کانال) ─────────────────────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("join_lottery_"))
+    def callback_join_lottery(call):
+        import json as _json
+        lot_id = call.data[len("join_lottery_"):]
+        uid = call.from_user.id
+        user = call.from_user
+
+        try:
+            raw = db.get_global_setting("lotteries", "[]")
+            lotteries = _json.loads(raw)
+        except Exception:
+            lotteries = []
+
+        for lot in lotteries:
+            if lot.get("id") == lot_id and lot.get("status") == "active":
+                participants = lot.get("participants", [])
+                # بررسی تکراری نبودن
+                already = any(p.get("user_id") == uid for p in participants)
+                if already:
+                    return _bot.answer_callback_query(call.id, "✅ شما قبلاً ثبت‌نام کرده‌اید!", show_alert=True)
+
+                # بررسی وقت
+                now_teh = _now_tehran()
+                try:
+                    end_dt = datetime.datetime.fromisoformat(lot["end_ts"])
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=_TEHRAN_OFFSET)
+                    if now_teh > end_dt:
+                        return _bot.answer_callback_query(call.id, "⏰ مهلت شرکت تمام شده است.", show_alert=True)
+                except Exception:
+                    pass
+
+                participants.append({
+                    "user_id": uid,
+                    "name": f"{user.first_name or ''} {user.last_name or ''}".strip() or "کاربر",
+                    "username": user.username
+                })
+                lot["participants"] = participants
+                db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
+                return _bot.answer_callback_query(call.id,
+                    f"✅ ثبت‌نام شما انجام شد! ({len(participants)} نفر شرکت کرده‌اند)",
+                    show_alert=True)
+
+        _bot.answer_callback_query(call.id, "❌ قرعه‌کشی یافت نشد یا پایان یافته.", show_alert=True)
+
+    # اجرای thread قرعه‌کشی
+    t_lottery = threading.Thread(target=_lottery_scheduler, daemon=True)
+    t_lottery.start()
 
     # ══════════════════════════════════════════════════════════════════════════
     # Polling
