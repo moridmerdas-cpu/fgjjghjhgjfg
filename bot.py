@@ -1,6 +1,7 @@
 import asyncio
 import re
 import os
+import json
 import datetime
 import random
 import threading
@@ -371,6 +372,14 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         chat_id = getattr(chat, "id", 0)
         text = msg.text or ""
 
+        # ✅ سکوت: اگه فرستنده توی لیست سکوت باشه و پیوی باشه، پیام دوطرفه پاک می‌شه
+        if event.is_private and sender_id and _is_silence_user(owner_id, sender_id):
+            try:
+                await msg.delete(revoke=True)
+            except Exception:
+                pass
+            return
+
         # ✅ بررسی آیا ربات تگ شده است (برای گروه‌ها)
         is_tagged = False
         if not event.is_private:
@@ -593,6 +602,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "تنظیم دشمن", "حذف دشمن", "نمایش لیست دشمن", "پاک کردن لیست دشمن",
             "تنظیم دوست", "حذف دوست", "نمایش لیست دوست", "پاک کردن لیست دوست",
             "سایلنت چت روشن", "سایلنت چت خاموش", "سایلنت کاربر", "لغو سایلنت کاربر",
+            "سکوت", "لغو سکوت", "لیست سکوت",
             "فونت ", "لیست فونت", "فونت متن روشن", "فونت متن خاموش", "بنویس ",
             "بولد ", "ایتالیک ", "مونو ", "اسپویلر ", "کوت ", "خط‌خورده ", "زیرخط ",
             "ذخیره ", "ارسال ذخیره ",
@@ -802,6 +812,38 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text.startswith("لغو سایلنت کاربر "):
         uid = int(text.split()[-1])
         db.remove_silent_user(owner_id, uid); await edit(f"🔔 سایلنت کاربر {uid} برداشته شد.")
+
+    # ─── سکوت (حذف خودکار دوطرفه‌ی پیام‌های یک کاربر در پیوی) ─────────────────
+    elif text.startswith("سکوت"):
+        parts = text.split()
+        target = await _resolve_target_or_username(cl, event, parts)
+        if target:
+            added = _add_silence_user(owner_id, target["id"], target.get("username"), target.get("name"))
+            if added:
+                await edit(f"🔇 سکوت برای {target.get('name') or target['id']} فعال شد؛ پیام‌های پیوی این کاربر از این به بعد دوطرفه پاک می‌شود.")
+            else:
+                await edit("❗ این کاربر از قبل توی لیست سکوت بود.")
+        else:
+            await edit("❗ روی پیام کاربر ریپلای کن یا آیدی عددی/یوزرنیمش رو بنویس. مثال: سکوت 123456789")
+
+    elif text.startswith("لغو سکوت"):
+        parts = text.split()
+        target = await _resolve_target_or_username(cl, event, parts)
+        if target:
+            removed = _remove_silence_user(owner_id, target["id"])
+            await edit("🔔 سکوت این کاربر برداشته شد." if removed else "❗ این کاربر توی لیست سکوت نبود.")
+        else:
+            await edit("❗ روی پیام کاربر ریپلای کن یا آیدی عددی/یوزرنیمش رو بنویس. مثال: لغو سکوت 123456789")
+
+    elif text == "لیست سکوت":
+        users = _get_silence_users(owner_id)
+        if not users:
+            await edit("📋 لیست سکوت خالی است.")
+        else:
+            lines = [f"🔇 لیست سکوت ({len(users)} نفر):\n"]
+            for u in users:
+                lines.append(f"• {u.get('name') or u.get('username') or u['id']} — `{u['id']}`")
+            await edit("\n".join(lines))
 
     # ─── پاسخ دشمن ───────────────────────────────────────────────────────────
     elif text == "پاسخ دشمن روشن":
@@ -1181,6 +1223,70 @@ async def _resolve_target(event, parts):
     return None
 
 
+async def _resolve_target_or_username(cl, event, parts):
+    """
+    مثل _resolve_target ولی علاوه بر ریپلای و آیدی عددی، یوزرنیم (@user یا user) را
+    هم با کوئری گرفتن از تلگرام به آیدی عددی تبدیل می‌کند. برای دستور «سکوت» استفاده می‌شود.
+    """
+    target = await _resolve_target(event, parts)
+    if target:
+        return target
+    for p in parts[1:]:
+        candidate = p.lstrip("@")
+        if not candidate:
+            continue
+        try:
+            entity = await cl.get_entity(candidate)
+            return {
+                "id": entity.id,
+                "username": getattr(entity, "username", None),
+                "name": getattr(entity, "first_name", None) or candidate,
+            }
+        except Exception:
+            continue
+    return None
+
+
+# ─── سکوت: حذف خودکار و دوطرفه‌ی پیام‌های یک کاربر خاص در پیوی ────────────────
+_SILENCE_KEY = "silence_users"
+
+
+def _get_silence_users(owner_id: int) -> list:
+    raw = db.get_setting(owner_id, _SILENCE_KEY, "")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+def _save_silence_users(owner_id: int, users: list):
+    db.set_setting(owner_id, _SILENCE_KEY, json.dumps(users))
+
+
+def _add_silence_user(owner_id: int, user_id: int, username=None, name=None):
+    users = _get_silence_users(owner_id)
+    if any(u["id"] == user_id for u in users):
+        return False
+    users.append({"id": user_id, "username": username, "name": name})
+    _save_silence_users(owner_id, users)
+    return True
+
+
+def _remove_silence_user(owner_id: int, user_id: int) -> bool:
+    users = _get_silence_users(owner_id)
+    new_users = [u for u in users if u["id"] != user_id]
+    if len(new_users) == len(users):
+        return False
+    _save_silence_users(owner_id, new_users)
+    return True
+
+
+def _is_silence_user(owner_id: int, user_id: int) -> bool:
+    return any(u["id"] == user_id for u in _get_silence_users(owner_id))
+
+
 async def _do_spam(cl, owner_id, chat_id, text, count):
     # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
     delay = float(db.get_setting(owner_id, "spam_delay", "1"))
@@ -1470,6 +1576,10 @@ def _help_text():
             "قفل پیوی خاموش",
             "پاسخ دشمن روشن",
             "پاسخ دشمن خاموش",
+            "سکوت [آیدی یا یوزرنیم]  ← ریپلای یا آیدی/یوزرنیم",
+            "لغو سکوت [آیدی یا یوزرنیم]",
+            "لیست سکوت",
+            "💡 پیام‌های پیوی کاربر سکوت‌شده به‌صورت خودکار و دوطرفه پاک می‌شود",
         ]),
         ("🔹 جوین اجباری", [
             "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
