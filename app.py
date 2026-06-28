@@ -319,11 +319,11 @@ def start_bot_api():
         db.set_setting(oid, "self_bot_active", "1")
         tg_id = db.get_telegram_id_by_owner(oid)
         if tg_id == config.OWNER_TG_ID:
-            msg = "✅ سلف روشن شد — دسترسی رایگان مالک ♾️"
+            msg = "<tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> سلف روشن شد — دسترسی رایگان مالک ♾️"
         else:
             hours = config.SESSION_HOURS
             tokens = config.TOKENS_PER_SESSION
-            msg = f"✅ سلف روشن شد — {tokens} توکن کسر شد — {hours} ساعت فعال است"
+            msg = f"<tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> سلف روشن شد — {tokens} توکن کسر شد — {hours} ساعت فعال است"
         return jsonify({"ok": True, "message": msg})
     else:
         balance = db.get_token_balance(oid)
@@ -520,13 +520,13 @@ def remove_forced_channel(username):
 if __name__ == "__main__":
     # ۱. ایجاد جداول (اگر موجود نیستند)
     db.init_tables()
-    print("✅ جداول Supabase بررسی/ایجاد شدند")
+    print("<tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> جداول Supabase بررسی/ایجاد شدند")
     
     # ۲. استارت Heartbeat Manager
     from heartbeat import get_heartbeat_manager
     hb = get_heartbeat_manager()
     hb.start()
-    print("✅ Heartbeat Manager استارت شد")
+    print("<tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> Heartbeat Manager استارت شد")
     
     # ۳. استارت ربات توکن
     from telegram_bot import start_token_bot
@@ -535,7 +535,7 @@ if __name__ == "__main__":
     # ۴. استارت بات برای همه کاربران لاگین‌شده
     loop = get_loop()
     for oid in db.get_all_logged_in_users():
-        # ✅ هر کاربر جدا try/except دارد — اگر استارت یک کاربر با خطا مواجه شود
+        # <tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> هر کاربر جدا try/except دارد — اگر استارت یک کاربر با خطا مواجه شود
         # (مثلاً یک هیکاپ لحظه‌ای دیتابیس/تلگرام)، دیگر کاربرهای بعدی در این
         # لیست بی‌خبر نمی‌مانند و استارت‌شان متوقف نمی‌شود (قبلاً یک خطا برای
         # یک کاربر، کل حلقه را متوقف می‌کرد و باقی کاربرها هرگز ری‌استارت
@@ -544,8 +544,8 @@ if __name__ == "__main__":
             bot_manager.start(oid, loop, check_tokens=False, is_restart=True)
             print(f"🚀 بات کاربر {oid} استارت شد.")
         except Exception as e:
-            print(f"❌ خطا در استارت خودکار کاربر {oid}: {e} — کاربر بعدی ادامه می‌یابد")
-        # ✅ فاصله‌ی کوچک بین استارت‌ها تا تلگرام همه‌ی این اتصال‌های هم‌زمان
+            print(f"<tg-emoji emoji-id="5832353674281620438">❌</tg-emoji> خطا در استارت خودکار کاربر {oid}: {e} — کاربر بعدی ادامه می‌یابد")
+        # <tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> فاصله‌ی کوچک بین استارت‌ها تا تلگرام همه‌ی این اتصال‌های هم‌زمان
         # را به‌عنوان رفتار مشکوک/فلود نبیند
         time.sleep(0.3)
 
@@ -564,11 +564,11 @@ if __name__ == "__main__":
                             print(f"🩺 واچ‌داگ: سلف کاربر {oid} روشن نبود — تلاش برای ری‌استارت خودکار")
                             bot_manager.start(oid, get_loop(), check_tokens=False, is_restart=True)
                     except Exception as e:
-                        print(f"⚠️ واچ‌داگ: خطا در بررسی/ری‌استارت کاربر {oid}: {e}")
+                        print(f"<tg-emoji emoji-id="5830451652309553634"><tg-emoji emoji-id="5830451652309553634">⚠</tg-emoji>️</tg-emoji> واچ‌داگ: خطا در بررسی/ری‌استارت کاربر {oid}: {e}")
             except Exception as e:
-                print(f"⚠️ واچ‌داگ: خطای کلی: {e}")
+                print(f"<tg-emoji emoji-id="5830451652309553634"><tg-emoji emoji-id="5830451652309553634">⚠</tg-emoji>️</tg-emoji> واچ‌داگ: خطای کلی: {e}")
 
     threading.Thread(target=_self_heal_watchdog, daemon=True).start()
-    print("✅ واچ‌داگ سلامت سلف‌ها استارت شد")
+    print("<tg-emoji emoji-id="5830326445422940546">✅</tg-emoji> واچ‌داگ سلامت سلف‌ها استارت شد")
 
     app.run(host="0.0.0.0", port=config.PORT, debug=False)
