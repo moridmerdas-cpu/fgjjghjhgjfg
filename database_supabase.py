@@ -1352,3 +1352,60 @@ except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")
 
 print("✅ database_supabase.py بارگذاری شد!")
+
+
+# ─── توابع جدید دسترسی ادمین‌های فرعی ────────────────────────────────────────
+
+ADMIN_PERMISSIONS = [
+    ("channels", "📢 چنل‌های اجباری"),
+    ("users", "👥 کاربران"),
+    ("wc", "🏆 جام جهانی"),
+    ("today_games", "📅 بازی‌های امروز"),
+    ("transfer", "💎 انتقال الماس"),
+    ("give", "💰 دادن الماس"),
+    ("set_card", "💳 تنظیم شماره کارت"),
+    ("payments", "🧾 پرداخت‌های معلق"),
+    ("broadcast", "📣 پیام عمومی"),
+    ("missions", "🎯 ماموریت‌ها"),
+    ("wc_participants", "👥 شرکت‌کنندگان جام"),
+    ("gift", "🎁 هدیه"),
+    ("guide_manage", "📚 مدیریت راهنما"),
+    ("welcome_settings", "✏️ تنظیمات خوش‌آمد"),
+]
+
+# اضافه کردن ستون permissions در صورت نیاز
+try:
+    execute_query("ALTER TABLE amel_sub_admins ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT ''")
+except Exception:
+    pass
+
+
+def get_sub_admin(telegram_id: int) -> dict:
+    try:
+        r = execute_query("SELECT * FROM amel_sub_admins WHERE telegram_id=%s", (telegram_id,), fetch_one=True)
+        return dict(r) if r else {}
+    except Exception:
+        return {}
+
+
+def update_sub_admin_permissions(telegram_id: int, permissions: str) -> bool:
+    try:
+        execute_query(
+            "UPDATE amel_sub_admins SET permissions=%s WHERE telegram_id=%s",
+            (permissions, telegram_id)
+        )
+        return True
+    except Exception as e:
+        print(f"❌ update_sub_admin_permissions error: {e}")
+        return False
+
+
+def sub_admin_has_permission(telegram_id: int, perm: str) -> bool:
+    try:
+        r = execute_query("SELECT permissions FROM amel_sub_admins WHERE telegram_id=%s", (telegram_id,), fetch_one=True)
+        if not r:
+            return False
+        perms = (r["permissions"] or "").split(",")
+        return perm in perms
+    except Exception:
+        return False

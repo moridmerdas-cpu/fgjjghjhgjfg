@@ -395,3 +395,20 @@ def get_sub_admins() -> list:
 
 def is_sub_admin(telegram_id: int) -> bool:
     return supa_is_sub_admin(telegram_id)
+
+# ─── توابع جدید دسترسی ادمین‌های فرعی ────────────────────────────────────────
+from database_supabase import (
+    get_sub_admin as supa_get_sub_admin,
+    update_sub_admin_permissions as supa_update_sub_admin_permissions,
+    sub_admin_has_permission as supa_sub_admin_has_permission,
+    ADMIN_PERMISSIONS,
+)
+
+def get_sub_admin(telegram_id: int) -> dict:
+    return supa_get_sub_admin(telegram_id)
+
+def update_sub_admin_permissions(telegram_id: int, permissions: str) -> bool:
+    return supa_update_sub_admin_permissions(telegram_id, permissions)
+
+def sub_admin_has_permission(telegram_id: int, perm: str) -> bool:
+    return supa_sub_admin_has_permission(telegram_id, perm)

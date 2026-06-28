@@ -291,7 +291,6 @@ def start_token_bot():
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
             types.KeyboardButton("🤖 مدیریت سلف", style="primary"),  # 🔵 آبی
-            types.KeyboardButton("📖 راهنما", style="success")        # 🟢 سبز
         )
         return markup
 
@@ -300,9 +299,6 @@ def start_token_bot():
         markup.add(
             types.KeyboardButton("📢 مدیریت", style="danger"),        # 🔴 قرمز
             types.KeyboardButton("🤖 مدیریت سلف", style="primary")   # 🔵 آبی
-        )
-        markup.add(
-            types.KeyboardButton("📖 راهنما", style="success")        # 🟢 سبز
         )
         return markup
 
@@ -2801,22 +2797,52 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 Callback handler پنل مدیریت
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_") or call.data in ("guide_type_media", "guide_type_text"))
+    def _get_sub_admin_perm_for_data(data):
+        """بازگشت کلید دسترسی متناظر با callback data برای ادمین فرعی"""
+        _perm_prefixes = [
+            ("admin_channels", "channels"), ("rmch_", "channels"), ("addch_prompt", "channels"),
+            ("admin_users", "users"),
+            ("admin_wc_participants", "wc_participants"),
+            ("admin_wc", "wc"), ("wcwin_", "wc"), ("wc_", "wc"),
+            ("admin_today_games", "today_games"),
+            ("admin_transfer", "transfer"),
+            ("admin_give", "give"),
+            ("admin_set_card", "set_card"),
+            ("admin_payments", "payments"),
+            ("admin_broadcast", "broadcast"),
+            ("admin_missions", "missions"), ("add_mission_prompt", "missions"), ("del_mission_", "missions"),
+            ("admin_gift", "gift"),
+            ("admin_guide_manage", "guide_manage"), ("admin_guide_add", "guide_manage"),
+            ("guide_type_media", "guide_manage"), ("guide_type_text", "guide_manage"),
+            ("admin_welcome_settings", "welcome_settings"),
+        ]
+        for prefix, perm in _perm_prefixes:
+            if data.startswith(prefix) or data == prefix:
+                return perm
+        return None
+
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_") or call.data in ("guide_type_media", "guide_type_text") or call.data.startswith("admin_perm_"))
     def callback_admin(call):
-        # guide_type callbacks هم برای ادمین‌های فرعی مجاز هست
-        if call.data in ("guide_type_media", "guide_type_text"):
-            if call.from_user.id != OWNER_TG_ID and not db.is_sub_admin(call.from_user.id):
+        uid = call.from_user.id
+        data = call.data
+
+        if uid != OWNER_TG_ID:
+            # ادمین فرعی: فقط admin_panel و دسترسی‌های مجاز
+            if not db.is_sub_admin(uid):
                 return _bot.answer_callback_query(call.id, "❌ دسترسی ندارید", show_alert=True)
-        elif call.from_user.id != OWNER_TG_ID:
-            return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
+            # مدیریت دسترسی‌ها فقط برای مالک
+            if data.startswith("admin_perm_") or data == "admin_manage_admins" or data == "admin_add_admin" or data.startswith("admin_del_admin_"):
+                return _bot.answer_callback_query(call.id, "❌ این بخش فقط برای مالک است", show_alert=True)
+            if data not in ("admin_panel", "admin_back"):
+                perm = _get_sub_admin_perm_for_data(data)
+                if perm is None or not db.sub_admin_has_permission(uid, perm):
+                    return _bot.answer_callback_query(call.id, "❌ شما به این بخش دسترسی ندارید", show_alert=True)
         
         # دکمه‌های غیرفعال (نمایشی)
         if call.data == "admin_users_noop":
             return _bot.answer_callback_query(call.id)
         
         try:
-            data = call.data
-            
             if data == "admin_panel" or data == "admin_back":
                 _bot.edit_message_text(
                     "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
@@ -3644,10 +3670,15 @@ def start_token_bot():
                     text_lines = [f"👮 <b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
                     for a in admins:
                         name = a.get("name") or "بدون نام"
-                        tg_id = a["telegram_id"]
-                        text_lines.append(f"• {name} — <code>{tg_id}</code>")
+                        tg_id_a = a["telegram_id"]
+                        perms = a.get("permissions") or ""
+                        perm_count = len([p for p in perms.split(",") if p]) if perms else 0
+                        text_lines.append(f"• {name} — <code>{tg_id_a}</code> | {perm_count} دسترسی")
                         markup.add(types.InlineKeyboardButton(
-                            f"❌ حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
+                            f"🔑 دسترسی‌های {name}", callback_data=f"admin_perm_edit_{tg_id_a}", style="primary"
+                        ))
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف {name}", callback_data=f"admin_del_admin_{tg_id_a}", style="danger"
                         ))
                     admin_text = "\n".join(text_lines)
                 else:
@@ -3704,6 +3735,62 @@ def start_token_bot():
                     reply_markup=markup
                 )
                 _bot.answer_callback_query(call.id, "✅ ادمین حذف شد")
+                return
+
+            elif data.startswith("admin_perm_edit_"):
+                # ── ویرایش دسترسی‌های یک ادمین فرعی ─────────────────────────
+                edit_tg_id = int(data[len("admin_perm_edit_"):])
+                admin_info = db.get_sub_admin(edit_tg_id)
+                if not admin_info:
+                    _bot.answer_callback_query(call.id, "❌ ادمین یافت نشد", show_alert=True)
+                    return
+                current_perms = set((admin_info.get("permissions") or "").split(","))
+                current_perms.discard("")
+                name = admin_info.get("name") or "بدون نام"
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                for perm_key, perm_label in db.ADMIN_PERMISSIONS:
+                    has_perm = perm_key in current_perms
+                    icon = "✅" if has_perm else "⬜️"
+                    markup.add(types.InlineKeyboardButton(
+                        f"{icon} {perm_label}",
+                        callback_data=f"admin_perm_toggle_{edit_tg_id}_{perm_key}",
+                        style="success" if has_perm else "primary"
+                    ))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت به ادمین‌ها", callback_data="admin_manage_admins", style="danger"))
+                _bot.edit_message_text(
+                    f"🔑 <b>دسترسی‌های ادمین: {name}</b>\n<code>{edit_tg_id}</code>\n\n"
+                    "برای فعال/غیرفعال کردن هر بخش روی آن کلیک کنید:\n"
+                    "✅ = دسترسی دارد | ⬜️ = دسترسی ندارد",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_perm_toggle_"):
+                # ── تغییر وضعیت یک دسترسی ────────────────────────────────────
+                parts = data[len("admin_perm_toggle_"):].split("_", 1)
+                if len(parts) < 2:
+                    return _bot.answer_callback_query(call.id)
+                toggle_tg_id = int(parts[0])
+                perm_key = parts[1]
+                admin_info = db.get_sub_admin(toggle_tg_id)
+                if not admin_info:
+                    return _bot.answer_callback_query(call.id, "❌ ادمین یافت نشد", show_alert=True)
+                current_perms = set((admin_info.get("permissions") or "").split(","))
+                current_perms.discard("")
+                if perm_key in current_perms:
+                    current_perms.discard(perm_key)
+                    msg = "❌ دسترسی حذف شد"
+                else:
+                    current_perms.add(perm_key)
+                    msg = "✅ دسترسی اضافه شد"
+                db.update_sub_admin_permissions(toggle_tg_id, ",".join(current_perms))
+                _bot.answer_callback_query(call.id, msg)
+                # رفرش صفحه دسترسی‌ها
+                call.data = f"admin_perm_edit_{toggle_tg_id}"
+                callback_admin(call)
                 return
 
             elif data == "admin_missions":
