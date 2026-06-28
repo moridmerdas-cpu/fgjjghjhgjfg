@@ -8,6 +8,11 @@ import datetime
 import random
 import re
 
+# ─── تابع ایموجی پرمیوم تلگرام ──────────────────────────────────────────────
+def _pe(emoji_id: str, fallback: str = "") -> str:
+    """تبدیل آی‌دی ایموجی پرمیوم تلگرام به تگ HTML مناسب"""
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
 # ─── وقت تهران ───────────────────────────────────────────────────────────────
 _TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 
