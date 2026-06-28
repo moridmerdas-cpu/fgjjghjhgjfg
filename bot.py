@@ -8,6 +8,7 @@ import time
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
+from telethon.tl.types import InputMediaDice
 from telethon.errors import FloodWaitError
 import database as db
 import config
@@ -35,29 +36,6 @@ LINK_PATTERN = re.compile(
 _POST_LINK_RE = re.compile(
     r"^(?:https?://)?t\.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
 )
-
-# ─── بازی‌های تاسی پشتیبانی‌شده توسط تلگرام (تاس، دارت، بسکتبال، پنالتی، بولینگ، لاتاری/اسلات) ──
-DICE_GAMES = {
-    "🎲": {"max": 6,  "win": 6,  "names": ["تاس"]},
-    "🎯": {"max": 6,  "win": 6,  "names": ["دارت"]},
-    "🏀": {"max": 5,  "win": 5,  "names": ["بسکتبال"]},
-    "⚽": {"max": 5,  "win": 5,  "names": ["پنالتی", "فوتبال"]},
-    "🎳": {"max": 6,  "win": 6,  "names": ["بولینگ"]},
-    "🎰": {"max": 64, "win": 64, "names": ["لاتاری", "اسلات"]},
-}
-
-# نگاشت نام فارسی هر بازی به ایموجی مربوطه (برای پارس کردن دستورات)
-_DICE_NAME_TO_EMOJI = {}
-for _emoji, _info in DICE_GAMES.items():
-    for _name in _info["names"]:
-        _DICE_NAME_TO_EMOJI[_name] = _emoji
-
-# الگوی تشخیص دستورات بازی‌های تاسی: «تاس»، «تاس 4»، «بسکتبال گل»، «لاتاری جکپات» و ...
-_DICE_GAME_RE = re.compile(
-    r"^(" + "|".join(sorted(_DICE_NAME_TO_EMOJI.keys(), key=len, reverse=True)) + r")\s*(\S*)$"
-)
-# کلیدواژه‌های قدیمی/کمکی که یعنی «بیشترین مقدار ممکن» برای همان بازی
-_DICE_MAX_KEYWORDS = {"گل", "مرکز", "کامل", "جکپات"}
 
 # ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
 _last_secretary_reply = {}  # {chat_id: timestamp}
@@ -377,46 +355,30 @@ class BotManager:
 bot_manager = BotManager()
 
 
-# ─── تابع کمکی: ارسال تاس/بازی تا رسیدن به مقدار هدف ──────────────────────────
-async def _send_dice_until(cl, chat_id, emoji: str, target: int, reply_to=None):
-    """
-    تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد، بعد یک پیام تایید می‌فرسته.
-    - اگه reply_to داده شده باشه (آیدی پیام ریپلای‌شده)، همه‌ی تلاش‌ها روی همون پیام ریپلای می‌شن.
-    - حذف پیام‌های اشتباه با بالاترین سرعت ممکن (بدون تاخیر مصنوعی) انجام می‌شه تا در چت دیده نشن.
-    - حذف از طریق cl.delete_messages با chat_id صریح انجام می‌شه (نه sent.delete())
-      چون در پیوی، resolve کردن peer از روی خود آبجکت پیام گاهی با خطا مواجه می‌شه و
-      حذف رو silently fail می‌کرد؛ این روش هم در گروه و هم در پیوی به‌طور یکسان کار می‌کند.
-    """
-    from telethon.tl.types import MessageMediaDice
+# ─── تابع کمکی: ارسال تاس تا رسیدن به مقدار هدف ────────────────────────────────
+async def send_dice(event, dice_type, target=None):
+    """بدون تاخیر — تاس می‌فرسته و فوری پاک می‌کنه تا نتیجه بیاد"""
+    reply_to = event.reply_to_msg_id   # ذخیره قبل از حذف پیام دستور
+    chat = await event.get_chat()
+    cl = event.client
+
     while True:
         try:
-            sent = await cl.send_file(chat_id, media=emoji, reply_to=reply_to)
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds + 1)
-            continue
+            sent = await cl.send_file(
+                chat.id,
+                file=InputMediaDice(dice_type),
+                reply_to=reply_to,
+            )
         except Exception:
             break
 
-        if not (hasattr(sent, "media") and isinstance(sent.media, MessageMediaDice)):
+        if target is None or (sent.media and sent.media.value == target):
             break
 
-        if sent.media.value == target:
-            try:
-                await cl.send_message(chat_id, f"{emoji} {target}", reply_to=reply_to)
-            except Exception:
-                pass
-            break
-
-        # ─── حذف فوری پیام اشتباه — بدون sleep، تا اصلا در چت دیده نشه ───────
-        for _attempt in range(3):
-            try:
-                await cl.delete_messages(chat_id, [sent.id], revoke=True)
-                break
-            except FloodWaitError as e:
-                await asyncio.sleep(e.seconds + 1)
-            except Exception:
-                # تلاش مجدد سریع (مخصوصا برای رفع مشکل عدم حذف در پیوی)
-                continue
+        try:
+            await sent.delete()
+        except Exception:
+            pass
 
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
@@ -665,8 +627,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تقلب روشن", "تقلب خاموش",
-        ] + list(_DICE_NAME_TO_EMOJI.keys())
+        ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
 
@@ -676,53 +637,50 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         await _handle_command(cl, event, text, owner_id, entry)
 
-    # ─── هندلر تقلب تاس/بسکتبال/پنالتی/دارت/بولینگ/لاتاری ───────────────────────
-    @cl.on(events.NewMessage(outgoing=True))
-    async def on_outgoing_dice(event):
-        if not event.message.media:
-            return
-        if entry.get("paused"):
-            return
-        if db.get_setting(owner_id, "cheat_active") != "1":
-            return
+    # ─── هندلرهای تاس برای تمام بازی‌های تلگرام ──────────────────────────────────
 
-        from telethon.tl.types import MessageMediaDice
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:تاس|roll)\s*([1-6])$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:تاس|roll)\s*([1-6])$"))
+    async def dice_handler(event):
+        """🎲 تاس — تاس [1-6] یا roll [1-6]"""
+        await event.delete()
+        target = int(event.pattern_match.group(1))
+        await send_dice(event, "🎲", target=target)
 
-        media = event.message.media
-        if not isinstance(media, MessageMediaDice):
-            return
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:پنالتی گل|پنالتی|penalty goal|penalty)$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:پنالتی گل|پنالتی|penalty goal|penalty)$"))
+    async def penalty_handler(event):
+        """⚽ پنالتی — تا رسیدن به گل (۵)"""
+        await event.delete()
+        await send_dice(event, "⚽", target=5)
 
-        emoji = media.emoticon
-        if emoji not in DICE_GAMES:
-            return
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:بسکتبال گل|بسکتبال|basketball goal|basketball)$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:بسکتبال گل|بسکتبال|basketball goal|basketball)$"))
+    async def basketball_handler(event):
+        """🏀 بسکتبال — تا رسیدن به گل (۵)"""
+        await event.delete()
+        await send_dice(event, "🏀", target=5)
 
-        # ── بررسی استثنا: گروه مدیریت و @gp_selfnexo ──────────────────────────
-        try:
-            chat = await event.get_chat()
-            chat_username = getattr(chat, "username", "") or ""
-            EXCLUDED_USERNAMES = {"gp_selfnexo"}
-            if chat_username.lower().lstrip("@") in EXCLUDED_USERNAMES:
-                return
-        except Exception:
-            return
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:دارت مرکز|دارت|dart center|dart)$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:دارت مرکز|دارت|dart center|dart)$"))
+    async def darts_handler(event):
+        """🎯 دارت — تا رسیدن به مرکز (۶)"""
+        await event.delete()
+        await send_dice(event, "🎯", target=6)
 
-        target_value = DICE_GAMES[emoji]["win"]
-        current_value = media.value
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:بولینگ استرایک|بولینگ|bowling strike|bowling)$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:بولینگ استرایک|بولینگ|bowling strike|bowling)$"))
+    async def bowling_handler(event):
+        """🎳 بولینگ — تا رسیدن به استرایک (۶)"""
+        await event.delete()
+        await send_dice(event, "🎳", target=6)
 
-        if current_value == target_value:
-            return  # همون اول برنده شد
-
-        # اگه تاس اصلی روی پیامی ریپلای شده بود، همون ریپلای رو برای کل تلاش‌ها حفظ کن
-        reply_to = event.message.reply_to_msg_id
-
-        # حذف پیام اشتباه — اگه نشد هم ادامه بده (مخصوصا برای رفع مشکل پیوی)
-        try:
-            await cl.delete_messages(chat.id, [event.message.id], revoke=True)
-        except Exception:
-            pass
-
-        await _send_dice_until(cl, chat.id, emoji, target_value, reply_to=reply_to)
-
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:لاتاری ۷۷۷|لاتاری|lottery 777|lottery)$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:لاتاری ۷۷۷|لاتاری|lottery 777|lottery)$"))
+    async def lottery_handler(event):
+        """🎰 لاتاری — تا رسیدن به جک‌پات ۷۷۷ (۶۴)"""
+        await event.delete()
+        await send_dice(event, "🎰", target=64)
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -1207,54 +1165,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
 
-    # ─── تقلب (تاس/بسکتبال/پنالتی/دارت) ────────────────────────────────────
-    elif text == "تقلب روشن":
-        ss("cheat_active", "1")
-        await edit(
-            "🎰 <b>حالت تقلب روشن شد!</b>\n\n"
-            "🎲 تاس ← همیشه ۶\n"
-            "🏀 بسکتبال ← همیشه گل\n"
-            "⚽ پنالتی ← همیشه گل\n"
-            "🎯 دارت ← همیشه مرکز\n\n"
-            "دستورات مستقیم (بدون نیاز به روشن بودن تقلب):\n"
-            "> `تاس 6` — تاس با عدد ۶\n"
-            "> `تاس [1-6]` — تاس با عدد دلخواه\n"
-            "> `بسکتبال گل` — بسکتبال گل\n"
-            "> `پنالتی گل` — پنالتی گل\n"
-            "> `دارت مرکز` — دارت مرکز\n\n"
-            "برای خاموش کردن: <code>تقلب خاموش</code>"
-        )
-
-    elif text == "تقلب خاموش":
-        ss("cheat_active", "0")
-        await edit("🎰 حالت تقلب خاموش شد.")
-
-    # ─── دستورات مستقیم بازی‌های تاسی: تاس، دارت، بسکتبال، پنالتی، بولینگ، لاتاری/اسلات ──
-    elif _DICE_GAME_RE.match(text):
-        m = _DICE_GAME_RE.match(text)
-        game_name, suffix = m.group(1), (m.group(2) or "").strip()
-        emoji = _DICE_NAME_TO_EMOJI[game_name]
-        info = DICE_GAMES[emoji]
-
-        if suffix.isdigit() and 1 <= int(suffix) <= info["max"]:
-            target_val = int(suffix)
-        elif suffix == "" or suffix in _DICE_MAX_KEYWORDS:
-            target_val = info["win"]
-        else:
-            target_val = None  # متن نامعتبر بعد از نام بازی → دستور نیست
-
-        if target_val is not None:
-            chat = await event.get_chat()
-            # اگه خود دستور روی پیامی ریپلای شده، همون پیام برای کل تلاش‌ها حفظ می‌شه
-            replied = await event.get_reply_message()
-            reply_to = replied.id if replied else None
-            try:
-                await cl.delete_messages(chat.id, [msg.id], revoke=True)
-            except Exception:
-                pass
-            await _send_dice_until(cl, chat.id, emoji, target_val, reply_to=reply_to)
-
-
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
@@ -1668,18 +1578,17 @@ def _help_text():
             "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
-        ("🎰 تقلب", [
-            "تقلب روشن  ← تقلب خودکار روی هر تاس/بازی",
-            "تقلب خاموش",
+        ("🎲 بازی‌های تاس", [
+            "تاس [1-6]  ← 🎲 تاس تا عدد دلخواه",
+            "roll [1-6]  ← همان دستور به انگلیسی",
+            "پنالتی  ← ⚽ تا گل (۵)",
+            "بسکتبال  ← 🏀 تا گل (۵)",
+            "دارت  ← 🎯 تا مرکز (۶)",
+            "بولینگ  ← 🎳 تا استرایک (۶)",
+            "لاتاری  ← 🎰 تا ۷۷۷ (جک‌پات)",
             "──────────────────",
-            "تاس [1-6]  ← مثلا: تاس 6",
-            "دارت [1-6]  ← مثلا: دارت مرکز (یا دارت 6)",
-            "بسکتبال [1-5]  ← مثلا: بسکتبال گل (یا بسکتبال 5)",
-            "پنالتی [1-5]  ← مثلا: پنالتی گل (یا پنالتی 5)",
-            "بولینگ [1-6]  ← مثلا: بولینگ کامل (یا بولینگ 6)",
-            "لاتاری [1-64]  ← مثلا: لاتاری جکپات (یا لاتاری 64)",
-            "💡 دستورات مستقیم نیاز به روشن بودن تقلب ندارند",
-            "💡 اگه روی پیامی ریپلای کنی و دستور رو بفرستی، همه‌ی تلاش‌ها روی همون پیام ریپلای می‌شن",
+            "💡 ریپلای روی پیامی = تمام تاس‌ها روی اون ریپلای می‌شن",
+            "💡 تاس‌های اشتباه فوری پاک می‌شن (دیده نمی‌شن)",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
