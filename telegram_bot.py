@@ -695,7 +695,7 @@ def start_token_bot():
                 if not to_account:
                     return _bot.reply_to(message, "❌ این کاربر در پنل وب ثبت‌نام نکرده است.")
 
-                success, msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
+                success, _raw_msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
 
                 if success:
                     cache.invalidate(f"account_{message.from_user.id}")
@@ -704,10 +704,24 @@ def start_token_bot():
                         try:
                             _bot.send_message(
                                 to_tg_id,
-                                f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                                f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!",
+                                parse_mode="HTML"
                             )
                         except Exception:
                             pass
+                    msg = (
+                        f'<tg-emoji emoji-id="5278467510604160626">💎</tg-emoji> '
+                        f'<b>{amount}</b> الماس با موفقیت انتقال یافت '
+                        f'<tg-emoji emoji-id="6111444480286528430">✅</tg-emoji>\n\n'
+                        f'<tg-emoji emoji-id="5782766782200682322">🐦</tg-emoji>'
+                        f'<b>فرستنده:</b> {from_account["username"]}\n'
+                        f'<tg-emoji emoji-id="4958472587123360612">💎</tg-emoji>'
+                        f'<b>گیرنده:</b> {to_account["username"]}\n'
+                        f'<tg-emoji emoji-id="4956601935592424315">💵</tg-emoji>'
+                        f'<b>مالیات:</b> 0 الماس'
+                    )
+                else:
+                    msg = _raw_msg
 
                 return _bot.reply_to(message, msg, parse_mode="HTML")
 
@@ -734,7 +748,7 @@ def start_token_bot():
             if to_account["id"] == from_account["id"]:
                 return _bot.reply_to(message, "❌ نمی‌توانید به خودتان الماس انتقال دهید.")
             
-            success, msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
+            success, _raw_msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
             
             if success:
                 cache.invalidate(f"account_{message.from_user.id}")
@@ -743,10 +757,24 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             to_tg_id,
-                            f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                            f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!",
+                            parse_mode="HTML"
                         )
                     except:
                         pass
+                msg = (
+                    f'<tg-emoji emoji-id="5278467510604160626">💎</tg-emoji> '
+                    f'<b>{amount}</b> الماس با موفقیت انتقال یافت '
+                    f'<tg-emoji emoji-id="6111444480286528430">✅</tg-emoji>\n\n'
+                    f'<tg-emoji emoji-id="5782766782200682322">🐦</tg-emoji>'
+                    f'<b>فرستنده:</b> {from_account["username"]}\n'
+                    f'<tg-emoji emoji-id="4958472587123360612">💎</tg-emoji>'
+                    f'<b>گیرنده:</b> {to_account["username"]}\n'
+                    f'<tg-emoji emoji-id="4956601935592424315">💵</tg-emoji>'
+                    f'<b>مالیات:</b> 0 الماس'
+                )
+            else:
+                msg = _raw_msg
             
             _bot.reply_to(message, msg, parse_mode="HTML")
             
