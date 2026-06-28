@@ -138,44 +138,6 @@ _owner_states = {}
 _active_bets = {}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 👮 ادمین‌های فرعی (افزوده‌شده توسط مالک) — ذخیره‌سازی پایدار با global_setting
-# ══════════════════════════════════════════════════════════════════════════════
-_SUB_ADMINS_SETTING_KEY = "sub_admins"
-
-def _get_sub_admins():
-    """مجموعه آیدی عددی تلگرام تمام ادمین‌های فرعی را برمی‌گرداند."""
-    try:
-        raw = db.get_global_setting(_SUB_ADMINS_SETTING_KEY, "") or ""
-    except Exception:
-        raw = ""
-    ids = set()
-    for part in raw.split(","):
-        part = part.strip()
-        if part.lstrip("-").isdigit():
-            ids.add(int(part))
-    return ids
-
-def _add_sub_admin(tg_id):
-    """یک ادمین فرعی جدید اضافه و در دیتابیس ذخیره می‌کند."""
-    ids = _get_sub_admins()
-    ids.add(int(tg_id))
-    try:
-        db.set_global_setting(_SUB_ADMINS_SETTING_KEY, ",".join(str(i) for i in ids))
-    except Exception as e:
-        print(f"❌ خطا در ذخیره ادمین فرعی: {e}")
-    return ids
-
-def _is_sub_admin(tg_id):
-    try:
-        return int(tg_id) in _get_sub_admins()
-    except Exception:
-        return False
-
-def _is_admin_user(tg_id):
-    """مالک یا هر ادمین فرعی که توسط مالک اضافه شده باشد."""
-    return tg_id == OWNER_TG_ID or _is_sub_admin(tg_id)
-
-# ══════════════════════════════════════════════════════════════════════════════
 # 🔐 سیستم ساخت اکانت و لاگین تلگرام از طریق ربات
 # ══════════════════════════════════════════════════════════════════════════════
 _reg_sessions: dict = {}
@@ -326,19 +288,21 @@ def start_token_bot():
         return True
 
     def _user_keyboard(show_remove_self=True):
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton("🤖 مدیریت سلف", style="primary")  # 🔵 آبی
+            types.KeyboardButton("🤖 مدیریت سلف", style="primary"),  # 🔵 آبی
+            types.KeyboardButton("📖 راهنما", style="success")        # 🟢 سبز
         )
         return markup
 
     def _owner_keyboard(show_remove_self=True):
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton("📢 مدیریت", style="danger")        # 🔴 قرمز
+            types.KeyboardButton("📢 مدیریت", style="danger"),        # 🔴 قرمز
+            types.KeyboardButton("🤖 مدیریت سلف", style="primary")   # 🔵 آبی
         )
         markup.add(
-            types.KeyboardButton("🤖 مدیریت سلف", style="primary")  # 🔵 آبی
+            types.KeyboardButton("📖 راهنما", style="success")        # 🟢 سبز
         )
         return markup
 
@@ -355,6 +319,9 @@ def start_token_bot():
         )
         markup.add(
             types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary") # 🔵 آبی
+        )
+        markup.add(
+            types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="success")        # 🟢 سبز
         )
         # ✅ اگر اکانت سلف دارد ولی سلف به اکانت تلگرامی فعلی وصل نیست، دکمه ورود دوباره نمایش داده می‌شود
         if account is not None:
@@ -398,32 +365,13 @@ def start_token_bot():
             types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("👤 مدیریت کاربران", callback_data="admin_manage_users", style="success")  # 🟢 سبز
+            types.InlineKeyboardButton("👮 مدیریت ادمین‌ها", callback_data="admin_manage_admins", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success")    # 🟢 سبز
+            types.InlineKeyboardButton("📚 مدیریت راهنما", callback_data="admin_guide_manage", style="success")    # 🟢 سبز
         )
         markup.add(
             types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
-        )
-        return markup
-
-    def _sub_admin_panel_keyboard():
-        # ✅ پنل محدودشده برای ادمین‌های فرعی که توسط مالک اضافه شده‌اند
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary"),             # 🔵 آبی
-            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
-        )
-        markup.add(
-            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
-        )
-        markup.add(
-            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
-        )
-        markup.add(
-            types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
         )
         return markup
 
@@ -2016,9 +1964,6 @@ def start_token_bot():
                 if not db.get_setting(acc_id, "logged_in", "0") == "1":
                     return _bot.answer_callback_query(
                         call.id, "❌ سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
-                if db.get_setting(acc_id, "owner_force_stop_self", "0") == "1":
-                    return _bot.answer_callback_query(
-                        call.id, "🚫 سلف شما توسط مالک قفل شده است. برای روشن کردن با مالک تماس بگیرید.", show_alert=True)
                 if not db.is_subscribed(acc_id):
                     return _bot.answer_callback_query(
                         call.id, "❌ اشتراک ندارید یا منقضی شده. ابتدا پلن تهیه کنید.", show_alert=True)
@@ -2148,7 +2093,7 @@ def start_token_bot():
             cache.invalidate(f"account_{call.from_user.id}")
 
             # آپدیت keyboard پایین صفحه (دکمه حذف سلف همچنان نمایش داده می‌شود)
-            kb = _owner_keyboard() if _is_admin_user(call.from_user.id) else _user_keyboard()
+            kb = _owner_keyboard() if call.from_user.id == OWNER_TG_ID else _user_keyboard()
             try:
                 _bot.send_message(
                     call.message.chat.id,
@@ -2209,6 +2154,7 @@ def start_token_bot():
                 if site_url:
                     # 🔵 دکمه ساخت با وب‌سایت با رنگ primary (آبی)
                     markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"))
+                markup.add(types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="primary"))
                 _bot.reply_to(
                     message,
                     "👋 <b>سلام!</b>\n\n"
@@ -2270,7 +2216,7 @@ def start_token_bot():
                 sub_status = "❌ اشتراک ندارید"
 
             if message.chat.type == 'private':
-                kb_markup = _owner_keyboard() if _is_admin_user(tg_id) else _user_keyboard()
+                kb_markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
             else:
                 kb_markup = None
 
@@ -2815,44 +2761,23 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: m.text == "📢 مدیریت", chat_types=['private'])
     def cmd_admin_panel(message):
-        tg_id = message.from_user.id
-        if tg_id == OWNER_TG_ID:
-            _bot.reply_to(message, 
-                "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
-                reply_markup=_admin_panel_keyboard())
-        elif _is_sub_admin(tg_id):
-            _bot.reply_to(message,
-                "📢 <b>پنل مدیریت</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
-                reply_markup=_sub_admin_panel_keyboard())
-        else:
+        if message.from_user.id != OWNER_TG_ID:
             return
+        _bot.reply_to(message, 
+            "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+            reply_markup=_admin_panel_keyboard())
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 Callback handler پنل مدیریت
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_"))
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("rmch_") or call.data.startswith("wcwin_") or call.data.startswith("wc_") or call.data == "addch_prompt" or call.data == "add_mission_prompt" or call.data.startswith("del_mission_") or call.data in ("guide_type_media", "guide_type_text"))
     def callback_admin(call):
-        tg_id = call.from_user.id
-        is_owner = (tg_id == OWNER_TG_ID)
-        is_sub = (not is_owner) and _is_sub_admin(tg_id)
-
-        if not is_owner and not is_sub:
+        # guide_type callbacks هم برای ادمین‌های فرعی مجاز هست
+        if call.data in ("guide_type_media", "guide_type_text"):
+            if call.from_user.id != OWNER_TG_ID and not db.is_sub_admin(call.from_user.id):
+                return _bot.answer_callback_query(call.id, "❌ دسترسی ندارید", show_alert=True)
+        elif call.from_user.id != OWNER_TG_ID:
             return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
-
-        if is_sub:
-            # ✅ ادمین‌های فرعی فقط به بخش‌های زیر دسترسی دارند:
-            # کاربران، بازی‌های امروز، پیام عمومی، ماموریت‌ها، شرکت‌کنندگان جام جهانی، هدیه
-            _SUB_ADMIN_ALLOWED = (
-                "admin_panel", "admin_back",
-                "admin_users",
-                "admin_today_games", "wc_sendnow_",
-                "admin_broadcast",
-                "admin_missions", "add_mission_prompt", "del_mission_",
-                "admin_wc_participants",
-                "admin_gift",
-            )
-            if not any(call.data == p or call.data.startswith(p) for p in _SUB_ADMIN_ALLOWED):
-                return _bot.answer_callback_query(call.id, "❌ شما به این بخش دسترسی ندارید", show_alert=True)
         
         # دکمه‌های غیرفعال (نمایشی)
         if call.data == "admin_users_noop":
@@ -2862,17 +2787,11 @@ def start_token_bot():
             data = call.data
             
             if data == "admin_panel" or data == "admin_back":
-                if is_owner:
-                    panel_text = "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
-                    panel_kb = _admin_panel_keyboard()
-                else:
-                    panel_text = "📢 <b>پنل مدیریت</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
-                    panel_kb = _sub_admin_panel_keyboard()
                 _bot.edit_message_text(
-                    panel_text,
+                    "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    reply_markup=panel_kb
+                    reply_markup=_admin_panel_keyboard()
                 )
                 _bot.answer_callback_query(call.id)
                 return
@@ -3468,24 +3387,165 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
 
-            elif data == "admin_add_admin":
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک می‌تواند ادمین اضافه کند", show_alert=True)
-                _owner_states[call.from_user.id] = {"state": "waiting_add_admin"}
+            elif data == "guide_type_media":
+                # مالک یا ادمین انتخاب کرد: ارسال تصویری
+                state_info = _owner_states.get(call.from_user.id, {})
+                if state_info.get("state") == "guide_type":
+                    state_info["state"] = "guide_send_media"
                 markup = types.InlineKeyboardMarkup()
-                # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
                 _bot.edit_message_text(
-                    "➕ <b>افزودن ادمین</b>\n\n"
-                    "📝 پیام کاربر مورد نظر را فوروارد کنید، یا آیدی عددی تلگرام او را ارسال کنید:\n\n"
-                    "پس از افزودن، این کاربر به پنل مدیریت با دسترسی‌های زیر دسترسی خواهد یافت:\n"
-                    "👥 کاربران، 📅 بازی‌های امروز، 📣 پیام عمومی، 🎯 ماموریت‌ها، "
-                    "👥 شرکت‌کنندگان جام جهانی، 🎁 هدیه",
+                    "🎥 <b>ارسال آموزش تصویری</b>\n\n"
+                    "ویدیو یا عکس آموزشی را در همین پیوی ارسال کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "guide_type_text":
+                # مالک یا ادمین انتخاب کرد: ارسال متنی
+                state_info = _owner_states.get(call.from_user.id, {})
+                if state_info.get("state") == "guide_type":
+                    state_info["state"] = "guide_send_text"
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                _bot.edit_message_text(
+                    "📝 <b>ارسال آموزش متنی</b>\n\n"
+                    "متن آموزش را ارسال کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_guide_manage":
+                # ── مدیریت راهنما ──────────────────────────────────────────────
+                import json as _json
+                raw = db.get_global_setting("guide_list", "[]")
+                try:
+                    guides = _json.loads(raw)
+                except Exception:
+                    guides = []
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if guides:
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    for i, g in enumerate(guides):
+                        txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
+                else:
+                    txt = "📚 <b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
+                markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="admin_guide_add", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(txt, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_guide_add":
+                # ── شروع فلوی افزودن راهنما ────────────────────────────────────
+                _owner_states[call.from_user.id] = {"state": "guide_name", "data": {}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                _bot.edit_message_text(
+                    "📚 <b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_guide_del_"):
+                import json as _json
+                idx = int(data[len("admin_guide_del_"):])
+                raw = db.get_global_setting("guide_list", "[]")
+                try:
+                    guides = _json.loads(raw)
+                except Exception:
+                    guides = []
+                if 0 <= idx < len(guides):
+                    guides.pop(idx)
+                    db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
+                # نمایش دوباره لیست
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if guides:
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    for i, g in enumerate(guides):
+                        txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
+                else:
+                    txt = "📚 <b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
+                markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="admin_guide_add", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(txt, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id, "✅ آموزش حذف شد")
+                return
+
+            elif data == "admin_manage_admins":
+                # ── لیست ادمین‌های فرعی فعلی ─────────────────────────────────
+                admins = db.get_sub_admins()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if admins:
+                    text_lines = [f"👮 <b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
+                    for a in admins:
+                        name = a.get("name") or "بدون نام"
+                        tg_id = a["telegram_id"]
+                        text_lines.append(f"• {name} — <code>{tg_id}</code>")
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
+                        ))
+                    admin_text = "\n".join(text_lines)
+                else:
+                    admin_text = "👮 <b>ادمین‌های فرعی</b>\n\nهنوز هیچ ادمینی اضافه نشده."
+                markup.add(types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    admin_text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
                 )
                 _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_add_admin":
+                _owner_states[call.from_user.id] = {"state": "add_admin_id", "data": {}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_manage_admins", style="danger"))
+                _bot.edit_message_text(
+                    "👮 <b>افزودن ادمین فرعی</b>\n\n"
+                    "ایدی عددی تلگرام ادمین جدید را وارد کنید:",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data.startswith("admin_del_admin_"):
+                del_tg_id = int(data[len("admin_del_admin_"):])
+                db.remove_sub_admin(del_tg_id)
+                # برگشت به لیست
+                admins = db.get_sub_admins()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if admins:
+                    text_lines = [f"👮 <b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
+                    for a in admins:
+                        name = a.get("name") or "بدون نام"
+                        tg_id = a["telegram_id"]
+                        text_lines.append(f"• {name} — <code>{tg_id}</code>")
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
+                        ))
+                    admin_text = "\n".join(text_lines)
+                else:
+                    admin_text = "👮 <b>ادمین‌های فرعی</b>\n\nهنوز هیچ ادمینی اضافه نشده."
+                markup.add(types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text(
+                    "✅ ادمین حذف شد.\n\n" + admin_text,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id, "✅ ادمین حذف شد")
                 return
 
             elif data == "admin_missions":
@@ -3529,248 +3589,6 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 return
 
-            # ══════════════════════════════════════════════════════════════════
-            # 👤 مدیریت کاربران — لیست رنگی با دکمه‌های per-user
-            # ══════════════════════════════════════════════════════════════════
-            elif data == "admin_manage_users" or data.startswith("admin_manage_users_p"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
-                accounts = db.get_all_accounts()
-                if not accounts:
-                    markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
-                    _bot.edit_message_text("هیچ کاربری ثبت نشده.", chat_id=call.message.chat.id,
-                        message_id=call.message.message_id, reply_markup=markup)
-                    _bot.answer_callback_query(call.id)
-                    return
-
-                PAGE_SIZE = 15
-                total = len(accounts)
-                total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-                try:
-                    page = int(data.split("_p")[-1]) if data.startswith("admin_manage_users_p") else 1
-                except Exception:
-                    page = 1
-                page = max(1, min(page, total_pages))
-                start_idx = (page - 1) * PAGE_SIZE
-                page_accounts = accounts[start_idx: start_idx + PAGE_SIZE]
-
-                markup = types.InlineKeyboardMarkup(row_width=2)
-                for acc in page_accounts:
-                    sub_ok = db.is_subscribed(acc["id"])
-                    btn_style = "success" if sub_ok else "danger"
-                    uname = acc.get("username") or str(acc["id"])
-                    icon = "🟢" if sub_ok else "🔴"
-                    markup.add(types.InlineKeyboardButton(
-                        f"{icon} {uname}",
-                        callback_data=f"admin_mu_{acc['id']}",
-                        style=btn_style
-                    ))
-
-                nav = []
-                if page > 1:
-                    nav.append(types.InlineKeyboardButton("◀️ قبلی", callback_data=f"admin_manage_users_p{page - 1}"))
-                nav.append(types.InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data="admin_users_noop"))
-                if page < total_pages:
-                    nav.append(types.InlineKeyboardButton("بعدی ▶️", callback_data=f"admin_manage_users_p{page + 1}"))
-                if nav:
-                    markup.add(*nav)
-                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
-
-                _bot.edit_message_text(
-                    f"👤 <b>مدیریت کاربران ({total} نفر)</b>\n\n"
-                    f"🟢 = پلن فعال  |  🔴 = پلن غیرفعال\n\n"
-                    f"روی هر کاربر بزنید تا وارد مدیریتش شوید:",
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=markup
-                )
-                _bot.answer_callback_query(call.id)
-                return
-
-            elif data.startswith("admin_mu_") and not data.startswith("admin_mu_add_") \
-                    and not data.startswith("admin_mu_ded_") \
-                    and not data.startswith("admin_mu_block_") \
-                    and not data.startswith("admin_mu_fstop_") \
-                    and not data.startswith("admin_mu_allow_") \
-                    and not data.startswith("admin_mu_fine_") \
-                    and not data.startswith("admin_mu_back_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-
-                mu_accounts = db.get_all_accounts()
-                mu_acc = next((a for a in mu_accounts if a["id"] == mu_acc_id), None)
-                if not mu_acc:
-                    return _bot.answer_callback_query(call.id, "❌ کاربر یافت نشد", show_alert=True)
-
-                bal = db.get_token_balance(mu_acc_id)
-                sub_ok = db.is_subscribed(mu_acc_id)
-                remaining = _format_plan_remaining(mu_acc_id)
-                tg_id_val = mu_acc.get("telegram_user_id")
-                is_blocked = db.get_setting(mu_acc_id, "bot_blocked", "0") == "1"
-                is_force_stopped = db.get_setting(mu_acc_id, "owner_force_stop_self", "0") == "1"
-
-                from bot import bot_manager
-                is_running = bot_manager.is_running(mu_acc_id)
-
-                plan_icon = "🟢" if sub_ok else "🔴"
-                plan_text = "فعال" if sub_ok else "غیرفعال"
-                self_icon = "🟢" if (is_running and not is_force_stopped) else "🔴"
-                self_text = "روشن" if (is_running and not is_force_stopped) else ("قفل شده" if is_force_stopped else "خاموش")
-
-                info_text = (
-                    f"👤 <b>مدیریت کاربر: {mu_acc.get('username', '─')}</b>\n\n"
-                    f"🆔 آیدی پنل: <code>{mu_acc_id}</code>\n"
-                    f"📱 آیدی تلگرام: <code>{tg_id_val or '─'}</code>\n"
-                    f"💎 موجودی: <b>{bal} الماس</b>\n"
-                    f"{plan_icon} پلن: <b>{plan_text}</b> — {remaining}\n"
-                    f"{self_icon} سلف: <b>{self_text}</b>\n"
-                    f"🚫 ربات: {'مسدود' if is_blocked else 'آزاد'}\n\n"
-                    f"عملیات مورد نظر را انتخاب کنید:"
-                )
-
-                mu_kb = types.InlineKeyboardMarkup(row_width=2)
-                mu_kb.add(
-                    types.InlineKeyboardButton("➕ افزایش الماس", callback_data=f"admin_mu_add_{mu_acc_id}", style="success"),
-                    types.InlineKeyboardButton("➖ کسر الماس", callback_data=f"admin_mu_ded_{mu_acc_id}", style="danger")
-                )
-                mu_kb.add(
-                    types.InlineKeyboardButton("💸 جریمه (درصد)", callback_data=f"admin_mu_fine_{mu_acc_id}", style="danger")
-                )
-                if is_blocked:
-                    mu_kb.add(types.InlineKeyboardButton("✅ رفع مسدودیت", callback_data=f"admin_mu_block_{mu_acc_id}", style="success"))
-                else:
-                    mu_kb.add(types.InlineKeyboardButton("🚫 مسدود سازی از ربات", callback_data=f"admin_mu_block_{mu_acc_id}", style="danger"))
-                if is_force_stopped:
-                    mu_kb.add(types.InlineKeyboardButton("🟢 روشن کردن سلف", callback_data=f"admin_mu_allow_{mu_acc_id}", style="success"))
-                else:
-                    mu_kb.add(types.InlineKeyboardButton("🔒 خاموش سازی سلف", callback_data=f"admin_mu_fstop_{mu_acc_id}", style="danger"))
-                mu_kb.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_manage_users", style="danger"))
-
-                _bot.edit_message_text(
-                    info_text,
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=mu_kb
-                )
-                _bot.answer_callback_query(call.id)
-                return
-
-            elif data.startswith("admin_mu_add_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_add_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-                _owner_states[call.from_user.id] = {"state": "mu_add_diamond", "mu_acc_id": mu_acc_id, "msg_id": call.message.message_id, "chat_id": call.message.chat.id}
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"admin_mu_{mu_acc_id}", style="danger"))
-                _bot.edit_message_text(
-                    f"➕ <b>افزایش الماس</b>\n\nمقدار الماسی که می‌خواهید اضافه کنید را بنویسید:",
-                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id)
-                return
-
-            elif data.startswith("admin_mu_ded_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_ded_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-                _owner_states[call.from_user.id] = {"state": "mu_deduct_diamond", "mu_acc_id": mu_acc_id, "msg_id": call.message.message_id, "chat_id": call.message.chat.id}
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"admin_mu_{mu_acc_id}", style="danger"))
-                _bot.edit_message_text(
-                    f"➖ <b>کسر الماس</b>\n\nمقدار الماسی که می‌خواهید کسر کنید را بنویسید:",
-                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id)
-                return
-
-            elif data.startswith("admin_mu_fine_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_fine_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-                bal = db.get_token_balance(mu_acc_id)
-                _owner_states[call.from_user.id] = {"state": "mu_fine", "mu_acc_id": mu_acc_id, "balance": bal, "msg_id": call.message.message_id, "chat_id": call.message.chat.id}
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"admin_mu_{mu_acc_id}", style="danger"))
-                _bot.edit_message_text(
-                    f"💸 <b>جریمه کاربر</b>\n\n💎 موجودی فعلی: <b>{bal} الماس</b>\n\n"
-                    f"درصد جریمه را وارد کنید (عدد ۱ تا ۱۰۰):\n<i>مثال: ۵۰ = نصف دارایی کسر می‌شود</i>",
-                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id)
-                return
-
-            elif data.startswith("admin_mu_block_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_block_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-                currently = db.get_setting(mu_acc_id, "bot_blocked", "0") == "1"
-                db.set_setting(mu_acc_id, "bot_blocked", "0" if currently else "1")
-                msg = "✅ مسدودیت رفع شد." if currently else "🚫 کاربر مسدود شد."
-                _bot.answer_callback_query(call.id, msg, show_alert=True)
-                # برگشت به پنل کاربر
-                call.data = f"admin_mu_{mu_acc_id}"
-                callback_admin(call)
-                return
-
-            elif data.startswith("admin_mu_fstop_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_fstop_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-                from bot import bot_manager
-                db.set_setting(mu_acc_id, "owner_force_stop_self", "1")
-                if bot_manager.is_running(mu_acc_id):
-                    bot_manager.stop(mu_acc_id)
-                # اطلاع‌رسانی به کاربر
-                try:
-                    tg_id_val = db.get_telegram_id_by_owner(mu_acc_id)
-                    if tg_id_val:
-                        _bot.send_message(tg_id_val, "🔒 <b>سلف شما توسط مالک خاموش و قفل شد.</b>\nتا زمانی که مالک اجازه ندهد، امکان روشن کردن سلف وجود ندارد.")
-                except Exception:
-                    pass
-                _bot.answer_callback_query(call.id, "🔒 سلف کاربر خاموش و قفل شد.", show_alert=True)
-                call.data = f"admin_mu_{mu_acc_id}"
-                callback_admin(call)
-                return
-
-            elif data.startswith("admin_mu_allow_"):
-                if not is_owner:
-                    return _bot.answer_callback_query(call.id, "❌ فقط مالک", show_alert=True)
-                try:
-                    mu_acc_id = int(data[len("admin_mu_allow_"):])
-                except Exception:
-                    return _bot.answer_callback_query(call.id, "❌ خطا", show_alert=True)
-                from bot import bot_manager
-                from app import get_loop
-                db.set_setting(mu_acc_id, "owner_force_stop_self", "0")
-                # اطلاع‌رسانی به کاربر
-                try:
-                    tg_id_val = db.get_telegram_id_by_owner(mu_acc_id)
-                    if tg_id_val:
-                        _bot.send_message(tg_id_val, "🟢 <b>سلف شما توسط مالک آزاد شد.</b>\nاکنون می‌توانید سلف را روشن کنید.")
-                except Exception:
-                    pass
-                _bot.answer_callback_query(call.id, "🟢 قفل سلف کاربر برداشته شد.", show_alert=True)
-                call.data = f"admin_mu_{mu_acc_id}"
-                callback_admin(call)
-                return
-
             else:
                 _bot.answer_callback_query(call.id, "❌ گزینه نامعتبر")
         
@@ -3784,8 +3602,8 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 📨 State handler
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.from_user.id in _owner_states, chat_types=['private'],
-                          content_types=["text", "photo", "document"])
+    @_bot.message_handler(func=lambda m: (m.from_user.id == OWNER_TG_ID or db.is_sub_admin(m.from_user.id)) and m.from_user.id in _owner_states, chat_types=['private'],
+                          content_types=["text", "photo", "document", "video"])
     def handle_owner_state(message):
         try:
             state_data = _owner_states[message.from_user.id]
@@ -3823,53 +3641,6 @@ def start_token_bot():
                 else:
                     _bot.reply_to(message, f"⚠️ خطا یا تکراری است.", reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
-
-            elif state == "waiting_add_admin":
-                _owner_states.pop(message.from_user.id, None)
-                new_admin_id = None
-                new_admin_name = ""
-
-                if message.forward_from:
-                    new_admin_id = message.forward_from.id
-                    new_admin_name = (message.forward_from.first_name or "").strip()
-                elif text.lstrip("-").isdigit():
-                    new_admin_id = int(text)
-
-                if not new_admin_id:
-                    _bot.reply_to(
-                        message,
-                        "❌ نتوانستم آیدی کاربر را تشخیص دهم.\n"
-                        "پیام او را فوروارد کنید یا آیدی عددی تلگرام او را ارسال کنید.",
-                        reply_markup=_owner_keyboard()
-                    )
-                    return
-
-                if new_admin_id == OWNER_TG_ID:
-                    _bot.reply_to(message, "ℹ️ این کاربر همان مالک است.", reply_markup=_owner_keyboard())
-                    return
-
-                _add_sub_admin(new_admin_id)
-
-                name_part = f" ({new_admin_name})" if new_admin_name else ""
-                _bot.reply_to(
-                    message,
-                    f"✅ کاربر <code>{new_admin_id}</code>{name_part} به عنوان ادمین اضافه شد و به پنل مدیریت دسترسی یافت.",
-                    reply_markup=_owner_keyboard()
-                )
-
-                try:
-                    _bot.send_message(
-                        new_admin_id,
-                        "🎉 <b>شما توسط مالک به عنوان ادمین انتخاب شدید!</b>\n\n"
-                        "هم‌اکنون به پنل مدیریت با دسترسی‌های زیر دسترسی دارید:\n"
-                        "👥 کاربران، 📅 بازی‌های امروز، 📣 پیام عمومی، 🎯 ماموریت‌ها، "
-                        "👥 شرکت‌کنندگان جام جهانی، 🎁 هدیه\n\n"
-                        "برای ورود روی دکمه «📢 مدیریت» در زیر صفحه بزنید.",
-                        reply_markup=_owner_keyboard()
-                    )
-                except Exception:
-                    pass
-                return
             
             elif state == "wc_team1":
                 state_data["data"]["team1"] = text
@@ -4079,77 +3850,6 @@ def start_token_bot():
             elif state == "gift_awaiting_confirm":
                 _bot.reply_to(message, "⏳ لطفاً روی دکمه تایید یا لغو کلیک کنید.")
 
-            # ── مدیریت کاربران: افزایش الماس ─────────────────────────────────────
-            elif state == "mu_add_diamond":
-                mu_acc_id = state_data["mu_acc_id"]
-                try:
-                    amount = int(text)
-                    if amount <= 0:
-                        return _bot.reply_to(message, "❌ مقدار باید بیشتر از صفر باشد:")
-                except ValueError:
-                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید:")
-                db.add_tokens(mu_acc_id, amount)
-                new_bal = db.get_token_balance(mu_acc_id)
-                try:
-                    mu_tg_id = db.get_telegram_id_by_owner(mu_acc_id)
-                    if mu_tg_id:
-                        _bot.send_message(mu_tg_id, f"💎 <b>{amount} الماس</b> توسط مالک به حساب شما اضافه شد.\n💰 موجودی جدید: <b>{new_bal} الماس</b>")
-                except Exception:
-                    pass
-                _bot.reply_to(message, f"✅ <b>{amount} الماس</b> اضافه شد.\n💎 موجودی جدید: <b>{new_bal}</b>", reply_markup=_owner_keyboard())
-                _owner_states.pop(message.from_user.id, None)
-
-            # ── مدیریت کاربران: کسر الماس ────────────────────────────────────────
-            elif state == "mu_deduct_diamond":
-                mu_acc_id = state_data["mu_acc_id"]
-                try:
-                    amount = int(text)
-                    if amount <= 0:
-                        return _bot.reply_to(message, "❌ مقدار باید بیشتر از صفر باشد:")
-                except ValueError:
-                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید:")
-                cur_bal = db.get_token_balance(mu_acc_id)
-                actual = min(amount, cur_bal)
-                db.deduct_tokens(mu_acc_id, actual)
-                new_bal = db.get_token_balance(mu_acc_id)
-                try:
-                    mu_tg_id = db.get_telegram_id_by_owner(mu_acc_id)
-                    if mu_tg_id:
-                        _bot.send_message(mu_tg_id, f"➖ <b>{actual} الماس</b> توسط مالک از حساب شما کسر شد.\n💰 موجودی جدید: <b>{new_bal} الماس</b>")
-                except Exception:
-                    pass
-                _bot.reply_to(message, f"✅ <b>{actual} الماس</b> کسر شد.\n💎 موجودی جدید: <b>{new_bal}</b>", reply_markup=_owner_keyboard())
-                _owner_states.pop(message.from_user.id, None)
-
-            # ── مدیریت کاربران: جریمه (درصد) ────────────────────────────────────
-            elif state == "mu_fine":
-                mu_acc_id = state_data["mu_acc_id"]
-                try:
-                    percent = float(text.replace("٪", "").replace("%", "").strip())
-                    if percent <= 0 or percent > 100:
-                        return _bot.reply_to(message, "❌ درصد باید بین ۱ تا ۱۰۰ باشد:")
-                except ValueError:
-                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید (مثال: ۵۰):")
-                cur_bal = db.get_token_balance(mu_acc_id)
-                fine_amount = int(cur_bal * percent / 100)
-                if fine_amount < 1:
-                    fine_amount = 1 if cur_bal >= 1 else 0
-                if fine_amount > 0:
-                    db.deduct_tokens(mu_acc_id, fine_amount)
-                new_bal = db.get_token_balance(mu_acc_id)
-                try:
-                    mu_tg_id = db.get_telegram_id_by_owner(mu_acc_id)
-                    if mu_tg_id:
-                        _bot.send_message(mu_tg_id, f"⚠️ <b>جریمه:</b> {int(percent)}٪ از موجودی شما ({fine_amount} الماس) توسط مالک کسر شد.\n💰 موجودی جدید: <b>{new_bal} الماس</b>")
-                except Exception:
-                    pass
-                _bot.reply_to(message,
-                    f"💸 جریمه {int(percent)}٪ اعمال شد.\n"
-                    f"➖ کسر شده: <b>{fine_amount} الماس</b>\n"
-                    f"💎 موجودی جدید: <b>{new_bal}</b>",
-                    reply_markup=_owner_keyboard())
-                _owner_states.pop(message.from_user.id, None)
-
             elif state == "set_card":
                 card = text.strip().replace("-", "").replace(" ", "")
                 db.set_global_setting("card_number", card)
@@ -4188,6 +3888,117 @@ def start_token_bot():
                     parse_mode="HTML",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
+
+            elif state == "add_admin_id":
+                try:
+                    new_admin_id = int(text.strip())
+                except ValueError:
+                    return _bot.reply_to(message, "❌ ایدی عددی باید فقط شامل اعداد باشد. دوباره وارد کنید:")
+                # نام ادمین رو از تلگرام بگیریم اگه ممکنه
+                try:
+                    chat_info = _bot.get_chat(new_admin_id)
+                    name = (chat_info.first_name or "") + (" " + chat_info.last_name if chat_info.last_name else "")
+                    name = name.strip() or str(new_admin_id)
+                except Exception:
+                    name = str(new_admin_id)
+                db.add_sub_admin(new_admin_id, name)
+                # اطلاع به ادمین جدید
+                try:
+                    _bot.send_message(
+                        new_admin_id,
+                        "👮 <b>شما به عنوان ادمین اضافه شدید!</b>\n\n"
+                        "برای دسترسی به پنل مدیریت دستور /subadmin را ارسال کنید."
+                    )
+                except Exception:
+                    pass
+                _bot.reply_to(message,
+                    f"✅ <b>{name}</b> (<code>{new_admin_id}</code>) به عنوان ادمین اضافه شد.",
+                    reply_markup=_owner_keyboard())
+                _owner_states.pop(message.from_user.id, None)
+
+            elif state == "guide_name":
+                # مرحله ۱: دریافت اسم آموزش
+                guide_name = text.strip()
+                if not guide_name:
+                    return _bot.reply_to(message, "❌ اسم آموزش نمی‌تواند خالی باشد:")
+                state_data["data"]["name"] = guide_name
+                state_data["state"] = "guide_type"
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("🎥 ارسال آموزش تصویری (ویدیو/عکس)", callback_data="guide_type_media", style="primary"),
+                    types.InlineKeyboardButton("📝 ارسال آموزش متنی", callback_data="guide_type_text", style="success")
+                )
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                _bot.reply_to(message,
+                    f"✅ اسم آموزش: <b>{guide_name}</b>\n\n"
+                    "نوع آموزش را انتخاب کنید:",
+                    reply_markup=markup)
+
+            elif state == "guide_send_media":
+                # مرحله ۳: دریافت ویدیو یا عکس
+                import json as _json
+                file_id = None
+                media_type = None
+                if message.video:
+                    file_id = message.video.file_id
+                    media_type = "video"
+                elif message.photo:
+                    file_id = message.photo[-1].file_id
+                    media_type = "photo"
+                elif message.document and message.document.mime_type and message.document.mime_type.startswith("video"):
+                    file_id = message.document.file_id
+                    media_type = "video"
+                else:
+                    return _bot.reply_to(message, "❌ لطفاً یک ویدیو یا عکس ارسال کنید:")
+
+                # ذخیره به پیوی مالک به عنوان دیتابیس
+                try:
+                    fwd = _bot.forward_message(OWNER_TG_ID, message.chat.id, message.message_id)
+                    stored_msg_id = fwd.message_id
+                except Exception:
+                    stored_msg_id = None
+
+                guide_name = state_data["data"]["name"]
+                raw = db.get_global_setting("guide_list", "[]")
+                try:
+                    guides = _json.loads(raw)
+                except Exception:
+                    guides = []
+                guides.append({
+                    "name": guide_name,
+                    "type": media_type,
+                    "file_id": file_id,
+                    "stored_msg_id": stored_msg_id
+                })
+                db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
+                _owner_states.pop(message.from_user.id, None)
+                _bot.reply_to(message,
+                    f"✅ آموزش «<b>{guide_name}</b>» ({'ویدیو' if media_type == 'video' else 'عکس'}) ذخیره شد.",
+                    reply_markup=_owner_keyboard())
+
+            elif state == "guide_send_text":
+                # مرحله ۳: دریافت متن آموزش
+                import json as _json
+                content = message.text or ""
+                if not content.strip():
+                    return _bot.reply_to(message, "❌ متن آموزش نمی‌تواند خالی باشد:")
+                guide_name = state_data["data"]["name"]
+                raw = db.get_global_setting("guide_list", "[]")
+                try:
+                    guides = _json.loads(raw)
+                except Exception:
+                    guides = []
+                guides.append({
+                    "name": guide_name,
+                    "type": "text",
+                    "content": content,
+                    "file_id": None
+                })
+                db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
+                _owner_states.pop(message.from_user.id, None)
+                _bot.reply_to(message,
+                    f"✅ آموزش متنی «<b>{guide_name}</b>» ذخیره شد.",
+                    reply_markup=_owner_keyboard())
         
         except Exception as e:
             print(f"❌ خطا در handle_owner_state: {e}")
@@ -4207,6 +4018,440 @@ def start_token_bot():
             reply_markup=_owner_keyboard())
 
     # ══════════════════════════════════════════════════════════════════════════
+    # 👮 پنل ادمین فرعی
+    # ══════════════════════════════════════════════════════════════════════════
+    def _subadmin_panel_keyboard():
+        """کیبورد پنل ادمین فرعی با دسترسی‌های محدود"""
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("👥 کاربران", callback_data="sa_users", style="primary"),
+            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="sa_today_games", style="primary")
+        )
+        markup.add(
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="sa_broadcast", style="primary"),
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="sa_missions", style="success")
+        )
+        markup.add(
+            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="sa_wc_participants", style="primary")
+        )
+        markup.add(
+            types.InlineKeyboardButton("🎁 هدیه", callback_data="sa_gift", style="success")
+        )
+        markup.add(
+            types.InlineKeyboardButton("📚 مدیریت راهنما", callback_data="sa_guide_manage", style="primary")
+        )
+        return markup
+
+    # state مخصوص ادمین‌های فرعی
+    _subadmin_states = {}
+
+    @_bot.message_handler(commands=["subadmin"], chat_types=['private'])
+    def cmd_subadmin_panel(message):
+        tg_id = message.from_user.id
+        if not db.is_sub_admin(tg_id):
+            return _bot.reply_to(message, "❌ شما دسترسی ادمین ندارید.")
+        _bot.reply_to(message,
+            "👮 <b>پنل مدیریت ادمین</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+            reply_markup=_subadmin_panel_keyboard())
+
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("sa_"))
+    def callback_subadmin(call):
+        tg_id = call.from_user.id
+        if not db.is_sub_admin(tg_id):
+            return _bot.answer_callback_query(call.id, "❌ دسترسی ندارید", show_alert=True)
+
+        data = call.data
+
+        try:
+            # ── کاربران ──────────────────────────────────────────────────────
+            if data == "sa_users":
+                accounts = db.get_all_accounts()
+                lines = [f"👥 <b>لیست کاربران ({len(accounts)} نفر):</b>\n"]
+                for a in accounts[:30]:
+                    uname = a.get("username", "-")
+                    lines.append(f"• @{uname}")
+                if len(accounts) > 30:
+                    lines.append(f"\n... و {len(accounts)-30} نفر دیگر")
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text("\n".join(lines),
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            # ── بازی‌های امروز ───────────────────────────────────────────────
+            elif data == "sa_today_games":
+                today = _now_tehran().strftime("%Y-%m-%d")
+                challenges = db.get_today_challenges(today) if hasattr(db, 'get_today_challenges') else []
+                if not challenges:
+                    text = "📅 <b>بازی‌های امروز</b>\n\nهیچ بازی‌ای برای امروز ثبت نشده."
+                else:
+                    lines = [f"📅 <b>بازی‌های امروز ({len(challenges)} بازی):</b>\n"]
+                    for c in challenges:
+                        lines.append(f"⚽ {c.get('team1','-')} vs {c.get('team2','-')} — {c.get('time','-')}")
+                    text = "\n".join(lines)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(text,
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            # ── پیام عمومی ───────────────────────────────────────────────────
+            elif data == "sa_broadcast":
+                _subadmin_states[tg_id] = {"state": "sa_broadcast_msg"}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(
+                    "📣 <b>ارسال پیام عمومی</b>\n\nپیام خود را ارسال کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            # ── ماموریت‌ها ───────────────────────────────────────────────────
+            elif data == "sa_missions":
+                missions = db.get_active_missions()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if missions:
+                    text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
+                    for m in missions:
+                        text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
+                else:
+                    text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
+                markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="sa_add_mission", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(text,
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data == "sa_add_mission":
+                _subadmin_states[tg_id] = {"state": "sa_mission_channel", "data": {}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_missions", style="danger"))
+                _bot.edit_message_text(
+                    "🎯 <b>افزودن ماموریت</b>\n\nیوزرنیم کانال را ارسال کنید:\n\nمثال: <code>@mychannel</code>",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data.startswith("sa_del_mission_"):
+                mission_id = int(data[len("sa_del_mission_"):])
+                db.remove_mission(mission_id)
+                _bot.answer_callback_query(call.id, "✅ ماموریت حذف شد")
+                # refresh
+                missions = db.get_active_missions()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if missions:
+                    text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
+                    for m in missions:
+                        text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
+                else:
+                    text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
+                markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="sa_add_mission", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(text,
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+            # ── شرکت‌کنندگان جام جهانی ──────────────────────────────────────
+            elif data == "sa_wc_participants":
+                participants = db.get_wc_participants()
+                if not participants:
+                    text = "📭 هیچ شرکت‌کننده‌ای ثبت نشده."
+                else:
+                    lines = [f"⚽️ <b>شرکت‌کنندگان جام جهانی ({len(participants)} نفر):</b>\n"]
+                    for i, p in enumerate(participants[:50], 1):
+                        uname = f"@{p['username']}"
+                        lines.append(f"{i}. <b>{uname}</b> — 🎯{p['bet_count']} شرط | 💎{p['total_bet']} الماس")
+                    text = "\n".join(lines)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(text,
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            # ── هدیه ─────────────────────────────────────────────────────────
+            elif data == "sa_gift":
+                markup = types.InlineKeyboardMarkup(row_width=2)
+                markup.add(
+                    types.InlineKeyboardButton("💎 الماس", callback_data="sa_gift_diamond", style="primary"),
+                    types.InlineKeyboardButton("📋 پنل", callback_data="sa_gift_panel", style="success")
+                )
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(
+                    "🎁 <b>هدیه به کاربر</b>\n\nنوع هدیه را انتخاب کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data == "sa_gift_diamond":
+                _subadmin_states[tg_id] = {"state": "sa_gift_diamond_amount", "data": {"gift_type": "diamond"}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(
+                    "💎 <b>هدیه الماس</b>\n\nتعداد الماس هدیه را وارد کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data == "sa_gift_panel":
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("📅 پنل یک ماهه (30 روز)", callback_data="sa_gift_plan_30", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک هفته‌ای (7 روز)", callback_data="sa_gift_plan_7", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک روزه (1 روز)", callback_data="sa_gift_plan_1", style="primary")
+                )
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(
+                    "📋 <b>هدیه پنل</b>\n\nنوع پنل هدیه را انتخاب کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data.startswith("sa_gift_plan_"):
+                days = int(data.split("_")[-1])
+                plan_names = {30: "یک ماهه", 7: "یک هفته‌ای", 1: "یک روزه"}
+                plan_label = plan_names.get(days, f"{days} روزه")
+                _subadmin_states[tg_id] = {
+                    "state": "sa_gift_tg_id",
+                    "data": {"gift_type": "panel", "days": days, "plan_label": plan_label}
+                }
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(
+                    f"📋 <b>پنل {plan_label}</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data.startswith("sa_gift_confirm_"):
+                gift_key = data[len("sa_gift_confirm_"):]
+                gift_info = _subadmin_states.get(tg_id, {}).get("gift_pending")
+                if not gift_info or gift_info.get("key") != gift_key:
+                    _bot.answer_callback_query(call.id, "❌ اطلاعات منقضی شده.", show_alert=True)
+                    return
+                target_tg_id = gift_info["tg_id"]
+                account = gift_info["account"]
+                gift_type = gift_info["gift_type"]
+                if gift_type == "diamond":
+                    amount = gift_info["amount"]
+                    db.add_tokens(account["id"], amount)
+                    new_balance = db.get_token_balance(account["id"])
+                    try:
+                        _bot.send_message(target_tg_id,
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n💎 <b>الماس هدیه:</b> {amount} الماس\n"
+                            f"💰 <b>موجودی جدید:</b> {new_balance} الماس")
+                    except Exception:
+                        pass
+                    result_text = f"✅ <b>{amount} الماس</b> به <b>{account['username']}</b> هدیه داده شد."
+                else:
+                    days = gift_info["days"]
+                    plan_label = gift_info["plan_label"]
+                    db.set_subscription(account["id"], "gift", days)
+                    try:
+                        _bot.send_message(target_tg_id,
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n📋 <b>پنل هدیه:</b> {plan_label} ({days} روز)")
+                    except Exception:
+                        pass
+                    result_text = f"✅ پنل <b>{plan_label}</b> به <b>{account['username']}</b> هدیه داده شد."
+                _subadmin_states.pop(tg_id, None)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="sa_back", style="primary"))
+                _bot.edit_message_text(result_text,
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id, "✅ هدیه ارسال شد!")
+
+            elif data == "sa_gift_cancel":
+                _subadmin_states.pop(tg_id, None)
+                markup = _subadmin_panel_keyboard()
+                _bot.edit_message_text("❌ عملیات هدیه لغو شد.",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            # ── بازگشت ───────────────────────────────────────────────────────
+            elif data == "sa_back":
+                _subadmin_states.pop(tg_id, None)
+                _bot.edit_message_text(
+                    "👮 <b>پنل مدیریت ادمین</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id,
+                    reply_markup=_subadmin_panel_keyboard())
+                _bot.answer_callback_query(call.id)
+
+            elif data == "sa_guide_manage":
+                # ادمین فرعی مدیریت راهنما
+                import json as _json
+                raw = db.get_global_setting("guide_list", "[]")
+                try:
+                    guides = _json.loads(raw)
+                except Exception:
+                    guides = []
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if guides:
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    for i, g in enumerate(guides):
+                        txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
+                else:
+                    txt = "📚 <b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
+                markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="sa_guide_add", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(txt, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data == "sa_guide_add":
+                _owner_states[tg_id] = {"state": "guide_name", "data": {}, "is_subadmin": True}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_guide_manage", style="danger"))
+                _bot.edit_message_text(
+                    "📚 <b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+
+            elif data.startswith("sa_guide_del_"):
+                import json as _json
+                idx = int(data[len("sa_guide_del_"):])
+                raw = db.get_global_setting("guide_list", "[]")
+                try:
+                    guides = _json.loads(raw)
+                except Exception:
+                    guides = []
+                if 0 <= idx < len(guides):
+                    guides.pop(idx)
+                    db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                if guides:
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    for i, g in enumerate(guides):
+                        txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
+                        markup.add(types.InlineKeyboardButton(
+                            f"❌ حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
+                else:
+                    txt = "📚 هیچ آموزشی ثبت نشده."
+                markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="sa_guide_add", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
+                _bot.edit_message_text(txt, chat_id=call.message.chat.id,
+                    message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id, "✅ آموزش حذف شد")
+
+        except Exception as e:
+            print(f"❌ خطا در callback_subadmin: {e}")
+            _bot.answer_callback_query(call.id, f"❌ خطا: {e}", show_alert=True)
+
+    @_bot.message_handler(func=lambda m: m.from_user.id in _subadmin_states and m.chat.type == 'private',
+                          content_types=["text", "photo", "document"])
+    def handle_subadmin_state(message):
+        tg_id = message.from_user.id
+        if not db.is_sub_admin(tg_id):
+            return
+        try:
+            state_data = _subadmin_states[tg_id]
+            state = state_data["state"]
+            text = (message.text or "").strip()
+
+            if state == "sa_broadcast_msg":
+                _subadmin_states.pop(tg_id, None)
+                tg_ids = db.get_all_telegram_ids()
+                _bot.reply_to(message, f"⏳ در حال ارسال به {len(tg_ids)} کاربر...")
+                sent, failed = 0, 0
+                for tid in tg_ids:
+                    try:
+                        if message.photo:
+                            _bot.send_photo(tid, message.photo[-1].file_id, caption=message.caption or "")
+                        elif message.document:
+                            _bot.send_document(tid, message.document.file_id, caption=message.caption or "")
+                        else:
+                            _bot.send_message(tid, message.text)
+                        sent += 1
+                    except Exception:
+                        failed += 1
+                _bot.reply_to(message, f"✅ ارسال تمام شد!\n📤 موفق: {sent}\n❌ خطا: {failed}",
+                    reply_markup=_subadmin_panel_keyboard())
+
+            elif state == "sa_mission_channel":
+                ch = text.strip()
+                if not ch.startswith("@"):
+                    ch = "@" + ch
+                state_data["data"]["channel"] = ch
+                state_data["state"] = "sa_mission_reward"
+                _bot.reply_to(message, f"✅ کانال: <b>{ch}</b>\n\n💎 مقدار جایزه (الماس) را وارد کنید:")
+
+            elif state == "sa_mission_reward":
+                try:
+                    reward = int(text.strip())
+                    if reward < 1:
+                        return _bot.reply_to(message, "❌ جایزه باید بیشتر از ۰ باشد.")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
+                ch = state_data.get("data", {}).get("channel")
+                db.add_mission(ch, reward)
+                _subadmin_states.pop(tg_id, None)
+                _bot.reply_to(message, f"✅ ماموریت اضافه شد!\n🔸 {ch} — 💎{reward} الماس",
+                    reply_markup=_subadmin_panel_keyboard())
+
+            elif state == "sa_gift_diamond_amount":
+                try:
+                    amount = int(text)
+                    if amount <= 0:
+                        return _bot.reply_to(message, "❌ تعداد باید بیشتر از صفر باشد:")
+                except ValueError:
+                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید:")
+                state_data["data"]["amount"] = amount
+                state_data["state"] = "sa_gift_tg_id"
+                _bot.reply_to(message,
+                    f"💎 <b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
+
+            elif state == "sa_gift_tg_id":
+                try:
+                    target_tg_id = int(text)
+                except ValueError:
+                    return _bot.reply_to(message, "❌ ایدی عددی باید فقط شامل اعداد باشد:")
+                account = db.get_account_by_tg_id(target_tg_id)
+                if not account:
+                    return _bot.reply_to(message, "❌ کاربری با این ایدی یافت نشد.")
+                gift_type = state_data["data"]["gift_type"]
+                balance = db.get_token_balance(account["id"])
+                sub = db.get_subscription(account["id"])
+                plan_remaining = sub["end_date"] if sub and sub.get("end_date") else "ندارد"
+                if gift_type == "diamond":
+                    amount = state_data["data"]["amount"]
+                    gift_desc = f"💎 {amount} الماس"
+                else:
+                    days = state_data["data"]["days"]
+                    plan_label = state_data["data"]["plan_label"]
+                    gift_desc = f"📋 پنل {plan_label} ({days} روز)"
+                import hashlib, time as _time
+                gift_key = hashlib.md5(f"{target_tg_id}{_time.time()}".encode()).hexdigest()[:8]
+                state_data["gift_pending"] = {
+                    "key": gift_key, "tg_id": target_tg_id, "account": account,
+                    "gift_type": gift_type,
+                    "amount": state_data["data"].get("amount"),
+                    "days": state_data["data"].get("days"),
+                    "plan_label": state_data["data"].get("plan_label"),
+                }
+                state_data["state"] = "sa_gift_awaiting_confirm"
+                confirm_text = (
+                    f"🎁 <b>تایید هدیه</b>\n\n"
+                    f"👤 <b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
+                    f"🔢 <b>ایدی عددی:</b> <code>{target_tg_id}</code>\n"
+                    f"📋 <b>پلن باقی‌مانده:</b> {plan_remaining}\n"
+                    f"💰 <b>موجودی:</b> {balance} الماس\n"
+                    f"🎁 <b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
+                )
+                markup = types.InlineKeyboardMarkup(row_width=2)
+                markup.add(
+                    types.InlineKeyboardButton("✅ تایید", callback_data=f"sa_gift_confirm_{gift_key}", style="success"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="sa_gift_cancel", style="danger")
+                )
+                _bot.reply_to(message, confirm_text, reply_markup=markup)
+
+            elif state == "sa_gift_awaiting_confirm":
+                _bot.reply_to(message, "⏳ لطفاً روی دکمه تایید یا لغو کلیک کنید.")
+
+        except Exception as e:
+            print(f"❌ خطا در handle_subadmin_state: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
+            _subadmin_states.pop(tg_id, None)
+
+    # ══════════════════════════════════════════════════════════════════════════
     # 🎯 سیستم ماموریت‌ها
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: m.text == "🎯 ماموریت‌ها", chat_types=['private'])
@@ -4222,6 +4467,73 @@ def start_token_bot():
     def callback_menu_missions(call):
         _bot.answer_callback_query(call.id)
         _do_missions(call.from_user.id, call.message.chat.id)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 📖 سیستم راهنما
+    # ══════════════════════════════════════════════════════════════════════════
+    @_bot.message_handler(func=lambda m: m.text == "📖 راهنما", chat_types=['private'])
+    def cmd_guide(message):
+        _show_guide_menu(message.from_user.id, message.chat.id)
+
+    @_bot.callback_query_handler(func=lambda call: call.data == "guide_menu" or call.data.startswith("guide_view_"))
+    def callback_guide(call):
+        _bot.answer_callback_query(call.id)
+        tg_id = call.from_user.id
+        chat_id = call.message.chat.id
+        data = call.data
+
+        if data == "guide_menu":
+            _show_guide_menu(tg_id, chat_id)
+        elif data.startswith("guide_view_"):
+            import json as _json
+            idx = int(data[len("guide_view_"):])
+            raw = db.get_global_setting("guide_list", "[]")
+            try:
+                guides = _json.loads(raw)
+            except Exception:
+                guides = []
+            if idx < 0 or idx >= len(guides):
+                return _bot.send_message(chat_id, "❌ این آموزش یافت نشد.")
+            g = guides[idx]
+            back_markup = types.InlineKeyboardMarkup()
+            back_markup.add(types.InlineKeyboardButton("🔙 بازگشت به راهنما", callback_data="guide_menu", style="primary"))
+            try:
+                if g["type"] == "video":
+                    _bot.send_video(chat_id, g["file_id"],
+                        caption=f"🎥 <b>{g['name']}</b>", reply_markup=back_markup)
+                elif g["type"] == "photo":
+                    _bot.send_photo(chat_id, g["file_id"],
+                        caption=f"🖼 <b>{g['name']}</b>", reply_markup=back_markup)
+                else:
+                    _bot.send_message(chat_id,
+                        f"📝 <b>{g['name']}</b>\n\n{g.get('content', '')}",
+                        reply_markup=back_markup)
+            except Exception as e:
+                _bot.send_message(chat_id, f"❌ خطا در نمایش آموزش: {e}")
+
+    def _show_guide_menu(tg_id, chat_id):
+        import json as _json
+        raw = db.get_global_setting("guide_list", "[]")
+        try:
+            guides = _json.loads(raw)
+        except Exception:
+            guides = []
+        if not guides:
+            account = _get_account_cached(tg_id)
+            return _bot.send_message(chat_id,
+                "📚 <b>راهنما</b>\n\nهنوز هیچ آموزشی اضافه نشده.",
+                reply_markup=_main_inline_keyboard(account))
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        for i, g in enumerate(guides):
+            icon = "🎥" if g["type"] == "video" else "🖼" if g["type"] == "photo" else "📝"
+            markup.add(types.InlineKeyboardButton(
+                f"{icon} {g['name']}", callback_data=f"guide_view_{i}", style="primary"))
+        account = _get_account_cached(tg_id)
+        if account:
+            markup.add(types.InlineKeyboardButton("🔙 منوی اصلی", callback_data="back_main", style="danger"))
+        _bot.send_message(chat_id,
+            f"📚 <b>راهنما</b>\n\n{len(guides)} آموزش موجود است. یکی را انتخاب کنید:",
+            reply_markup=markup)
 
     def _do_missions(tg_id, chat_id):
         try:
@@ -4305,7 +4617,7 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             
-            kb = _owner_keyboard() if _is_admin_user(message.from_user.id) else _user_keyboard()
+            kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
             _bot.reply_to(message, "⚠️ دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
         except Exception as e:
             print(f"❌ خطا در cmd_unknown: {e}")

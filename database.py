@@ -374,3 +374,24 @@ def get_all_telegram_ids() -> list:
 
 def get_wc_participants() -> list:
     return supa_get_wc_participants()
+
+
+# ─── سیستم ادمین‌های فرعی ────────────────────────────────────────────────────
+from database_supabase import (
+    add_sub_admin as supa_add_sub_admin,
+    remove_sub_admin as supa_remove_sub_admin,
+    get_sub_admins as supa_get_sub_admins,
+    is_sub_admin as supa_is_sub_admin,
+)
+
+def add_sub_admin(telegram_id: int, name: str = "") -> bool:
+    return supa_add_sub_admin(telegram_id, name)
+
+def remove_sub_admin(telegram_id: int) -> bool:
+    return supa_remove_sub_admin(telegram_id)
+
+def get_sub_admins() -> list:
+    return supa_get_sub_admins()
+
+def is_sub_admin(telegram_id: int) -> bool:
+    return supa_is_sub_admin(telegram_id)

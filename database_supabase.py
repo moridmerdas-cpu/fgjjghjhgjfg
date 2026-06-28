@@ -1285,6 +1285,61 @@ def get_wc_participants() -> list:
         return []
 
 
+# ─── سیستم ادمین‌های فرعی ────────────────────────────────────────────────────
+
+def init_admin_tables():
+    q = """
+        CREATE TABLE IF NOT EXISTS amel_sub_admins (
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT NOT NULL UNIQUE,
+            name TEXT,
+            added_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    try:
+        execute_query(q)
+    except Exception as e:
+        print(f"❌ init_admin_tables error: {e}")
+
+
+def add_sub_admin(telegram_id: int, name: str = "") -> bool:
+    try:
+        execute_query(
+            "INSERT INTO amel_sub_admins (telegram_id, name) VALUES (%s, %s) ON CONFLICT (telegram_id) DO NOTHING",
+            (telegram_id, name)
+        )
+        return True
+    except Exception as e:
+        print(f"❌ add_sub_admin error: {e}")
+        return False
+
+
+def remove_sub_admin(telegram_id: int) -> bool:
+    try:
+        execute_query("DELETE FROM amel_sub_admins WHERE telegram_id=%s", (telegram_id,))
+        return True
+    except Exception as e:
+        print(f"❌ remove_sub_admin error: {e}")
+        return False
+
+
+def get_sub_admins() -> list:
+    try:
+        rows = execute_query("SELECT * FROM amel_sub_admins ORDER BY added_at DESC", fetch_all=True)
+        return [dict(r) for r in rows] if rows else []
+    except Exception as e:
+        print(f"❌ get_sub_admins error: {e}")
+        return []
+
+
+def is_sub_admin(telegram_id: int) -> bool:
+    try:
+        r = execute_query("SELECT id FROM amel_sub_admins WHERE telegram_id=%s", (telegram_id,), fetch_one=True)
+        return r is not None
+    except Exception:
+        return False
+
+
 # ─── مقداردهی اولیه (کامل) ───────────────────────────────────────────────────
 try:
     init_tables()
@@ -1292,6 +1347,7 @@ try:
     init_bet_tables()
     init_purchase_tables()
     init_mission_tables()
+    init_admin_tables()
 except Exception as e:
     print(f"❌ خطا در ایجاد جداول: {e}")
 
