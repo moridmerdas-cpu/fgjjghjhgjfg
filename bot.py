@@ -354,25 +354,6 @@ class BotManager:
 bot_manager = BotManager()
 
 
-# ─── تابع کمکی: ارسال تاس/بازی تا رسیدن به مقدار هدف ──────────────────────────
-async def _send_dice_until(cl, chat_id, emoji: str, target: int):
-    """تاس/بازی ارسال می‌کنه تا مقدار هدف بیاد — با تاخیر 0.3 ثانیه بین هر تلاش"""
-    from telethon.tl.types import MessageMediaDice
-    while True:
-        try:
-            sent = await cl.send_file(chat_id, media=emoji)
-            if hasattr(sent, "media") and isinstance(sent.media, MessageMediaDice):
-                if sent.media.value == target:
-                    break
-                await sent.delete()
-                await asyncio.sleep(0.3)
-            else:
-                break
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds + 1)
-        except Exception:
-            break
-
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
 def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
@@ -620,11 +601,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تقلب روشن", "تقلب خاموش",
-            "تاس", "تاس 1", "تاس 2", "تاس 3", "تاس 4", "تاس 5", "تاس 6",
-            "بسکتبال", "بسکتبال گل",
-            "پنالتی", "پنالتی گل",
-            "دارت", "دارت مرکز",
+            "تاس",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -635,67 +612,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         await _handle_command(cl, event, text, owner_id, entry)
 
-    # ─── هندلر تقلب تاس/بسکتبال/پنالتی/دارت ─────────────────────────────────────
-    @cl.on(events.NewMessage(outgoing=True))
-    async def on_outgoing_dice(event):
-        if not event.message.media:
-            return
-        if entry.get("paused"):
-            return
-        if db.get_setting(owner_id, "cheat_active") != "1":
-            return
-
-        from telethon.tl.types import MessageMediaDice
-
-        media = event.message.media
-        if not isinstance(media, MessageMediaDice):
-            return
-
-        emoji = media.emoticon
-        WIN_VALUES = {
-            "🎲": 6,
-            "🏀": 5,
-            "⚽": 5,
-            "🎯": 6,
-        }
-        if emoji not in WIN_VALUES:
-            return
-
-        # ── بررسی استثنا: گروه مدیریت و @gp_selfnexo ──────────────────────────
-        try:
-            chat = await event.get_chat()
-            chat_username = getattr(chat, "username", "") or ""
-            EXCLUDED_USERNAMES = {"gp_selfnexo"}
-            if chat_username.lower().lstrip("@") in EXCLUDED_USERNAMES:
-                return
-        except Exception:
-            return
-
-        target_value = WIN_VALUES[emoji]
-        current_value = media.value
-
-        if current_value == target_value:
-            return  # همون اول برنده شد
-
-        # حذف پیام اشتباه و loop بدون محدودیت تا مقدار درست بیاد
-        try:
-            await event.message.delete()
-        except Exception:
-            return
-
-        while True:
-            try:
-                sent = await cl.send_file(chat.id, media=emoji)
-                if hasattr(sent, "media") and isinstance(sent.media, MessageMediaDice):
-                    if sent.media.value == target_value:
-                        break
-                    await sent.delete()
-                else:
-                    break
-            except FloodWaitError as e:
-                await asyncio.sleep(e.seconds + 1)
-            except Exception:
-                break
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -1164,7 +1080,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "private_lock_active": "قفل پیوی", "enemy_reply_active": "پاسخ دشمن",
             "auto_save_media": "ذخیره مدیا", "clock_name_active": "ساعت نام",
             "clock_bio_active": "ساعت بیو", "force_join_active": "جوین اجباری",
-            "cheat_active": "تقلب",
         }
         lines = [f"📊 وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
         for key, label in status_map.items():
@@ -1180,56 +1095,11 @@ async def _handle_command(cl, event, text, owner_id, entry):
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
 
-    # ─── تقلب (تاس/بسکتبال/پنالتی/دارت) ────────────────────────────────────
-    elif text == "تقلب روشن":
-        ss("cheat_active", "1")
-        await edit(
-            "🎰 <b>حالت تقلب روشن شد!</b>\n\n"
-            "🎲 تاس ← همیشه ۶\n"
-            "🏀 بسکتبال ← همیشه گل\n"
-            "⚽ پنالتی ← همیشه گل\n"
-            "🎯 دارت ← همیشه مرکز\n\n"
-            "دستورات مستقیم (بدون نیاز به روشن بودن تقلب):\n"
-            "> `تاس 6` — تاس با عدد ۶\n"
-            "> `تاس [1-6]` — تاس با عدد دلخواه\n"
-            "> `بسکتبال گل` — بسکتبال گل\n"
-            "> `پنالتی گل` — پنالتی گل\n"
-            "> `دارت مرکز` — دارت مرکز\n\n"
-            "برای خاموش کردن: <code>تقلب خاموش</code>"
-        )
-
-    elif text == "تقلب خاموش":
-        ss("cheat_active", "0")
-        await edit("🎰 حالت تقلب خاموش شد.")
-
-    # ─── دستورات مستقیم تاس با عدد دلخواه ───────────────────────────────────
-    elif text.startswith("تاس"):
-        chat = await event.get_chat()
-        match = re.match(r"^تاس\s*([1-6])$", text)
-        if match:
-            target_val = int(match.group(1))
-        else:
-            target_val = 6  # پیش‌فرض: ۶
-        await event.message.delete()
-        await _send_dice_until(cl, chat.id, "🎲", target_val)
-
-    # ─── دستورات مستقیم بسکتبال ──────────────────────────────────────────────
-    elif text in ("بسکتبال", "بسکتبال گل"):
+    # ─── تاس ──────────────────────────────────────────────────────────────────
+    elif text == "تاس":
         chat = await event.get_chat()
         await event.message.delete()
-        await _send_dice_until(cl, chat.id, "🏀", 5)
-
-    # ─── دستورات مستقیم پنالتی ───────────────────────────────────────────────
-    elif text in ("پنالتی", "پنالتی گل"):
-        chat = await event.get_chat()
-        await event.message.delete()
-        await _send_dice_until(cl, chat.id, "⚽", 5)
-
-    # ─── دستورات مستقیم دارت ─────────────────────────────────────────────────
-    elif text in ("دارت", "دارت مرکز"):
-        chat = await event.get_chat()
-        await event.message.delete()
-        await _send_dice_until(cl, chat.id, "🎯", 6)
+        await cl.send_file(chat.id, media="🎲")
 
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
@@ -1644,16 +1514,8 @@ def _help_text():
             "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
-        ("🎰 تقلب", [
-            "تقلب روشن  ← تقلب خودکار روی هر تاس/بازی",
-            "تقلب خاموش",
-            "──────────────────",
-            "تاس 6  ← تاس با عدد ۶",
-            "تاس [1-6]  ← تاس با عدد دلخواه",
-            "بسکتبال گل  ← 🏀 همیشه گل",
-            "پنالتی گل  ← ⚽ همیشه گل",
-            "دارت مرکز  ← 🎯 همیشه مرکز",
-            "💡 دستورات مستقیم نیاز به روشن بودن تقلب ندارند",
+        ("🎲 تاس", [
+            "تاس  ← ارسال تاس تصادفی 🎲",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
