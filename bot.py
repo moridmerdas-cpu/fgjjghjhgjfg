@@ -625,11 +625,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
 
     # ─── تاس (send_dice) ─────────────────────────────────────────────────────────
-    async def send_dice(ev, dice_type, target=None):
-        reply_to = ev.reply_to_msg_id
+    async def send_dice(ev, dice_type, target=None, reply_to=None):
+        chat_id = await ev.get_chat_id()
         while True:
             if reply_to:
-                msg = await ev.reply(file=InputMediaDice(dice_type))
+                msg = await cl.send_message(chat_id, file=InputMediaDice(dice_type), reply_to=reply_to)
             else:
                 msg = await ev.respond(file=InputMediaDice(dice_type))
 
@@ -647,9 +647,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
     async def dice(event):
         if entry.get("paused"):
             return
+        # ✅ آیدی پیامی که روی آن ریپلای زده شده، قبل از حذف دستور ذخیره می‌شود
+        reply_to = event.reply_to_msg_id
         await event.delete()
         target = int(event.pattern_match.group(1))
-        await send_dice(event, "🎲", target=target)
+        await send_dice(event, "🎲", target=target, reply_to=reply_to)
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
