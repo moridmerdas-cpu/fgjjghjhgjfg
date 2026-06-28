@@ -6,6 +6,7 @@ import random
 import threading
 import time
 from telethon import TelegramClient, events
+from telethon.tl.types import InputMediaDice
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.errors import FloodWaitError
@@ -601,7 +602,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تاس",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -612,6 +612,34 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         await _handle_command(cl, event, text, owner_id, entry)
 
+
+
+    # ─── تاس (send_dice) ─────────────────────────────────────────────────────────
+    async def send_dice(ev, dice_type, target=None):
+        reply_to = ev.reply_to_msg_id
+        while True:
+            if reply_to:
+                msg = await ev.reply(file=InputMediaDice(dice_type))
+            else:
+                msg = await ev.respond(file=InputMediaDice(dice_type))
+
+            if target is None or (msg.media and msg.media.value == target):
+                break
+
+            await asyncio.sleep(0.5)
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:تاس|roll) (\d)$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:تاس|roll) (\d)$"))
+    async def dice(event):
+        if entry.get("paused"):
+            return
+        await event.delete()
+        target = int(event.pattern_match.group(1))
+        await send_dice(event, "🎲", target=target)
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -1095,12 +1123,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
 
-    # ─── تاس ──────────────────────────────────────────────────────────────────
-    elif text == "تاس":
-        chat = await event.get_chat()
-        await event.message.delete()
-        await cl.send_file(chat.id, media="🎲")
-
     # ─── راهنما ───────────────────────────────────────────────────────────────
     elif text in ("راهنما", "help"):
         await edit(_help_text())
@@ -1515,7 +1537,8 @@ def _help_text():
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
         ("🎲 تاس", [
-            "تاس  ← ارسال تاس تصادفی 🎲",
+            "تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
+            "roll [1-6]  ← همان دستور به انگلیسی",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -1586,3 +1609,4 @@ async def _scheduler_loop(cl, owner_id):
         except Exception:
             pass
         await asyncio.sleep(30)
+
