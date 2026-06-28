@@ -371,6 +371,9 @@ def start_token_bot():
             types.InlineKeyboardButton("📚 مدیریت راهنما", callback_data="admin_guide_manage", style="success")    # 🟢 سبز
         )
         markup.add(
+            types.InlineKeyboardButton("✏️ تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary") # 🔵 آبی
+        )
+        markup.add(
             types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
         )
         return markup
@@ -2220,15 +2223,43 @@ def start_token_bot():
             else:
                 kb_markup = None
 
-            _bot.reply_to(
-                message,
-                f"👋 سلام <b>{account['username']}</b>!\n\n"
-                f"🕐 وقت تهران: <b>{now_tehran}</b>\n\n"
-                f"💎 موجودی الماس: <b>{stats['balance']}</b>\n"
-                f"📊 کل دریافتی: <b>{stats['total_earned']}</b>\n\n"
-                f"📦 اشتراک سلف:\n{sub_status}",
-                reply_markup=kb_markup
+            # ── ساخت متن خوش‌آمد از قالب قابل تنظیم ─────────────────────────
+            default_welcome = (
+                "👋 سلام {name}!\n\n"
+                "🕐 وقت تهران: {time}\n\n"
+                "💎 موجودی الماس: {balance}\n"
+                "📊 کل دریافتی: {total_earned}\n\n"
+                "📦 اشتراک سلف:\n{sub_status}"
             )
+            welcome_template = db.get_global_setting("welcome_text", default_welcome)
+            tg_user = message.from_user
+            full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
+            mention = f"<a href='tg://user?id={tg_id}'>{full_name or account['username']}</a>"
+            welcome_text = welcome_template.format(
+                name=account["username"],
+                name_full=full_name or account["username"],
+                mention=mention,
+                tag=f"@{account['username']}",
+                tg_id=tg_id,
+                time=now_tehran,
+                balance=stats["balance"],
+                total_earned=stats["total_earned"],
+                sub_status=sub_status,
+            )
+
+            # ── عکس خوش‌آمد ───────────────────────────────────────────────────
+            welcome_photo = db.get_global_setting("welcome_photo_id", "")
+
+            if welcome_photo and message.chat.type == 'private':
+                _bot.send_photo(
+                    message.chat.id,
+                    welcome_photo,
+                    caption=welcome_text,
+                    reply_markup=kb_markup
+                )
+            else:
+                _bot.reply_to(message, welcome_text, reply_markup=kb_markup)
+
             if message.chat.type == 'private':
                 _bot.send_message(message.chat.id, "📋 منوی اصلی:", reply_markup=_main_inline_keyboard(account))
 
@@ -3478,6 +3509,133 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id, "✅ آموزش حذف شد")
                 return
 
+            elif data == "admin_welcome_settings":
+                # ── صفحه اصلی تنظیمات خوش‌آمد ───────────────────────────────
+                cur_text = db.get_global_setting("welcome_text", "")
+                cur_photo = db.get_global_setting("welcome_photo_id", "")
+                preview = (cur_text[:120] + "...") if len(cur_text) > 120 else cur_text
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("✏️ تغییر متن خوش‌آمد", callback_data="admin_welcome_edit_text", style="primary"),
+                    types.InlineKeyboardButton("🖼 تغییر عکس خوش‌آمد", callback_data="admin_welcome_edit_photo", style="primary"),
+                )
+                if cur_photo:
+                    markup.add(types.InlineKeyboardButton("🗑 حذف عکس خوش‌آمد", callback_data="admin_welcome_del_photo", style="danger"))
+                markup.add(types.InlineKeyboardButton("👁 پیش‌نمایش", callback_data="admin_welcome_preview", style="success"))
+                markup.add(types.InlineKeyboardButton("🔄 بازگشت به پیش‌فرض", callback_data="admin_welcome_reset", style="danger"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+
+                info = (
+                    "✏️ <b>تنظیمات پیام خوش‌آمد</b>\n\n"
+                    f"{'🖼 عکس: تنظیم شده ✅' if cur_photo else '🖼 عکس: تنظیم نشده ❌'}\n\n"
+                    f"📝 <b>متن فعلی:</b>\n<code>{preview or '(پیش‌فرض)'}</code>\n\n"
+                    "━━━━━━━━━━━━━━━━\n"
+                    "📌 <b>متغیرهای قابل استفاده:</b>\n"
+                    "  <code>{name}</code> — یوزرنیم کاربر\n"
+                    "  <code>{name_full}</code> — نام کامل تلگرام\n"
+                    "  <code>{mention}</code> — منشن با نام\n"
+                    "  <code>{tag}</code> — @یوزرنیم\n"
+                    "  <code>{tg_id}</code> — ایدی عددی\n"
+                    "  <code>{time}</code> — وقت تهران\n"
+                    "  <code>{balance}</code> — موجودی الماس\n"
+                    "  <code>{total_earned}</code> — کل دریافتی\n"
+                    "  <code>{sub_status}</code> — وضعیت اشتراک"
+                )
+                _bot.edit_message_text(info,
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_welcome_edit_text":
+                _owner_states[call.from_user.id] = {"state": "welcome_edit_text", "data": {}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger"))
+                _bot.edit_message_text(
+                    "✏️ <b>تغییر متن خوش‌آمد</b>\n\n"
+                    "متن جدید را ارسال کنید.\n\n"
+                    "متغیرهای قابل استفاده:\n"
+                    "<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
+                    "<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
+                    "<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_welcome_edit_photo":
+                _owner_states[call.from_user.id] = {"state": "welcome_edit_photo", "data": {}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger"))
+                _bot.edit_message_text(
+                    "🖼 <b>تغییر عکس خوش‌آمد</b>\n\n"
+                    "عکس جدید را ارسال کنید.\n"
+                    "این عکس همراه با متن خوش‌آمد برای کاربران نمایش داده می‌شود.",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_welcome_del_photo":
+                db.set_global_setting("welcome_photo_id", "")
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_welcome_settings", style="danger"))
+                _bot.edit_message_text("✅ عکس خوش‌آمد حذف شد.",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id, "✅ حذف شد")
+                return
+
+            elif data == "admin_welcome_reset":
+                db.set_global_setting("welcome_text", "")
+                db.set_global_setting("welcome_photo_id", "")
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_welcome_settings", style="danger"))
+                _bot.edit_message_text("✅ متن و عکس خوش‌آمد به پیش‌فرض بازگشت.",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_welcome_preview":
+                # پیش‌نمایش برای خود مالک
+                default_welcome = (
+                    "👋 سلام {name}!\n\n"
+                    "🕐 وقت تهران: {time}\n\n"
+                    "💎 موجودی الماس: {balance}\n"
+                    "📊 کل دریافتی: {total_earned}\n\n"
+                    "📦 اشتراک سلف:\n{sub_status}"
+                )
+                template = db.get_global_setting("welcome_text", default_welcome) or default_welcome
+                tg_user = call.from_user
+                full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
+                mention = f"<a href='tg://user?id={tg_user.id}'>{full_name}</a>"
+                try:
+                    preview_text = template.format(
+                        name=tg_user.username or "مالک",
+                        name_full=full_name or "مالک",
+                        mention=mention,
+                        tag=f"@{tg_user.username}" if tg_user.username else f"#{tg_user.id}",
+                        tg_id=tg_user.id,
+                        time=_now_tehran().strftime("%Y/%m/%d — %H:%M"),
+                        balance="999",
+                        total_earned="9999",
+                        sub_status="✅ فعال — پیش‌نمایش",
+                    )
+                except Exception as fmt_err:
+                    preview_text = f"❌ خطا در قالب‌بندی: {fmt_err}"
+                welcome_photo = db.get_global_setting("welcome_photo_id", "")
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_welcome_settings", style="danger"))
+                if welcome_photo:
+                    try:
+                        _bot.send_photo(call.message.chat.id, welcome_photo,
+                            caption=f"👁 <b>پیش‌نمایش:</b>\n\n{preview_text}", reply_markup=markup)
+                        _bot.answer_callback_query(call.id)
+                    except Exception:
+                        _bot.send_message(call.message.chat.id,
+                            f"👁 <b>پیش‌نمایش:</b>\n\n{preview_text}", reply_markup=markup)
+                else:
+                    _bot.send_message(call.message.chat.id,
+                        f"👁 <b>پیش‌نمایش:</b>\n\n{preview_text}", reply_markup=markup)
+                _bot.answer_callback_query(call.id)
+                return
+
             elif data == "admin_manage_admins":
                 # ── لیست ادمین‌های فرعی فعلی ─────────────────────────────────
                 admins = db.get_sub_admins()
@@ -3915,6 +4073,46 @@ def start_token_bot():
                     f"✅ <b>{name}</b> (<code>{new_admin_id}</code>) به عنوان ادمین اضافه شد.",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
+
+            elif state == "welcome_edit_text":
+                # ذخیره متن خوش‌آمد جدید
+                new_text = message.text or ""
+                if not new_text.strip():
+                    return _bot.reply_to(message, "❌ متن نمی‌تواند خالی باشد:")
+                # اعتبارسنجی متغیرها
+                try:
+                    new_text.format(
+                        name="test", name_full="test", mention="test",
+                        tag="test", tg_id=0, time="test",
+                        balance=0, total_earned=0, sub_status="test"
+                    )
+                except KeyError as e:
+                    return _bot.reply_to(message,
+                        f"❌ متغیر نامعتبر: <code>{e}</code>\n\n"
+                        "متغیرهای مجاز:\n"
+                        "<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
+                        "<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
+                        "<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>")
+                db.set_global_setting("welcome_text", new_text)
+                _owner_states.pop(message.from_user.id, None)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary"))
+                _bot.reply_to(message, "✅ متن خوش‌آمد ذخیره شد!", reply_markup=markup)
+
+            elif state == "welcome_edit_photo":
+                # ذخیره عکس خوش‌آمد
+                photo_id = None
+                if message.photo:
+                    photo_id = message.photo[-1].file_id
+                elif message.document and message.document.mime_type and message.document.mime_type.startswith("image"):
+                    photo_id = message.document.file_id
+                else:
+                    return _bot.reply_to(message, "❌ لطفاً یک عکس ارسال کنید:")
+                db.set_global_setting("welcome_photo_id", photo_id)
+                _owner_states.pop(message.from_user.id, None)
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("🔙 تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary"))
+                _bot.reply_to(message, "✅ عکس خوش‌آمد ذخیره شد!", reply_markup=markup)
 
             elif state == "guide_name":
                 # مرحله ۱: دریافت اسم آموزش
