@@ -414,7 +414,7 @@ def start_token_bot():
 
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
 
             balance = db.get_token_balance(account["id"])
             if balance < amount:
@@ -496,7 +496,7 @@ def start_token_bot():
 
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل ربات ثبت‌نام کنید.", show_alert=True)
 
             # ورود به دیتابیس (کسر موجودی نفر دوم + آپدیت وضعیت)
             success, msg_txt = db.join_bet(bet_id, account["id"], call.from_user.id)
@@ -653,7 +653,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
             
             stats = db.get_token_stats(account["id"])
             _bot.reply_to(
@@ -691,11 +691,11 @@ def start_token_bot():
 
                 from_account = _get_account_cached(message.from_user.id)
                 if not from_account:
-                    return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+                    return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
 
                 to_account = db.get_account_by_tg_id(target_user.id)
                 if not to_account:
-                    return _bot.reply_to(message, "❌ این کاربر در پنل وب ثبت‌نام نکرده است.")
+                    return _bot.reply_to(message, "❌ این کاربر در پنل ربات ثبت‌نام نکرده است.")
 
                 success, msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
 
@@ -727,7 +727,7 @@ def start_token_bot():
             
             from_account = _get_account_cached(message.from_user.id)
             if not from_account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
             
             to_account = db.get_account_by_username(username)
             if not to_account:
@@ -1074,7 +1074,7 @@ def start_token_bot():
 
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل ربات ثبت‌نام کنید.", show_alert=True)
 
             min_bet = getattr(config, "WC_MIN_BET", 10)
             max_bet = getattr(config, "WC_MAX_BET", 5000)
@@ -1170,7 +1170,7 @@ def start_token_bot():
                 return _bot.answer_callback_query(call.id, "❌ این چالش فعال نیست.", show_alert=True)
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل ربات ثبت‌نام کنید.", show_alert=True)
             _wc_pending_bet[call.from_user.id] = {
                 "challenge_id": challenge_id,
                 "selected_option": team_choice,
@@ -1228,7 +1228,7 @@ def start_token_bot():
             markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
             if site_url:
                 # 🔵 دکمه وب‌سایت با رنگ primary (آبی)
-                markup.add(types.InlineKeyboardButton("🌐 پنل وب", url=site_url, style="primary"))
+                markup.add(types.InlineKeyboardButton("🌐 (دردسترس نیست) پنل وب", url=site_url, style="primary"))
             try:
                 _bot.send_message(
                     tg_id,
@@ -3299,8 +3299,8 @@ def start_token_bot():
                 # ── انتخاب نوع هدیه ──────────────────────────────────────────────
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("💎 الماس", callback_data="admin_gift_diamond", style="primary"),
-                    types.InlineKeyboardButton("📋 پنل", callback_data="admin_gift_panel", style="success")
+                    types.InlineKeyboardButton(" الماس", callback_data="admin_gift_diamond", style="primary", icon_custom_emoji_id=str(EM.ID_DIAMONDS)),
+                    types.InlineKeyboardButton(" پلن", callback_data="admin_gift_panel", style="success", icon_custom_emoji_id=str(EM.ID_Pending))
                 )
                 markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
