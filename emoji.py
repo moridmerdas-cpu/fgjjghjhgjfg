@@ -54,6 +54,13 @@ ID_WELCOME      = 5436203513149404753
 ID_BET          = 6105002016457625114
 ID_CONNECT      = 6001099232784683975
 ID_SELF_EDIT    = 6001136607590096242
+
+# ── ایموجی‌های پیام «انتقال الماس موفق» ──
+ID_TRANSFER_SUCCESS = 5278467510604160626   # 📦 موفقیت انتقال (هدر پیام)
+ID_CHECK_PREMIUM    = 6111444480286528430   # ✅ تیک تایید پرمیوم
+ID_SENDER           = 5782766782200682322   # 🤖 فرستنده
+ID_RECEIVER         = 4958472587123360612   # 💎 گیرنده
+ID_TAX_TRANSFER     = 4956601935592424315   # 💵 مالیات انتقال
 # ─────────────────────────────────────────
 #  تابع کمکی برای متن پیام (HTML tag)
 # ─────────────────────────────────────────
@@ -103,3 +110,10 @@ EMOJI_HELP        = pe(ID_HELP,        "🤖")
 EMOJI_WELCOME     = pe(ID_WELCOME,     "🤖")
 EMOJI_BET         = pe(ID_BET,         "🤖")
 EMOJI_SELF_EDIT   = pe(ID_SELF_EDIT,   "🤖")
+
+# ── ایموجی‌های پیام «انتقال الماس موفق» ──
+EMOJI_TRANSFER_SUCCESS = pe(ID_TRANSFER_SUCCESS, "📦")
+EMOJI_CHECK_PREMIUM    = pe(ID_CHECK_PREMIUM,    "✅")
+EMOJI_SENDER           = pe(ID_SENDER,           "🤖")
+EMOJI_RECEIVER         = pe(ID_RECEIVER,         "💎")
+EMOJI_TAX_TRANSFER     = pe(ID_TAX_TRANSFER,     "💵")
