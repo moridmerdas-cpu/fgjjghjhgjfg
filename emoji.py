@@ -37,7 +37,7 @@ ID_SELF_OFF     = 5260342697075416641   # 🔴 خاموش کردن سلف
 ID_SELF_DELETE  = 5258130763148172425   # 🗑 حذف سلف
 ID_BET_JOIN     = 6001567998400273892   # ⚔️ ورود به شرط‌بندی
 ID_FORCED_JOIN  = 6255593645848660539
-
+ID_CONNECT      = 6001099232784683975
 
 # ─────────────────────────────────────────
 #  تابع کمکی برای متن پیام (HTML tag)
@@ -71,3 +71,4 @@ EMOJI_SELF_OFF    = pe(ID_SELF_OFF,    "🔴")
 EMOJI_SELF_DELETE = pe(ID_SELF_DELETE, "🗑")
 EMOJI_BET_JOIN    = pe(ID_BET_JOIN,    "⚔️")
 EMOJI_FORCED_JOIN = pe(ID_FORCED_JOIN, "📢")
+EMOJI_CONNECT     = pe(ID_CONNECT,     "🤖")
