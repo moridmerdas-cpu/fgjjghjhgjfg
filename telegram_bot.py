@@ -19,6 +19,7 @@ from emoji_system import (
     emoji_list,
     format_template,
     send_emoji_message,
+    get_emoji_id,
     EMOJIS,
 )
 
@@ -318,20 +319,41 @@ def start_token_bot():
 
     def _main_inline_keyboard(account=None):
         # ✅ دکمه‌های اصلی کاربر به‌صورت InlineKeyboardButton
+        # نکته: ایموجی یونیکد رو هم توی متن نگه می‌داریم (fallback ایمن برای
+        # حالتی که icon_custom_emoji_id به هر دلیلی نمایش داده نشه) و علاوه
+        # بر اون، آیکون پرمیوم رو هم از طریق icon_custom_emoji_id ست می‌کنیم.
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success")   # 🟢 سبز
+            types.InlineKeyboardButton(
+                "💎 موجودی", callback_data="menu_balance", style="primary",
+                icon_custom_emoji_id=get_emoji_id("diamond"),
+            ),
+            types.InlineKeyboardButton(
+                "🎁 هدیه روزانه", callback_data="menu_daily", style="success",
+                icon_custom_emoji_id=get_emoji_id("gift"),
+            ),
         )
         markup.add(
-            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success")      # 🟢 سبز
+            types.InlineKeyboardButton(
+                "🔗 رفرال", callback_data="menu_referral", style="primary",
+                icon_custom_emoji_id=get_emoji_id("link_chain"),
+            ),
+            types.InlineKeyboardButton(
+                "🛒 خرید الماس", callback_data="menu_buy", style="success",
+                icon_custom_emoji_id=get_emoji_id("diamond_blue"),
+            ),
         )
         markup.add(
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton(
+                "🎯 ماموریت‌ها", callback_data="menu_missions", style="primary",
+                icon_custom_emoji_id=get_emoji_id("trophy"),
+            )
         )
         markup.add(
-            types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="success")        # 🟢 سبز
+            types.InlineKeyboardButton(
+                "📖 راهنما", callback_data="guide_menu", style="success",
+                icon_custom_emoji_id=get_emoji_id("book"),
+            )
         )
         # ✅ اگر اکانت سلف دارد ولی سلف به اکانت تلگرامی فعلی وصل نیست، دکمه ورود دوباره نمایش داده می‌شود
         if account is not None:
@@ -341,7 +363,10 @@ def start_token_bot():
                 is_logged_in = True
             if not is_logged_in:
                 markup.add(
-                    types.InlineKeyboardButton("🤖 ورود سلف با ربات", callback_data="reg_start", style="success")  # 🟢 سبز
+                    types.InlineKeyboardButton(
+                        "🤖 ورود سلف با ربات", callback_data="reg_start", style="success",
+                        icon_custom_emoji_id=get_emoji_id("robot"),
+                    )  # 🟢 سبز
                 )
         return markup
 
