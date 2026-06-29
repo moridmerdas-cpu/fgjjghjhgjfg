@@ -711,6 +711,16 @@ def start_token_bot():
                         except Exception:
                             pass
 
+                    sender_name = message.from_user.username or "کاربر"
+                    receiver_name = target_user.username or "کاربر"
+                    formatted_msg = (
+                        f"{EM.EMOJI_TRANSFER_SUCCESS} <b>{amount} الماس با موفقیت انتقال یافت</b> {EM.EMOJI_CHECK_PREMIUM}\n\n"
+                        f"{EM.EMOJI_SENDER} <b>فرستنده:</b> @{sender_name}\n\n"
+                        f"{EM.EMOJI_RECEIVER} <b>گیرنده:</b> @{receiver_name}\n"
+                        f"{EM.EMOJI_TAX_TRANSFER} {msg}"
+                    )
+                    return _bot.reply_to(message, formatted_msg)
+
                 return _bot.reply_to(message, msg)
 
             # ── حالت معمول: «انتقال [یوزرنیم] [عدد]» ─────────────────────────
@@ -749,7 +759,16 @@ def start_token_bot():
                         )
                     except:
                         pass
-            
+
+                sender_name = message.from_user.username or "کاربر"
+                formatted_msg = (
+                    f"{EM.EMOJI_TRANSFER_SUCCESS} <b>{amount} الماس با موفقیت انتقال یافت</b> {EM.EMOJI_CHECK_PREMIUM}\n\n"
+                    f"{EM.EMOJI_SENDER} <b>فرستنده:</b> @{sender_name}\n\n"
+                    f"{EM.EMOJI_RECEIVER} <b>گیرنده:</b> @{username}\n"
+                    f"{EM.EMOJI_TAX_TRANSFER} {msg}"
+                )
+                return _bot.reply_to(message, formatted_msg)
+
             _bot.reply_to(message, msg)
             
         except Exception as e:
