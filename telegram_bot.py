@@ -1838,16 +1838,16 @@ def start_token_bot():
             if is_running and not is_paused:
                 # سلف روشن است — دکمه خاموش کردن
                 markup.add(types.InlineKeyboardButton(
-                    "🔴 خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger",
+                    " خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger",
                     icon_custom_emoji_id=str(EM.ID_SELF_OFF)))
             else:
                 # سلف خاموش یا pause است — دکمه روشن کردن
                 markup.add(types.InlineKeyboardButton(
-                    "🟢 روشن کردن سلف", callback_data="self_mgmt_start", style="success",
+                    " روشن کردن سلف", callback_data="self_mgmt_start", style="success",
                     icon_custom_emoji_id=str(EM.ID_SELF_ON)))
             # حذف سلف همیشه نمایش داده می‌شود
             markup.add(types.InlineKeyboardButton(
-                "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger",
+                " حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger",
                 icon_custom_emoji_id=str(EM.ID_SELF_DELETE)))
 
         markup.add(types.InlineKeyboardButton(
