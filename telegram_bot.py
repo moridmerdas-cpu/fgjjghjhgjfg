@@ -7,6 +7,7 @@ import config
 import datetime
 import random
 import re
+import emoji as EM
 
 # ─── وقت تهران ───────────────────────────────────────────────────────────────
 _TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
@@ -185,7 +186,7 @@ def _kp_markup(digits, mode="code"):
         types.InlineKeyboardButton("0", callback_data=f"{prefix}0", style="primary"),   # 🔵 آبی
         types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm", style="success"),  # 🟢 سبز
     )
-    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger"))  # 🔴 قرمز
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger", icon_custom_emoji_id="5832353674281620438"))  # 🔴 قرمز
     return markup
 
 
@@ -267,7 +268,7 @@ def start_token_bot():
             # 🟢 دکمه عضویت با رنگ primary (آبی)
             markup.add(types.InlineKeyboardButton(f"📢 عضویت در {ch}", url=f"https://t.me/{ch_clean}", style="primary"))
         # 🟢 دکمه بررسی با رنگ success (سبز)
-        markup.add(types.InlineKeyboardButton("✅ بررسی عضویت من", callback_data="check_join", style="success"))
+        markup.add(types.InlineKeyboardButton("✅ بررسی عضویت من", callback_data="check_join", style="success", icon_custom_emoji_id="5830326445422940546"))
         
         channels_list = "\n".join([f"🔸 {ch}" for ch in missing_channels])
         _bot.reply_to(
@@ -306,20 +307,19 @@ def start_token_bot():
         # ✅ دکمه‌های اصلی کاربر به‌صورت InlineKeyboardButton
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success")   # 🟢 سبز
+            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary", icon_custom_emoji_id=str(EM.ID_BALANCE)),
+            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success", icon_custom_emoji_id=str(EM.ID_DAILY_GIFT))
         )
         markup.add(
-            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success")      # 🟢 سبز
+            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary", icon_custom_emoji_id=str(EM.ID_REFERRAL)),
+            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success", icon_custom_emoji_id=str(EM.ID_BUY_DIAMOND))
         )
         markup.add(
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary", icon_custom_emoji_id=str(EM.ID_MISSION))
         )
         markup.add(
-            types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="success")        # 🟢 سبز
+            types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="success", icon_custom_emoji_id=str(EM.ID_GUIDE))
         )
-        # ✅ اگر اکانت سلف دارد ولی سلف به اکانت تلگرامی فعلی وصل نیست، دکمه ورود دوباره نمایش داده می‌شود
         if account is not None:
             try:
                 is_logged_in = db.get_setting(account["id"], "logged_in", "0") == "1"
@@ -327,7 +327,7 @@ def start_token_bot():
                 is_logged_in = True
             if not is_logged_in:
                 markup.add(
-                    types.InlineKeyboardButton("🤖 ورود سلف با ربات", callback_data="reg_start", style="success")  # 🟢 سبز
+                    types.InlineKeyboardButton("🤖 ورود سلف با ربات", callback_data="reg_start", style="success", icon_custom_emoji_id=str(EM.ID_SELF_MANAGE))
                 )
         return markup
 
@@ -444,7 +444,8 @@ def start_token_bot():
                 types.InlineKeyboardButton(
                     "⚔️ ورود به شرط‌بندی",
                     callback_data=f"join_bet_{bet_id}",
-                    style="success"  # 🟢 سبز
+                    style="success",
+                    icon_custom_emoji_id=str(EM.ID_BET_JOIN)
                 )
             )
             # 🔴 دکمه لغو شرط‌بندی برای سازنده
@@ -452,7 +453,8 @@ def start_token_bot():
                 types.InlineKeyboardButton(
                     "❌ لغو شرط‌بندی",
                     callback_data=f"cancel_bet_{bet_id}",
-                    style="danger"  # 🔴 قرمز
+                    style="danger",
+                    icon_custom_emoji_id=str(EM.ID_CANCEL)
                 )
             )
 
@@ -541,7 +543,7 @@ def start_token_bot():
                 f"💰 مجموع: {total} الماس\n"
                 f"🏛 مالیات (۱۷٪): {tax} الماس\n\n"
                 f"🏆 <b>برنده: {winner_name}</b>\n"
-                f"💎 <b>جایزه: {payout} الماس</b>"
+                f"{EM.EMOJI_DIAMONDS} <b>جایزه: {payout} الماس</b>"
             )
 
             # ویرایش پیام اصلی
@@ -656,7 +658,7 @@ def start_token_bot():
             stats = db.get_token_stats(account["id"])
             _bot.reply_to(
                 message,
-                f"💎 <b>موجودی شما:</b>\n\n"
+                f"{EM.EMOJI_DIAMONDS} <b>موجودی شما:</b>\n\n"
                 f"💰 الماس: <b>{stats['balance']}</b>\n"
                 f"📊 کل دریافتی: <b>{stats['total_earned']}</b>"
             )
@@ -704,7 +706,7 @@ def start_token_bot():
                         try:
                             _bot.send_message(
                                 to_tg_id,
-                                f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                                f"{EM.EMOJI_DIAMONDS} <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
                             )
                         except Exception:
                             pass
@@ -743,7 +745,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             to_tg_id,
-                            f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                            f"{EM.EMOJI_DIAMONDS} <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
                         )
                     except:
                         pass
@@ -965,7 +967,7 @@ def start_token_bot():
                         _bot.send_message(
                             winner["user_tg_id"],
                             f"🎉 <b>تبریک!</b> شرط‌بندی {ch['team1']} vs {ch['team2']} را بردید!\n"
-                            f"💎 <b>{winner['payout']} الماس</b> به حسابتان واریز شد."
+                            f"{EM.EMOJI_DIAMONDS} <b>{winner['payout']} الماس</b> به حسابتان واریز شد."
                         )
                     except Exception:
                         pass
@@ -1196,7 +1198,7 @@ def start_token_bot():
                 try:
                     _bot.send_message(
                         tg_id,
-                        f"🎁 <b>یک روز سلف رایگان هدیه گرفتید!</b>\n\n"
+                        f"{EM.EMOJI_DAILY_GIFT} <b>یک روز سلف رایگان هدیه گرفتید!</b>\n\n"
                         f"⏰ انقضا: <b>{exp_str}</b> (وقت تهران)\n\n"
                         f"برای تمدید، از منوی 🛒 خرید استفاده کنید."
                     )
@@ -1313,7 +1315,7 @@ def start_token_bot():
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger")  # 🔴 قرمز
+                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger", icon_custom_emoji_id="5832353674281620438")  # 🔴 قرمز
                 ),
             )
         except Exception:
@@ -1710,7 +1712,7 @@ def start_token_bot():
                             f"✅ <b>خوش برگشتید!</b>\n\n"
                             f"👤 {tg_user['name']}\n"
                             f"🆔 اکانت موجود بود — سلف‌بات فعال شد!\n\n"
-                            f"💎 موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
+                            f"{EM.EMOJI_BALANCE} موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
                             chat_id=call.message.chat.id,
                             message_id=call.message.message_id,
                         )
@@ -1782,7 +1784,7 @@ def start_token_bot():
                         f"👤 نام: <b>{tg_user['name']}</b>\n"
                         f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n"
                         f"🔒 رمز عبور: همان رمزی که وارد کردید\n\n"
-                        f"🎁 <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
+                        f"{EM.EMOJI_DAILY_GIFT} <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
                         f"⏰ <b>۱ روز سلف رایگان</b> فعال شد!\n\n"
                         f"✅ سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
                         chat_id=call.message.chat.id,
@@ -1830,19 +1832,23 @@ def start_token_bot():
         if not is_logged:
             # سلف وصل نیست — فقط دکمه وصل کردن
             markup.add(types.InlineKeyboardButton(
-                "🔗 وصل کردن سلف", callback_data="reg_start", style="success"))
+                "🔗 وصل کردن سلف", callback_data="reg_start", style="success",
+                icon_custom_emoji_id=str(EM.ID_REFERRAL)))
         else:
             if is_running and not is_paused:
                 # سلف روشن است — دکمه خاموش کردن
                 markup.add(types.InlineKeyboardButton(
-                    "🔴 خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger"))
+                    "🔴 خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger",
+                    icon_custom_emoji_id=str(EM.ID_SELF_OFF)))
             else:
                 # سلف خاموش یا pause است — دکمه روشن کردن
                 markup.add(types.InlineKeyboardButton(
-                    "🟢 روشن کردن سلف", callback_data="self_mgmt_start", style="success"))
+                    "🟢 روشن کردن سلف", callback_data="self_mgmt_start", style="success",
+                    icon_custom_emoji_id=str(EM.ID_SELF_ON)))
             # حذف سلف همیشه نمایش داده می‌شود
             markup.add(types.InlineKeyboardButton(
-                "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
+                "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger",
+                icon_custom_emoji_id=str(EM.ID_SELF_DELETE)))
 
         markup.add(types.InlineKeyboardButton(
             "🔙 بازگشت", callback_data="self_mgmt_back", style="danger"))
@@ -2051,8 +2057,8 @@ def start_token_bot():
             markup = types.InlineKeyboardMarkup(row_width=2)
             # 🟢 دکمه تأیید با رنگ success (سبز)
             markup.add(
-                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
-                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
+                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success", icon_custom_emoji_id="5830326445422940546"),
+                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger", icon_custom_emoji_id="5832353674281620438")  # 🔴 قرمز
             )
             _bot.answer_callback_query(call.id)
             try:
@@ -2319,7 +2325,7 @@ def start_token_bot():
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
             _bot.reply_to(message,
-                f"💎 <b>موجودی الماس</b>\n\n"
+                f"{EM.EMOJI_DIAMONDS} <b>موجودی الماس</b>\n\n"
                 f"💰 فعلی: <b>{stats['balance']}</b>\n"
                 f"📊 کل: <b>{stats['total_earned']}</b>\n"
                 f"👥 رفرال: <b>{ref_count}</b> نفر\n"
@@ -2341,7 +2347,7 @@ def start_token_bot():
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
             _bot.answer_callback_query(call.id)
             _bot.send_message(call.message.chat.id,
-                f"💎 <b>موجودی الماس</b>\n\n"
+                f"{EM.EMOJI_DIAMONDS} <b>موجودی الماس</b>\n\n"
                 f"💰 فعلی: <b>{stats['balance']}</b>\n"
                 f"📊 کل: <b>{stats['total_earned']}</b>\n"
                 f"👥 رفرال: <b>{ref_count}</b> نفر\n"
@@ -2476,7 +2482,7 @@ def start_token_bot():
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id,
                 f"🛒 <b>منوی خرید</b>\n\n"
-                f"💎 موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
+                f"{EM.EMOJI_BALANCE} موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
                 f"یکی از گزینه‌های زیر را انتخاب کنید:",
                 **kwargs)
         except Exception as e:
@@ -2506,7 +2512,7 @@ def start_token_bot():
             elif data == "pur_sub_diamond":
                 balance = db.get_token_balance(account["id"])
                 text = (
-                    f"💎 <b>خرید اشتراک با الماس</b>\n\n"
+                    f"{EM.EMOJI_DIAMONDS} <b>خرید اشتراک با الماس</b>\n\n"
                     f"موجودی شما: <b>{balance} الماس</b>\n\n"
                     f"یک پلن را انتخاب کنید:"
                 )
@@ -2531,7 +2537,7 @@ def start_token_bot():
                     markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_diamond", style="danger"))
                     return _bot.edit_message_text(
                         f"❌ <b>موجودی کافی نیست!</b>\n\n"
-                        f"💎 موجودی: {balance} الماس\n"
+                        f"{EM.EMOJI_BALANCE} موجودی: {balance} الماس\n"
                         f"💎 نیاز: {cost} الماس\n"
                         f"💎 کمبود: {need} الماس\n\n"
                         f"💡 برای کسب الماس:\n"
@@ -2642,7 +2648,7 @@ def start_token_bot():
                             _bot.send_message(
                                 payment["tg_id"],
                                 f"✅ <b>پرداخت تأیید شد!</b>\n\n"
-                                f"💎 <b>{amount} الماس</b> به حسابتان اضافه شد!"
+                                f"{EM.EMOJI_DIAMONDS} <b>{amount} الماس</b> به حسابتان اضافه شد!"
                             )
                         except Exception: pass
 
@@ -2651,7 +2657,7 @@ def start_token_bot():
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("✅ تأیید شد", callback_data="noop", style="success")
+                            types.InlineKeyboardButton("✅ تأیید شد", callback_data="noop", style="success", icon_custom_emoji_id="5830326445422940546")
                         )
                     )
                     _bot.answer_callback_query(call.id, "✅ پرداخت تأیید شد!", show_alert=True)
@@ -2712,7 +2718,7 @@ def start_token_bot():
                 _purchase_states[tg_id] = {"step": "waiting_receipt_diamond", "payment_id": payment_id}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="pur_back", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="pur_back", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.reply_to(message,
                     f"🛍 <b>خرید {amount} الماس</b>\n\n"
                     f"💰 مبلغ: <b>{toman:,} تومان</b>\n"
@@ -2760,11 +2766,11 @@ def start_token_bot():
                 admin_markup = types.InlineKeyboardMarkup(row_width=2)
                 # 🟢 دکمه تأیید با رنگ success (سبز)
                 admin_markup.add(
-                    types.InlineKeyboardButton("✅ تأیید", callback_data=f"pur_approve_{payment_id}", style="success"),
+                    types.InlineKeyboardButton("✅ تأیید", callback_data=f"pur_approve_{payment_id}", style="success", icon_custom_emoji_id="5830326445422940546"),
                 )
                 # 🔴 دکمه رد با رنگ danger (قرمز)
                 admin_markup.add(
-                    types.InlineKeyboardButton("❌ رد", callback_data=f"pur_reject_{payment_id}", style="danger")
+                    types.InlineKeyboardButton("❌ رد", callback_data=f"pur_reject_{payment_id}", style="danger", icon_custom_emoji_id="5832353674281620438")
                 )
                 try:
                     admin_msg = _bot.send_photo(
@@ -2899,7 +2905,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "waiting_channel"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📝 آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id,
@@ -2997,7 +3003,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "wc_team1", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🏆 <b>ایجاد چالش جدید</b>\n\n"
                     "📝 مرحله ۱ از ۴:\nنام <b>تیم اول</b> را ارسال کنید:\n\nمثال: <code>ایران</code>",
@@ -3199,7 +3205,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "transfer_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "💎 <b>انتقال الماس (از طرف سیستم)</b>\n\n"
                     "📝 یوزرنیم کاربر مقصد را ارسال کنید:\n\nمثال: <code>ali</code>",
@@ -3214,7 +3220,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "give_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "💰 <b>دادن الماس به کاربر</b>\n\n"
                     "📝 یوزرنیم کاربر را ارسال کنید:\n\nمثال: <code>ali</code>",
@@ -3230,7 +3236,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "set_card"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     f"💳 <b>تنظیم شماره کارت</b>\n\n"
                     f"کارت فعلی: <code>{cur_card}</code>\n\n"
@@ -3259,7 +3265,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "broadcast_msg"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📣 <b>ارسال پیام عمومی</b>\n\n"
                     "پیام خود را ارسال کنید (متن، عکس یا لینک):\n"
@@ -3296,7 +3302,7 @@ def start_token_bot():
                     types.InlineKeyboardButton("💎 الماس", callback_data="admin_gift_diamond", style="primary"),
                     types.InlineKeyboardButton("📋 پنل", callback_data="admin_gift_panel", style="success")
                 )
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🎁 <b>هدیه به کاربر</b>\n\n"
                     "نوع هدیه را وارد کنید:",
@@ -3311,7 +3317,7 @@ def start_token_bot():
                 # ── هدیه الماس: تعداد الماس ──────────────────────────────────────
                 _owner_states[call.from_user.id] = {"state": "gift_diamond_amount", "data": {"gift_type": "diamond"}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "💎 <b>هدیه الماس</b>\n\n"
                     "تعداد الماس هدیه را وارد کنید:\n\nمثال: <code>100</code>",
@@ -3330,7 +3336,7 @@ def start_token_bot():
                     types.InlineKeyboardButton("📅 پنل یک هفته‌ای (7 روز)", callback_data="admin_gift_plan_7", style="primary"),
                     types.InlineKeyboardButton("📅 پنل یک روزه (1 روز)", callback_data="admin_gift_plan_1", style="primary")
                 )
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📋 <b>هدیه پنل</b>\n\n"
                     "نوع پنل هدیه را انتخاب کنید:",
@@ -3351,7 +3357,7 @@ def start_token_bot():
                     "data": {"gift_type": "panel", "days": days, "plan_label": plan_label}
                 }
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     f"📋 <b>پنل {plan_label}</b>\n\n"
                     "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
@@ -3382,7 +3388,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             tg_id,
-                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"{EM.EMOJI_DAILY_GIFT} <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
                             f"🎊 مشخصات هدیه:\n"
                             f"╔══════════════════╗\n"
                             f"  💎 <b>الماس هدیه:</b> {amount} الماس\n"
@@ -3407,7 +3413,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             tg_id,
-                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"{EM.EMOJI_DAILY_GIFT} <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
                             f"🎊 مشخصات هدیه:\n"
                             f"╔══════════════════╗\n"
                             f"  📋 <b>پنل هدیه:</b> {plan_label} ({days} روز)\n"
@@ -3453,7 +3459,7 @@ def start_token_bot():
                 if state_info.get("state") == "guide_type":
                     state_info["state"] = "guide_send_media"
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🎥 <b>ارسال آموزش تصویری</b>\n\n"
                     "ویدیو یا عکس آموزشی را در همین پیوی ارسال کنید:",
@@ -3467,7 +3473,7 @@ def start_token_bot():
                 if state_info.get("state") == "guide_type":
                     state_info["state"] = "guide_send_text"
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📝 <b>ارسال آموزش متنی</b>\n\n"
                     "متن آموزش را ارسال کنید:",
@@ -3503,7 +3509,7 @@ def start_token_bot():
                 # ── شروع فلوی افزودن راهنما ────────────────────────────────────
                 _owner_states[call.from_user.id] = {"state": "guide_name", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📚 <b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -3578,7 +3584,7 @@ def start_token_bot():
             elif data == "admin_welcome_edit_text":
                 _owner_states[call.from_user.id] = {"state": "welcome_edit_text", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "✏️ <b>تغییر متن خوش‌آمد</b>\n\n"
                     "متن جدید را ارسال کنید.\n\n"
@@ -3593,7 +3599,7 @@ def start_token_bot():
             elif data == "admin_welcome_edit_photo":
                 _owner_states[call.from_user.id] = {"state": "welcome_edit_photo", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🖼 <b>تغییر عکس خوش‌آمد</b>\n\n"
                     "عکس جدید را ارسال کنید.\n"
@@ -3700,7 +3706,7 @@ def start_token_bot():
             elif data == "admin_add_admin":
                 _owner_states[call.from_user.id] = {"state": "add_admin_id", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_manage_admins", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_manage_admins", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "👮 <b>افزودن ادمین فرعی</b>\n\n"
                     "ایدی عددی تلگرام ادمین جدید را وارد کنید:",
@@ -3828,7 +3834,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "mission_channel", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🎯 <b>افزودن ماموریت</b>\n\nآیدی کانال را ارسال کنید (با @):\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
@@ -3874,7 +3880,7 @@ def start_token_bot():
             elif data == "lottery_create":
                 _owner_states[uid] = {"state": "lottery_start_time", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🎰 <b>ایجاد قرعه‌کشی</b>\n\n"
                     "📝 <b>مرحله ۱ از ۵: ساعت شروع</b>\n\n"
@@ -4095,7 +4101,7 @@ def start_token_bot():
                 to_tg_id = db.get_telegram_id_by_owner(to_account["id"])
                 if to_tg_id:
                     try:
-                        _bot.send_message(to_tg_id, f"🎁 <b>{amount} الماس</b> از طرف سیستم دریافت کردید!\n💎 موجودی جدید: <b>{new_balance}</b>")
+                        _bot.send_message(to_tg_id, f"{EM.EMOJI_DAILY_GIFT} <b>{amount} الماس</b> از طرف سیستم دریافت کردید!\n{EM.EMOJI_BALANCE} موجودی جدید: <b>{new_balance}</b>")
                     except: 
                         pass
                 
@@ -4129,13 +4135,13 @@ def start_token_bot():
                 tg_id = db.get_telegram_id_by_owner(account["id"])
                 if tg_id:
                     try:
-                        _bot.send_message(tg_id, f"🎁 <b>{amount} الماس</b> از طرف مالک دریافت کردید!\n💎 موجودی جدید: <b>{new_balance}</b>")
+                        _bot.send_message(tg_id, f"{EM.EMOJI_DAILY_GIFT} <b>{amount} الماس</b> از طرف مالک دریافت کردید!\n{EM.EMOJI_BALANCE} موجودی جدید: <b>{new_balance}</b>")
                     except: 
                         pass
                 
                 _bot.reply_to(message, 
                     f"✅ <b>{amount}</b> الماس به <b>{account['username']}</b> داده شد.\n"
-                    f"💎 موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
+                    f"{EM.EMOJI_BALANCE} موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4150,10 +4156,10 @@ def start_token_bot():
                 state_data["data"]["amount"] = amount
                 state_data["state"] = "gift_tg_id"
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.reply_to(
                     message,
-                    f"💎 <b>هدیه الماس: {amount} الماس</b>\n\n"
+                    f"{EM.EMOJI_DIAMONDS} <b>هدیه الماس: {amount} الماس</b>\n\n"
                     "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
                     reply_markup=markup
                 )
@@ -4205,19 +4211,19 @@ def start_token_bot():
                 state_data["state"] = "gift_awaiting_confirm"
 
                 confirm_text = (
-                    f"🎁 <b>تایید هدیه</b>\n\n"
+                    f"{EM.EMOJI_DAILY_GIFT} <b>تایید هدیه</b>\n\n"
                     f"👤 <b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
                     f"🆔 <b>ایدی تلگرام:</b> @{account.get('username', '-')}\n"
                     f"🔢 <b>ایدی عددی:</b> <code>{tg_id}</code>\n"
                     f"📋 <b>پلن باقی‌مانده:</b> {plan_remaining}\n"
                     f"💰 <b>موجودی:</b> {balance} الماس\n"
-                    f"🎁 <b>{gift_desc} هدیه</b>\n\n"
+                    f"{EM.EMOJI_DAILY_GIFT} <b>{gift_desc} هدیه</b>\n\n"
                     f"آیا تایید می‌کنید؟"
                 )
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("✅ تایید", callback_data=f"admin_gift_confirm_{gift_key}", style="success"),
-                    types.InlineKeyboardButton("❌ لغو", callback_data="admin_gift_cancel", style="danger")
+                    types.InlineKeyboardButton("✅ تایید", callback_data=f"admin_gift_confirm_{gift_key}", style="success", icon_custom_emoji_id="5830326445422940546"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="admin_gift_cancel", style="danger", icon_custom_emoji_id="5832353674281620438")
                 )
                 _bot.reply_to(message, confirm_text, reply_markup=markup)
 
@@ -4342,7 +4348,7 @@ def start_token_bot():
                     types.InlineKeyboardButton("🎥 ارسال آموزش تصویری (ویدیو/عکس)", callback_data="guide_type_media", style="primary"),
                     types.InlineKeyboardButton("📝 ارسال آموزش متنی", callback_data="guide_type_text", style="success")
                 )
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.reply_to(message,
                     f"✅ اسم آموزش: <b>{guide_name}</b>\n\n"
                     "نوع آموزش را انتخاب کنید:",
@@ -4489,8 +4495,8 @@ def start_token_bot():
                     
                     markup = types.InlineKeyboardMarkup(row_width=2)
                     markup.add(
-                        types.InlineKeyboardButton("✅ تأیید و ثبت", callback_data="lottery_confirm", style="success"),
-                        types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger")
+                        types.InlineKeyboardButton("✅ تأیید و ثبت", callback_data="lottery_confirm", style="success", icon_custom_emoji_id="5830326445422940546"),
+                        types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger", icon_custom_emoji_id="5832353674281620438")
                     )
                     _bot.reply_to(message,
                         f"📋 <b>مرحله ۵ از ۵: تأیید قرعه‌کشی</b>\n\n"
@@ -4599,7 +4605,7 @@ def start_token_bot():
             elif data == "sa_broadcast":
                 _subadmin_states[tg_id] = {"state": "sa_broadcast_msg"}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📣 <b>ارسال پیام عمومی</b>\n\nپیام خود را ارسال کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4626,7 +4632,7 @@ def start_token_bot():
             elif data == "sa_add_mission":
                 _subadmin_states[tg_id] = {"state": "sa_mission_channel", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_missions", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_missions", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🎯 <b>افزودن ماموریت</b>\n\nیوزرنیم کانال را ارسال کنید:\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4676,7 +4682,7 @@ def start_token_bot():
                     types.InlineKeyboardButton("💎 الماس", callback_data="sa_gift_diamond", style="primary"),
                     types.InlineKeyboardButton("📋 پنل", callback_data="sa_gift_panel", style="success")
                 )
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "🎁 <b>هدیه به کاربر</b>\n\nنوع هدیه را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4685,7 +4691,7 @@ def start_token_bot():
             elif data == "sa_gift_diamond":
                 _subadmin_states[tg_id] = {"state": "sa_gift_diamond_amount", "data": {"gift_type": "diamond"}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "💎 <b>هدیه الماس</b>\n\nتعداد الماس هدیه را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4698,7 +4704,7 @@ def start_token_bot():
                     types.InlineKeyboardButton("📅 پنل یک هفته‌ای (7 روز)", callback_data="sa_gift_plan_7", style="primary"),
                     types.InlineKeyboardButton("📅 پنل یک روزه (1 روز)", callback_data="sa_gift_plan_1", style="primary")
                 )
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📋 <b>هدیه پنل</b>\n\nنوع پنل هدیه را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4713,7 +4719,7 @@ def start_token_bot():
                     "data": {"gift_type": "panel", "days": days, "plan_label": plan_label}
                 }
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     f"📋 <b>پنل {plan_label}</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4734,7 +4740,7 @@ def start_token_bot():
                     new_balance = db.get_token_balance(account["id"])
                     try:
                         _bot.send_message(target_tg_id,
-                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"{EM.EMOJI_DAILY_GIFT} <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
                             f"🎊 مشخصات هدیه:\n💎 <b>الماس هدیه:</b> {amount} الماس\n"
                             f"💰 <b>موجودی جدید:</b> {new_balance} الماس")
                     except Exception:
@@ -4746,7 +4752,7 @@ def start_token_bot():
                     db.set_subscription(account["id"], "gift", days)
                     try:
                         _bot.send_message(target_tg_id,
-                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"{EM.EMOJI_DAILY_GIFT} <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
                             f"🎊 مشخصات هدیه:\n📋 <b>پنل هدیه:</b> {plan_label} ({days} روز)")
                     except Exception:
                         pass
@@ -4800,7 +4806,7 @@ def start_token_bot():
             elif data == "sa_guide_add":
                 _owner_states[tg_id] = {"state": "guide_name", "data": {}, "is_subadmin": True}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_guide_manage", style="danger"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_guide_manage", style="danger", icon_custom_emoji_id="5832353674281620438"))
                 _bot.edit_message_text(
                     "📚 <b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -4897,7 +4903,7 @@ def start_token_bot():
                 state_data["data"]["amount"] = amount
                 state_data["state"] = "sa_gift_tg_id"
                 _bot.reply_to(message,
-                    f"💎 <b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
+                    f"{EM.EMOJI_DIAMONDS} <b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
 
             elif state == "sa_gift_tg_id":
                 try:
@@ -4929,17 +4935,17 @@ def start_token_bot():
                 }
                 state_data["state"] = "sa_gift_awaiting_confirm"
                 confirm_text = (
-                    f"🎁 <b>تایید هدیه</b>\n\n"
+                    f"{EM.EMOJI_DAILY_GIFT} <b>تایید هدیه</b>\n\n"
                     f"👤 <b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
                     f"🔢 <b>ایدی عددی:</b> <code>{target_tg_id}</code>\n"
                     f"📋 <b>پلن باقی‌مانده:</b> {plan_remaining}\n"
                     f"💰 <b>موجودی:</b> {balance} الماس\n"
-                    f"🎁 <b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
+                    f"{EM.EMOJI_DAILY_GIFT} <b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
                 )
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("✅ تایید", callback_data=f"sa_gift_confirm_{gift_key}", style="success"),
-                    types.InlineKeyboardButton("❌ لغو", callback_data="sa_gift_cancel", style="danger")
+                    types.InlineKeyboardButton("✅ تایید", callback_data=f"sa_gift_confirm_{gift_key}", style="success", icon_custom_emoji_id="5830326445422940546"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="sa_gift_cancel", style="danger", icon_custom_emoji_id="5832353674281620438")
                 )
                 _bot.reply_to(message, confirm_text, reply_markup=markup)
 
@@ -5061,7 +5067,7 @@ def start_token_bot():
                         style="primary"
                     ))
             # 🟢 دکمه بررسی با رنگ success (سبز)
-            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
+            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success", icon_custom_emoji_id="5830326445422940546"))
             _bot.send_message(chat_id, "\n".join(lines), reply_markup=markup)
         except Exception as e:
             print(f"❌ خطا در _do_missions: {e}")
@@ -5193,7 +5199,7 @@ def start_token_bot():
         kb = types.InlineKeyboardMarkup(row_width=2)
         kb.add(
             types.InlineKeyboardButton("➕ ورود / خروج", callback_data=f"hokm_join_{game_id}"),
-            types.InlineKeyboardButton("❌ لغو",         callback_data=f"hokm_cancel_{game_id}"),
+            types.InlineKeyboardButton("❌ لغو",         callback_data=f"hokm_cancel_{game_id}", icon_custom_emoji_id="5832353674281620438"),
         )
         return kb
 
@@ -5998,7 +6004,7 @@ def start_token_bot():
             if balance < bet:
                 return _bot.reply_to(
                     message,
-                    f"❌ موجودی کافی نیست!\n💎 موجودی شما: {balance} الماس\n💰 شرط: {bet} الماس"
+                    f"❌ موجودی کافی نیست!\n{EM.EMOJI_BALANCE} موجودی شما: {balance} الماس\n💰 شرط: {bet} الماس"
                 )
 
             with _rps_lock:
@@ -6093,7 +6099,7 @@ def start_token_bot():
                 if balance < bet:
                     return _bot.answer_callback_query(
                         call.id,
-                        f"❌ موجودی کافی نیست!\n💎 موجودی: {balance}\n💰 شرط: {bet}",
+                        f"❌ موجودی کافی نیست!\n{EM.EMOJI_BALANCE} موجودی: {balance}\n💰 شرط: {bet}",
                         show_alert=True
                     )
 
