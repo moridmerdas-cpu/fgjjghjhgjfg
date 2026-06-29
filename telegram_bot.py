@@ -298,8 +298,8 @@ def start_token_bot():
     def _owner_keyboard(show_remove_self=True):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton("📢 مدیریت", style="danger"),        # 🔴 قرمز
-            types.KeyboardButton("🤖 مدیریت سلف", style="primary")   # 🔵 آبی
+            types.KeyboardButton(" مدیریت", style="danger", icon_custom_emoji_id=str(EM.ID_ADMINE)),        # 🔴 قرمز
+            types.KeyboardButton(" مدیریت سلف", style="danger", icon_custom_emoji_id=str(EM.ID_SELF_EDIT))   # 🔵 قرمز
         )
         return markup
 
@@ -336,41 +336,41 @@ def start_token_bot():
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton(" چنل‌های اجباری", callback_data="admin_channels", style="success", icon_custom_emoji_id=str(EM.ID_FORCED_JOIN)),   # 🔵 آبی
-            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary")              # 🔵 آبی
+            types.InlineKeyboardButton(" کاربران", callback_data="admin_users", style="primary", icon_custom_emoji_id=str(EM.ID_USERS))              # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("🏆 جام جهانی", callback_data="admin_wc", style="success"),              # 🟢 سبز
-            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton(" جام جهانی", callback_data="admin_wc", style="success", icon_custom_emoji_id=str(EM.ID_World_Cup)),              # 🟢 سبز
+            types.InlineKeyboardButton(" بازی‌های امروز", callback_data="admin_today_games", style="primary", icon_custom_emoji_id=str(EM.ID_DAY_GAME)) # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("💎 انتقال الماس", callback_data="admin_transfer", style="primary"),    # 🔵 آبی
-            types.InlineKeyboardButton("💰 دادن الماس", callback_data="admin_give", style="success")           # 🟢 سبز
+            types.InlineKeyboardButton(" انتقال الماس", callback_data="admin_transfer", style="primary", icon_custom_emoji_id=str(EM.ID_Transition)),    # 🔵 آبی
+            types.InlineKeyboardButton(" دادن الماس", callback_data="admin_give", style="success", icon_custom_emoji_id=str(EM.ID_GIFT_DIAMOND))           # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card", style="primary"), # 🔵 آبی
-            types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments", style="danger")   # 🔴 قرمز
+            types.InlineKeyboardButton(" تنظیم شماره کارت", callback_data="admin_set_card", style="primary", icon_custom_emoji_id=str(EM.ID_SET_CARD)), # 🔵 آبی
+            types.InlineKeyboardButton(" پرداخت‌های معلق", callback_data="admin_payments", style="danger", icon_custom_emoji_id=str(EM.ID_Pending))   # 🔴 قرمز
         )
         markup.add(
-            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
+            types.InlineKeyboardButton(" پیام عمومی", callback_data="admin_broadcast", style="primary", icon_custom_emoji_id=str(EM.ID_MESSAGE_ALL)),      # 🔵 آبی
+            types.InlineKeyboardButton(" ماموریت‌ها", callback_data="admin_missions", style="success", icon_custom_emoji_id=str(EM.ID_MISSION))       # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton(" شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary", icon_custom_emoji_id=str(EM.ID_UESRS_WC)) # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
+            types.InlineKeyboardButton(" هدیه", callback_data="admin_gift", style="success", icon_custom_emoji_id=str(EM.ID_GIFT))                 # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("👮 مدیریت ادمین‌ها", callback_data="admin_manage_admins", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton(" مدیریت ادمین‌ها", callback_data="admin_manage_admins", style="primary", icon_custom_emoji_id=str(EM.ID_ADMINE)) # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("📚 مدیریت راهنما", callback_data="admin_guide_manage", style="success")    # 🟢 سبز
+            types.InlineKeyboardButton(" مدیریت راهنما", callback_data="admin_guide_manage", style="success", icon_custom_emoji_id=str(EM.ID_HELP))    # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("✏️ تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton(" تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary", icon_custom_emoji_id=str(EM.ID_WELCOME)) # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("🎰 قرعه‌کشی", callback_data="admin_lottery", style="success")           # 🟢 سبز
+            types.InlineKeyboardButton(" قرعه‌کشی", callback_data="admin_lottery", style="success", icon_custom_emoji_id=str(EM.ID_BET))           # 🟢 سبز
         )
         markup.add(
             types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
@@ -1838,16 +1838,16 @@ def start_token_bot():
             if is_running and not is_paused:
                 # سلف روشن است — دکمه خاموش کردن
                 markup.add(types.InlineKeyboardButton(
-                    "🔴 خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger",
+                    " خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger",
                     icon_custom_emoji_id=str(EM.ID_SELF_OFF)))
             else:
                 # سلف خاموش یا pause است — دکمه روشن کردن
                 markup.add(types.InlineKeyboardButton(
-                    "🟢 روشن کردن سلف", callback_data="self_mgmt_start", style="success",
+                    " روشن کردن سلف", callback_data="self_mgmt_start", style="success",
                     icon_custom_emoji_id=str(EM.ID_SELF_ON)))
             # حذف سلف همیشه نمایش داده می‌شود
             markup.add(types.InlineKeyboardButton(
-                "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger",
+                " حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger",
                 icon_custom_emoji_id=str(EM.ID_SELF_DELETE)))
 
         markup.add(types.InlineKeyboardButton(
@@ -4530,7 +4530,7 @@ def start_token_bot():
         """کیبورد پنل ادمین فرعی با دسترسی‌های محدود"""
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("👥 کاربران", callback_data="sa_users", style="primary"),
+            types.InlineKeyboardButton(" کاربران", callback_data="sa_users", style="primary", ),
             types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="sa_today_games", style="primary")
         )
         markup.add(
