@@ -2187,7 +2187,7 @@ def start_token_bot():
                 if not is_logged_in:
                     kb_reconnect = types.InlineKeyboardMarkup(row_width=1)
                     kb_reconnect.add(
-                        types.InlineKeyboardButton("🤖 وصل کردن سلف", callback_data="reg_start", style="success")
+                        types.InlineKeyboardButton(" وصل کردن سلف", callback_data="reg_start", style="success", icon_custom_emoji_id=str(EM.ID_CONNECT))
                     )
                     _bot.reply_to(
                         message,
