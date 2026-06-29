@@ -124,6 +124,28 @@ EMOJIS: dict[str, str] = {
 # ✅ توابع اصلی
 # ──────────────────────────────────────────────────────────────────────────────
 
+def get_emoji_id(name: str) -> Optional[str]:
+    """
+    شناسه‌ی خام (بدون تگ HTML) یک ایموجی رو برمی‌گردونه — برای جاهایی که به
+    خودِ ID نیاز دارید، نه تگ <tg-emoji>. مهم‌ترین مصرفش پارامتر
+    icon_custom_emoji_id روی InlineKeyboardButton / KeyboardButton است،
+    چون اون پارامتر متن HTML قبول نمی‌کنه، فقط ID خام می‌خواد.
+
+    پارامتر:
+        name : کلید دیکشنری EMOJIS (مثلاً "diamond")
+
+    مثال:
+        types.InlineKeyboardButton(
+            "موجودی", callback_data="menu_balance",
+            icon_custom_emoji_id=get_emoji_id("diamond"),
+        )
+
+    اگه نام پیدا نشه None برمی‌گردونه (یعنی دکمه بدون آیکون ساخته می‌شه،
+    بدون اینکه خطا بدهد).
+    """
+    return EMOJIS.get(name)
+
+
 def tg_emoji(emoji_id: Union[str, int], fallback: str = "•") -> str:
     """
     یک ایموجی پرمیوم با فرمت HTML برمی‌گردونه.
