@@ -234,7 +234,7 @@ def _check_membership_cached(user_id):
         cache.set(cache_key, result)
         return result
     except Exception as e:
-        print("خطا در بررسی عضویت: {e}")
+        print(f"خطا در بررسی عضویت: {e}")
         return True, []
 
 
@@ -260,9 +260,9 @@ def start_token_bot():
         _bot = telebot.TeleBot(config.BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=8)
         me = _bot.get_me()
         BOT_USERNAME = me.username
-        print("ربات الماس: @{BOT_USERNAME}")
+        print(f"ربات الماس: @{BOT_USERNAME}")
     except Exception as e:
-        print("خطا در اتصال ربات الماس: {e}")
+        print(f"خطا در اتصال ربات الماس: {e}")
         _bot = None
         return
 
@@ -286,7 +286,7 @@ def start_token_bot():
         markup.add(types.InlineKeyboardButton("بررسی عضویت من", callback_data="check_join", style="success"),
             icon_custom_emoji_id=get_emoji_id("checkmark_green"))
         
-        channels_list = "\n".join(["{ch}" for ch in missing_channels])
+        channels_list = "\n".join([f"{ch}" for ch in missing_channels])
         _bot.reply_to(
             message,
             "⛔️ <b>ورود به ربات منوط به عضویت در کانال‌های زیر است:</b>\n\n"
@@ -461,7 +461,7 @@ def start_token_bot():
             if balance < amount:
                 return _bot.reply_to(
                     message,
-                    "موجودی کافی ندارید!\nنیاز: {amount} الماس — موجودی: {balance} الماس"
+                    f"موجودی کافی ندارید!\nنیاز: {amount} الماس — موجودی: {balance} الماس"
                 )
 
             bet_id = db.create_bet(account["id"], message.from_user.id, amount, message.chat.id)
@@ -500,9 +500,9 @@ def start_token_bot():
             msg = _bot.reply_to(
                 message,
                 "<b>شرط‌بندی باز شد!</b>\n\n"
-                "سازنده: {creator_name}\n"
-                "مبلغ: <b>{amount} الماس</b>\n"
-                "جایزه برنده: <b>{payout} الماس</b> (بعد از ۱۷٪ مالیات)\n\n"
+                f"سازنده: {creator_name}\n"
+                f"مبلغ: <b>{amount} الماس</b>\n"
+                f"جایزه برنده: <b>{payout} الماس</b> (بعد از ۱۷٪ مالیات)\n\n"
                 "منتظر حریف...\n"
                 f"(اولین نفری که دکمه بزند وارد می‌شود)",
                 reply_markup=markup
@@ -513,8 +513,8 @@ def start_token_bot():
             threading.Timer(300, _auto_cancel_bet, args=[bet_id, message.chat.id, msg.message_id]).start()
 
         except Exception as e:
-            print("خطا در cmd_bet: {e}")
-            _bot.reply_to(message, "خطا: {e}")
+            print(f"خطا در cmd_bet: {e}")
+            _bot.reply_to(message, f"خطا: {e}")
 
     # ── Callback: ورود به شرط‌بندی ─────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("join_bet_"))
@@ -578,11 +578,11 @@ def start_token_bot():
             result_text = (
                 "<b>شرط‌بندی به پایان رسید!</b>\n\n"
                 f"⚔️ حریف: {opponent_name}\n"
-                "مبلغ هر نفر: {amount} الماس\n"
-                "مجموع: {total} الماس\n"
+                f"مبلغ هر نفر: {amount} الماس\n"
+                f"مجموع: {total} الماس\n"
                 f"🏛 مالیات (۱۷٪): {tax} الماس\n\n"
-                "<b>برنده: {winner_name}</b>\n"
-                "<b>جایزه: {payout} الماس</b>"
+                f"<b>برنده: {winner_name}</b>\n"
+                f"<b>جایزه: {payout} الماس</b>"
             )
 
             # ویرایش پیام اصلی
@@ -599,7 +599,7 @@ def start_token_bot():
             try:
                 _bot.send_message(
                     winner_tg_id,
-                    "<b>تبریک! شرط‌بندی را بردید!</b>\n{pe('diamond', '💎')} <b>{payout} الماس</b> به حسابتان واریز شد."
+                    f"<b>تبریک! شرط‌بندی را بردید!</b>\n{pe('diamond', '💎')} <b>{payout} الماس</b> به حسابتان واریز شد."
                 )
             except Exception:
                 pass
@@ -620,9 +620,9 @@ def start_token_bot():
             _active_bets.pop(bet_id, None)
 
         except Exception as e:
-            print("خطا در callback_join_bet: {e}")
+            print(f"خطا در callback_join_bet: {e}")
             try:
-                _bot.answer_callback_query(call.id, "خطا: {str(e)[:100]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:100]}", show_alert=True)
             except Exception:
                 pass
 
@@ -647,7 +647,7 @@ def start_token_bot():
 
             try:
                 _bot.edit_message_text(
-                    "<b>شرط‌بندی لغو شد!</b>\n\nسازنده شرط را لغو کرد.\n{pe('diamond', '💎')} مبلغ به سازنده بازگشت داده شد.",
+                    f"<b>شرط‌بندی لغو شد!</b>\n\nسازنده شرط را لغو کرد.\n{pe('diamond', '💎')} مبلغ به سازنده بازگشت داده شد.",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id
                 )
@@ -657,9 +657,9 @@ def start_token_bot():
             _bot.answer_callback_query(call.id, "شرط‌بندی لغو شد و مبلغ بازگشت داده شد.", show_alert=True)
 
         except Exception as e:
-            print("خطا در callback_cancel_bet: {e}")
+            print(f"خطا در callback_cancel_bet: {e}")
             try:
-                _bot.answer_callback_query(call.id, "خطا: {str(e)[:100]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:100]}", show_alert=True)
             except Exception:
                 pass
 
@@ -675,14 +675,14 @@ def start_token_bot():
 
             try:
                 _bot.edit_message_text(
-                    "<b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n{pe('diamond', '💎')} مبلغ به سازنده بازگشت داده شد.",
+                    f"<b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n{pe('diamond', '💎')} مبلغ به سازنده بازگشت داده شد.",
                     chat_id=chat_id,
                     message_id=message_id
                 )
             except Exception:
                 _bot.send_message(chat_id, "یک شرط‌بندی به دلیل نبود حریف لغو شد.")
         except Exception as e:
-            print("خطا در _auto_cancel_bet: {e}")
+            print(f"خطا در _auto_cancel_bet: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 💰 دستور موجودی در گروه
@@ -698,11 +698,11 @@ def start_token_bot():
             _bot.reply_to(
                 message,
                 "<b>موجودی شما:</b>\n\n"
-                "الماس: <b>{stats['balance']}</b>\n"
-                "کل دریافتی: <b>{stats['total_earned']}</b>"
+                f"الماس: <b>{stats['balance']}</b>\n"
+                f"کل دریافتی: <b>{stats['total_earned']}</b>"
             )
         except Exception as e:
-            print("خطا در cmd_balance_group: {e}")
+            print(f"خطا در cmd_balance_group: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 💎 انتقال الماس
@@ -745,7 +745,7 @@ def start_token_bot():
                         try:
                             _bot.send_message(
                                 to_tg_id,
-                                "<b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                                f"<b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
                             )
                         except Exception:
                             pass
@@ -770,7 +770,7 @@ def start_token_bot():
             
             to_account = db.get_account_by_username(username)
             if not to_account:
-                return _bot.reply_to(message, "کاربر '{username}' یافت نشد.")
+                return _bot.reply_to(message, f"کاربر f'{username}' یافت نشد.")
             
             if to_account["id"] == from_account["id"]:
                 return _bot.reply_to(message, "نمی‌توانید به خودتان الماس انتقال دهید.")
@@ -784,7 +784,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             to_tg_id,
-                            "<b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                            f"<b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
                         )
                     except:
                         pass
@@ -792,8 +792,8 @@ def start_token_bot():
             _bot.reply_to(message, msg)
             
         except Exception as e:
-            print("خطا در cmd_transfer: {e}")
-            _bot.reply_to(message, "خطا: {e}")
+            print(f"خطا در cmd_transfer: {e}")
+            _bot.reply_to(message, f"خطا: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # ⚽ سیستم جام جهانی — football-data.org
@@ -830,10 +830,10 @@ def start_token_bot():
                 body = e.read().decode()[:300]
             except Exception:
                 pass
-            print("Football API HTTP {e.code} [{endpoint}]: {body}")
+            print(f"Football API HTTP {e.code} [{endpoint}]: {body}")
             return {}
         except Exception as e:
-            print("Football API error [{endpoint}]: {e}")
+            print(f"Football API error [{endpoint}]: {e}")
             return {}
 
     def _wc_get_matches() -> list:
@@ -904,25 +904,25 @@ def start_token_bot():
         )
         # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
         markup.add(
-            types.InlineKeyboardButton("{team2}", callback_data=f"wc_pick_{challenge_id}_team2", style="danger",
+            types.InlineKeyboardButton(f"{team2}", callback_data=f"wc_pick_{challenge_id}_team2", style="danger",
                 icon_custom_emoji_id=get_emoji_id("exclamation_red"))
         )
         now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
         text = (
             f"⚽️ <b>چالش جام جهانی ۲۰۲۶</b>\n\n"
             f"🆚 <b>{team1}</b>  vs  <b>{team2}</b>\n"
-            "زمان بازی: <b>{match_time_str}</b>\n"
-            "ارسال در: {now_tehran} (تهران)\n\n"
-            "محدوده شرط: {min_bet:,} – {max_bet:,} الماس\n"
+            f"زمان بازی: <b>{match_time_str}</b>\n"
+            f"ارسال در: {now_tehran} (تهران)\n\n"
+            f"محدوده شرط: {min_bet:,} – {max_bet:,} الماس\n"
             "برندگان ۲ برابر مبلغ شرط دریافت می‌کنند!\n\n"
             f"👇 روی تیم مورد نظرت کلیک کن:"
         )
         try:
             msg = _bot.send_message(chat_target, text, reply_markup=markup)
             db.set_wc_channel_msg(challenge_id, msg.message_id)
-            print("چالش به کانال {chat_target} ارسال شد (msg_id={msg.message_id})")
+            print(f"چالش به کانال {chat_target} ارسال شد (msg_id={msg.message_id})")
         except Exception as e:
-            print("ارسال چالش به کانال {chat_target} ناموفق بود: {e}\n"
+            print(f"ارسال چالش به کانال {chat_target} ناموفق بود: {e}\n"
                   f"   بررسی کنید که ربات ادمین کانال باشد و WC_CHANNEL_ID درست تنظیم شده باشد (مثل @channel یا -100xxxxxxxxxx).")
 
     def _wc_auto_fetch_and_create():
@@ -960,10 +960,10 @@ def start_token_bot():
                 challenge_id = db.create_wc_challenge(match_id, home, away, dt)
                 if challenge_id:
                     _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
-                    print("چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
+                    print(f"چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
                     time.sleep(0.3)  # جلوگیری از flood در ارسال به کانال
         except Exception as e:
-            print("_wc_auto_fetch_and_create: {e}")
+            print(f"_wc_auto_fetch_and_create: {e}")
 
     def _wc_auto_check_results():
         """بررسی نتایج بازی‌های تمام‌شده و اعلام برنده"""
@@ -990,7 +990,7 @@ def start_token_bot():
                 result_text = (
                     f"🏁 <b>پایان چالش!</b>\n\n"
                     f"⚽️ {ch['team1']} vs {ch['team2']}\n"
-                    "نتیجه: <b>{option_fa}</b>\n\n"
+                    f"نتیجه: <b>{option_fa}</b>\n\n"
                     "برندگان ۲ برابر مبلغ شرطشان دریافت کردند!"
                 )
                 if channel and ch.get("channel_msg_id"):
@@ -1007,13 +1007,13 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             winner["user_tg_id"],
-                            "<b>تبریک!</b> شرط‌بندی {ch['team1']} vs {ch['team2']} را بردید!\n"
-                            "<b>{winner['payout']} الماس</b> به حسابتان واریز شد."
+                            f"<b>تبریک!</b> شرط‌بندی {ch['team1']} vs {ch['team2']} را بردید!\n"
+                            f"<b>{winner['payout']} الماس</b> به حسابتان واریز شد."
                         )
                     except Exception:
                         pass
         except Exception as e:
-            print("_wc_auto_check_results: {e}")
+            print(f"_wc_auto_check_results: {e}")
 
     def _wc_scheduler():
         """
@@ -1070,14 +1070,14 @@ def start_token_bot():
                     challenge_id = db.create_wc_challenge(match_id, home, away, dt)
                     if challenge_id:
                         _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
-                        print("چالش ۱ ساعت قبل ارسال شد: {home} vs {away}")
+                        print(f"چالش ۱ ساعت قبل ارسال شد: {home} vs {away}")
                     time.sleep(0.5)
 
                 # ─── چک نتایج بازی‌های تموم‌شده ─────────────────────────────
                 _wc_auto_check_results()
 
             except Exception as e:
-                print("_wc_scheduler: {e}")
+                print(f"_wc_scheduler: {e}")
             time.sleep(POLL)
 
     # اجرای scheduler در Thread جداگانه
@@ -1094,11 +1094,11 @@ def start_token_bot():
             chat_info = _bot.get_chat(_wc_target)
             member = _bot.get_chat_member(_wc_target, _bot.get_me().id)
             if member.status not in ("administrator", "creator"):
-                print("ربات در کانال {_wc_target} ادمین نیست — ارسال پیام به کانال شکست خواهد خورد.")
+                print(f"ربات در کانال {_wc_target} ادمین نیست — ارسال پیام به کانال شکست خواهد خورد.")
             else:
-                print("دسترسی به کانال جام جهانی تأیید شد: {getattr(chat_info, 'title', _wc_target)}")
+                print(f"دسترسی به کانال جام جهانی تأیید شد: {getattr(chat_info, 'title', _wc_target)}")
         except Exception as e:
-            print("ربات نتوانست به کانال {_wc_target} دسترسی پیدا کند: {e}\n"
+            print(f"ربات نتوانست به کانال {_wc_target} دسترسی پیدا کند: {e}\n"
                   f"   بررسی کنید ربات در کانال عضو/ادمین باشد و WC_CHANNEL_ID صحیح باشد.")
     if not getattr(config, "FOOTBALL_API_KEY", ""):
         print("FOOTBALL_API_KEY تنظیم نشده — هیچ بازی‌ای از Football API دریافت نمی‌شود.")
@@ -1128,24 +1128,24 @@ def start_token_bot():
                 "account_id": account["id"],
             }
 
-            _bot.answer_callback_query(call.id, "انتخاب: {option_fa}", show_alert=False)
+            _bot.answer_callback_query(call.id, f"انتخاب: {option_fa}", show_alert=False)
             try:
                 _bot.send_message(
                     call.from_user.id,
                     f"⚽️ انتخاب شما: <b>{option_fa}</b>\n\n"
-                    "مبلغ شرط را وارد کنید ({min_bet} تا {max_bet} الماس):\n"
+                    f"مبلغ شرط را وارد کنید ({min_bet} تا {max_bet} الماس):\n"
                     f"مثال: <code>شرکت 200</code>"
                 )
             except Exception:
                 # اگر چت خصوصی باز نیست
                 _bot.answer_callback_query(
                     call.id,
-                    "انتخاب: {option_fa}\n\n"
+                    f"انتخاب: {option_fa}\n\n"
                     f"برای ثبت شرط، به ربات پیام بده:\nشرکت [مبلغ]\nمثال: شرکت 200",
                     show_alert=True
                 )
         except Exception as e:
-            print("callback_wc_pick: {e}")
+            print(f"callback_wc_pick: {e}")
 
     # ── Handler: کاربر مبلغ شرط را وارد کرد ────────────────────────────────
     @_bot.message_handler(func=lambda m: m.text and m.text.strip().startswith("شرکت ") and m.chat.type == "private")
@@ -1167,7 +1167,7 @@ def start_token_bot():
             min_bet = getattr(config, "WC_MIN_BET", 10)
             max_bet = getattr(config, "WC_MAX_BET", 5000)
             if amount < min_bet or amount > max_bet:
-                return _bot.reply_to(message, "مبلغ باید بین {min_bet} و {max_bet} الماس باشد.")
+                return _bot.reply_to(message, f"مبلغ باید بین {min_bet} و {max_bet} الماس باشد.")
 
             challenge_id = pending["challenge_id"]
             selected_option = pending["selected_option"]
@@ -1188,16 +1188,16 @@ def start_token_bot():
                     message,
                     "<b>شرط ثبت شد!</b>\n\n"
                     f"⚽️ {challenge['team1']} vs {challenge['team2']}\n"
-                    "انتخاب: <b>{option_fa}</b>\n"
-                    "مبلغ: <b>{amount} الماس</b>\n"
-                    "موجودی باقی‌مانده: {balance} الماس\n\n"
-                    "در صورت برد، <b>{amount * 2} الماس</b> دریافت می‌کنید!"
+                    f"انتخاب: <b>{option_fa}</b>\n"
+                    f"مبلغ: <b>{amount} الماس</b>\n"
+                    f"موجودی باقی‌مانده: {balance} الماس\n\n"
+                    f"در صورت برد، <b>{amount * 2} الماس</b> دریافت می‌کنید!"
                 )
             else:
                 _bot.reply_to(message, msg_txt)
         except Exception as e:
-            print("cmd_wc_join: {e}")
-            _bot.reply_to(message, "خطا: {e}")
+            print(f"cmd_wc_join: {e}")
+            _bot.reply_to(message, f"خطا: {e}")
 
     # ── Callback قدیمی bet_wc_ (سازگاری) ────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("bet_wc_"))
@@ -1219,7 +1219,7 @@ def start_token_bot():
             }
             _bot.answer_callback_query(call.id, "انتخاب ثبت شد! حالا مبلغ رو بنویس:\nشرکت [مبلغ]", show_alert=True)
         except Exception as e:
-            print("خطا در callback_bet_wc: {e}")
+            print(f"خطا در callback_bet_wc: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # /start
@@ -1240,7 +1240,7 @@ def start_token_bot():
                     _bot.send_message(
                         tg_id,
                         "<b>یک روز سلف رایگان هدیه گرفتید!</b>\n\n"
-                        "انقضا: <b>{exp_str}</b> (وقت تهران)\n\n"
+                        f"انقضا: <b>{exp_str}</b> (وقت تهران)\n\n"
                         f"برای تمدید، از منوی {pe('inbox', '🛒')} خرید استفاده کنید."
                     )
                 except Exception:
@@ -1248,7 +1248,7 @@ def start_token_bot():
                 # تایمر اطلاع‌رسانی انقضا
                 threading.Timer(86400, _notify_subscription_expired, args=[account_id, tg_id]).start()
         except Exception as e:
-            print("_grant_free_trial: {e}")
+            print(f"_grant_free_trial: {e}")
 
     def _notify_subscription_expired(account_id: int, tg_id: int):
         """اطلاع‌رسانی پایان اشتراک"""
@@ -1282,7 +1282,7 @@ def start_token_bot():
             except Exception:
                 pass
         except Exception as e:
-            print("_notify_subscription_expired: {e}")
+            print(f"_notify_subscription_expired: {e}")
 
     def _start_subscription_checker():
         """هر ۳۰ دقیقه اشتراک‌های نزدیک به انقضا رو چک می‌کنه"""
@@ -1292,7 +1292,7 @@ def start_token_bot():
                     time.sleep(1800)  # 30 دقیقه
                     _check_expiring_subscriptions()
                 except Exception as e:
-                    print("subscription checker: {e}")
+                    print(f"subscription checker: {e}")
         threading.Thread(target=_checker, daemon=True).start()
 
     def _check_expiring_subscriptions():
@@ -1320,7 +1320,7 @@ def start_token_bot():
                     _bot.send_message(
                         tg_id,
                         "<b>اشتراک شما در حال انقضاست!</b>\n\n"
-                        "باقی‌مانده: <b>{remaining}</b>\n\n"
+                        f"باقی‌مانده: <b>{remaining}</b>\n\n"
                         f"برای تمدید همین الان اقدام کنید 👇",
                         reply_markup=markup
                     )
@@ -1331,7 +1331,7 @@ def start_token_bot():
                 except Exception:
                     pass
         except Exception as e:
-            print("_check_expiring_subscriptions: {e}")
+            print(f"_check_expiring_subscriptions: {e}")
 
     _start_subscription_checker()
 
@@ -1424,7 +1424,7 @@ def start_token_bot():
                 _bot.delete_message(message.chat.id, wait_msg.message_id)
             except Exception:
                 pass
-            _bot.reply_to(message, "خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
+            _bot.reply_to(message, f"خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
 
     # ── مرحله ۲fa: دریافت رمز دومرحله‌ای به صورت متن ────────────────────────
     @_bot.message_handler(
@@ -1648,7 +1648,7 @@ def start_token_bot():
                         _reg_clear(tg_id)
                         try:
                             _bot.edit_message_text(
-                                "خطا: {err_str[:200]}\n\nدوباره /start بزنید.",
+                                f"خطا: {err_str[:200]}\n\nدوباره /start بزنید.",
                                 chat_id=call.message.chat.id,
                                 message_id=call.message.message_id,
                             )
@@ -1658,7 +1658,7 @@ def start_token_bot():
             except Exception as e:
                 _reg_clear(tg_id)
                 try:
-                    _bot.edit_message_text("خطای داخلی: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    _bot.edit_message_text(f"خطای داخلی: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
@@ -1712,7 +1712,7 @@ def start_token_bot():
             except Exception as e:
                 _reg_clear(tg_id)
                 try:
-                    _bot.edit_message_text("خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    _bot.edit_message_text(f"خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
@@ -1748,15 +1748,15 @@ def start_token_bot():
                             from app import get_loop
                             bot_manager.start(_acc_id, get_loop(), check_tokens=False)
                         except Exception as _e:
-                            print("bot_manager.start (existing): {_e}")
+                            print(f"bot_manager.start (existing): {_e}")
                     threading.Thread(target=_start_existing, args=(existing["id"],), daemon=True).start()
 
                     try:
                         _bot.edit_message_text(
                             "<b>خوش برگشتید!</b>\n\n"
-                            "{tg_user['name']}\n"
+                            f"{tg_user['name']}\n"
                             f"🆔 اکانت موجود بود — سلف‌بات فعال شد!\n\n"
-                            "موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
+                            f"موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
                             chat_id=call.message.chat.id,
                             message_id=call.message.message_id,
                         )
@@ -1799,7 +1799,7 @@ def start_token_bot():
                     if not db.get_subscription(new_id):
                         db.set_subscription(new_id, "free_trial", 1)
                 except Exception as _e:
-                    print("set free_trial on register: {_e}")
+                    print(f"set free_trial on register: {_e}")
 
                 _reg_clear(tg_id)
 
@@ -1811,7 +1811,7 @@ def start_token_bot():
                         from app import get_loop
                         bot_manager.start(_acc_id, get_loop(), check_tokens=False)
                     except Exception as _e:
-                        print("bot_manager.start (new): {_e}")
+                        print(f"bot_manager.start (new): {_e}")
                     # اطلاع‌رسانی انقضا ۲۴ ساعت بعد
                     threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
                 threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
@@ -1826,10 +1826,10 @@ def start_token_bot():
                 try:
                     _bot.edit_message_text(
                         "<b>اکانت ساخته شد!</b>\n\n"
-                        "نام: <b>{tg_user['name']}</b>\n"
-                        "یوزرنیم پنل: <code>{candidate}</code>\n"
+                        f"نام: <b>{tg_user['name']}</b>\n"
+                        f"یوزرنیم پنل: <code>{candidate}</code>\n"
                         "رمز عبور: همان رمزی که وارد کردید\n\n"
-                        "<b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
+                        f"<b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
                         "<b>۱ روز سلف رایگان</b> فعال شد!\n\n"
                         "سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
                         chat_id=call.message.chat.id,
@@ -1847,7 +1847,7 @@ def start_token_bot():
             except Exception as e:
                 _reg_clear(tg_id)
                 try:
-                    _bot.edit_message_text("خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    _bot.edit_message_text(f"خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
@@ -1940,7 +1940,7 @@ def start_token_bot():
                         remaining = f"{hours} ساعت و {mins} دقیقه"
                     else:
                         remaining = f"{mins} دقیقه"
-                    sub_line = "فعال — باقی‌مانده: <b>{remaining}</b>"
+                    sub_line = f"فعال — باقی‌مانده: <b>{remaining}</b>"
                 else:
                     sub_line = "منقضی شده"
             else:
@@ -1951,7 +1951,7 @@ def start_token_bot():
         return (
             "<b>مدیریت سلف</b>\n\n"
             f"{status_icon} وضعیت: <b>{status_text}</b>\n"
-            "اشتراک: {sub_line}\n\n"
+            f"اشتراک: {sub_line}\n\n"
             f"از دکمه‌های زیر استفاده کنید:"
         )
 
@@ -1968,7 +1968,7 @@ def start_token_bot():
                 reply_markup=_self_management_keyboard(account["id"])
             )
         except Exception as e:
-            print("خطا در cmd_self_management: {e}")
+            print(f"خطا در cmd_self_management: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data in (
         "self_mgmt_stop", "self_mgmt_start", "self_mgmt_back"
@@ -2036,9 +2036,9 @@ def start_token_bot():
                 pass
 
         except Exception as e:
-            print("خطا در callback_self_management: {e}")
+            print(f"خطا در callback_self_management: {e}")
             try:
-                _bot.answer_callback_query(call.id, "خطا: {str(e)[:80]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
             except Exception:
                 pass
 
@@ -2066,7 +2066,7 @@ def start_token_bot():
 
             _run_tg(_do_logout())
         except Exception as e:
-            print("خطا در خروج سشن تلگرام: {e}")
+            print(f"خطا در خروج سشن تلگرام: {e}")
 
     def _remove_self_from_account(account_id: int):
         """سلف را از اکانت تلگرام فعلی خارج می‌کند ولی دارایی‌ها (الماس، یوزرنیم و ...) را حفظ می‌کند"""
@@ -2077,7 +2077,7 @@ def start_token_bot():
             from bot import bot_manager
             bot_manager.stop(account_id)
         except Exception as e:
-            print("خطا در توقف سلف: {e}")
+            print(f"خطا در توقف سلف: {e}")
 
         # ۲) خروج واقعی سشن از اکانت تلگرام (revoke)
         _logout_telegram_session(session_data)
@@ -2115,7 +2115,7 @@ def start_token_bot():
             except Exception:
                 pass
         except Exception as e:
-            print("خطا در callback_remove_self_ask: {e}")
+            print(f"خطا در callback_remove_self_ask: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "remove_self_no")
     def callback_remove_self_no(call):
@@ -2147,7 +2147,7 @@ def start_token_bot():
                 _bot.send_message(
                     call.message.chat.id,
                     "<b>سلف با موفقیت از اکانت تلگرام خارج شد.</b>\n\n"
-                    "یوزرنیم پنل شما (<b>{account['username']}</b>) و موجودی الماس حفظ شدند.\n\n"
+                    f"یوزرنیم پنل شما (<b>{account['username']}</b>) و موجودی الماس حفظ شدند.\n\n"
                     "هر زمان خواستید، با همین اکانت یا یک اکانت تلگرام دیگر دوباره وصل شوید 👇",
                     reply_markup=types.InlineKeyboardMarkup(row_width=1).add(
                         types.InlineKeyboardButton("وصل کردن دوباره سلف", callback_data="reg_start", style="success",
@@ -2158,9 +2158,9 @@ def start_token_bot():
             except Exception:
                 pass
         except Exception as e:
-            print("خطا در callback_remove_self_yes: {e}")
+            print(f"خطا در callback_remove_self_yes: {e}")
             try:
-                _bot.answer_callback_query(call.id, "خطا: {str(e)[:80]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
             except Exception:
                 pass
 
@@ -2237,7 +2237,7 @@ def start_token_bot():
                     )
                     _bot.reply_to(
                         message,
-                        "سلام <b>{account['username']}</b>!\n\n"
+                        f"سلام <b>{account['username']}</b>!\n\n"
                         "<b>سلف شما به اکانت وصل نیست.</b>\n"
                         "برای وصل کردن دوباره دکمه زیر را بزنید:",
                         parse_mode="HTML",
@@ -2262,7 +2262,7 @@ def start_token_bot():
                     exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
                 is_active = exp_dt and exp_dt > _dt.datetime.now(_dt.timezone.utc)
                 sub_status = (
-                    "فعال — پلن {plan_fa}\n"
+                    f"فعال — پلن {plan_fa}\n"
                     f"   {pe('calendar', '📅')} انقضا: {_fmt_tehran(sub_exp)}\n"
                     f"   {pe('timer_1m', '⏳')} باقی‌مانده: {_remaining_str(sub_exp)}"
                 ) if is_active else "اشتراک ندارید"
@@ -2276,16 +2276,16 @@ def start_token_bot():
 
             # ── ساخت متن خوش‌آمد از قالب قابل تنظیم ─────────────────────────
             default_welcome = (
-                "سلام {name}!\n\n"
-                "وقت تهران: {time}\n\n"
-                "موجودی الماس: {balance}\n"
-                "کل دریافتی: {total_earned}\n\n"
-                "اشتراک سلف:\n{sub_status}"
+                f"سلام {name}!\n\n"
+                f"وقت تهران: {time}\n\n"
+                f"موجودی الماس: {balance}\n"
+                f"کل دریافتی: {total_earned}\n\n"
+                f"اشتراک سلف:\n{sub_status}"
             )
             welcome_template = db.get_global_setting("welcome_text", default_welcome)
             tg_user = message.from_user
             full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
-            mention = f"<a href='tg://user?id={tg_id}'>{full_name or account['username']}</a>"
+            mention = f"<a href=f'tg://user?id={tg_id}'>{full_name or account['username']}</a>"
             welcome_text = welcome_template.format(
                 name=account["username"],
                 name_full=full_name or account["username"],
@@ -2319,11 +2319,11 @@ def start_token_bot():
                 if sponsors:
                     sponsors_text = "<b>اسپانسرهای رسمی پروژه:</b>\n"
                     for sp in sponsors:
-                        sponsors_text += "@{sp['username']}\n"
+                        sponsors_text += f"@{sp['username']}\n"
                     sponsors_text += f"\n{pe('crown', '👑')} <b>مالک:</b> @{config.OWNER_USERNAME}\n{pe('shield', '🛟')} <b>پشتیبانی:</b> @{getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')}"
                     _bot.send_message(message.chat.id, sponsors_text)
         except Exception as e:
-            print("خطا در cmd_start: {e}")
+            print(f"خطا در cmd_start: {e}")
 
     def _process_referral_async(referrer_id, tg_id):
         try:
@@ -2334,7 +2334,7 @@ def start_token_bot():
                         "یک نفر با لینک شما عضو شد!\n"
                         f"<b>+{config.REFERRAL_TOKENS} الماس</b> دریافت کردید {pe('diamond', '💎')}")
         except Exception as e:
-            print("خطا در رفرال: {e}")
+            print(f"خطا در رفرال: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # Callback: بررسی عضویت
@@ -2354,7 +2354,7 @@ def start_token_bot():
             else:
                 _bot.answer_callback_query(call.id, f"هنوز در {len(missing)} کانال عضو نشده‌اید! {pe('cross_red', '❌')}", show_alert=True)
         except Exception as e:
-            print("خطا در callback_check_join: {e}")
+            print(f"خطا در callback_check_join: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # دکمه‌های منوی اصلی
@@ -2373,16 +2373,16 @@ def start_token_bot():
             # ── استفاده از ایموجی‌های پرمیوم: چند ایموجی توی یک پیام ──
             balance_text = (
                 "<b>موجودی الماس</b>\n\n"
-                "فعلی: <b>{stats['balance']}</b>\n"
-                "کل: <b>{stats['total_earned']}</b>\n"
-                "رفرال: <b>{ref_count}</b> نفر\n"
-                "قیمت هر الماس: <b>{token_price} تومان</b>"
+                f"فعلی: <b>{stats['balance']}</b>\n"
+                f"کل: <b>{stats['total_earned']}</b>\n"
+                f"رفرال: <b>{ref_count}</b> نفر\n"
+                f"قیمت هر الماس: <b>{token_price} تومان</b>"
             )
             send_emoji_message(_bot, message.chat.id, balance_text,
                                 reply_to_message_id=message.message_id,
                                 reply_markup=_main_inline_keyboard(account))
         except Exception as ex:
-            print("خطا در cmd_balance: {ex}")
+            print(f"خطا در cmd_balance: {ex}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "menu_balance")
     def callback_menu_balance(call):
@@ -2398,15 +2398,15 @@ def start_token_bot():
             _bot.answer_callback_query(call.id)
             balance_text = (
                 "<b>موجودی الماس</b>\n\n"
-                "فعلی: <b>{stats['balance']}</b>\n"
-                "کل: <b>{stats['total_earned']}</b>\n"
-                "رفرال: <b>{ref_count}</b> نفر\n"
-                "قیمت هر الماس: <b>{token_price} تومان</b>"
+                f"فعلی: <b>{stats['balance']}</b>\n"
+                f"کل: <b>{stats['total_earned']}</b>\n"
+                f"رفرال: <b>{ref_count}</b> نفر\n"
+                f"قیمت هر الماس: <b>{token_price} تومان</b>"
             )
             send_emoji_message(_bot, call.message.chat.id, balance_text,
                                 reply_markup=_main_inline_keyboard(account))
         except Exception as ex:
-            print("خطا در callback_menu_balance: {ex}")
+            print(f"خطا در callback_menu_balance: {ex}")
 
     @_bot.message_handler(func=lambda m: m.text == "هدیه روزانه", chat_types=['private'])
     def cmd_daily(message):
@@ -2434,7 +2434,7 @@ def start_token_bot():
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id, text, **kwargs)
         except Exception as e:
-            print("خطا در _do_daily: {e}")
+            print(f"خطا در _do_daily: {e}")
 
     @_bot.message_handler(func=lambda m: m.text == "رفرال", chat_types=['private'])
     def cmd_referral(message):
@@ -2458,12 +2458,12 @@ def start_token_bot():
             if reply_to:
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id,
-                "<b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
-                "تعداد: <b>{ref_count}</b>\n"
-                "پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
+                f"<b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
+                f"تعداد: <b>{ref_count}</b>\n"
+                f"پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
                 **kwargs)
         except Exception as e:
-            print("خطا در _do_referral: {e}")
+            print(f"خطا در _do_referral: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🛒 سیستم خرید و اشتراک
@@ -2535,11 +2535,11 @@ def start_token_bot():
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id,
                 "<b>منوی خرید</b>\n\n"
-                "موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
+                f"موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
                 f"یکی از گزینه‌های زیر را انتخاب کنید:",
                 **kwargs)
         except Exception as e:
-            print("خطا در _do_buy: {e}")
+            print(f"خطا در _do_buy: {e}")
 
     # ── Callback اصلی خرید ────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("pur_"))
@@ -2556,7 +2556,7 @@ def start_token_bot():
                 balance = db.get_token_balance(account["id"])
                 _purchase_states.pop(tg_id, None)
                 return _bot.edit_message_text(
-                    "<b>منوی خرید</b>\n\n{pe('diamond', '💎')} موجودی: <b>{balance} الماس</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                    f"<b>منوی خرید</b>\n\n{pe('diamond', '💎')} موجودی: <b>{balance} الماس</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_purchase_main_keyboard()
                 )
@@ -2592,9 +2592,9 @@ def start_token_bot():
                         icon_custom_emoji_id=get_emoji_id("arrow_blue"))
                     return _bot.edit_message_text(
                         "<b>موجودی کافی نیست!</b>\n\n"
-                        "موجودی: {balance} الماس\n"
-                        "نیاز: {cost} الماس\n"
-                        "کمبود: {need} الماس\n\n"
+                        f"موجودی: {balance} الماس\n"
+                        f"نیاز: {cost} الماس\n"
+                        f"کمبود: {need} الماس\n\n"
                         "برای کسب الماس:\n"
                         f"• دریافت هدیه روزانه {pe('gift', '🎁')}\n"
                         f"• دعوت دوستان {pe('link_chain', '🔗')}\n"
@@ -2607,12 +2607,12 @@ def start_token_bot():
                 expires = db.set_subscription(account["id"], plan_key, plan["days"])
                 exp_str = expires.strftime("%Y-%m-%d") if expires else "نامشخص"
                 _bot.edit_message_text(
-                    "<b>اشتراک {plan['fa']} فعال شد!</b>\n\n"
-                    "{cost} الماس کسر شد\n"
-                    "انقضا: <b>{exp_str}</b>",
+                    f"<b>اشتراک {plan['fa']} فعال شد!</b>\n\n"
+                    f"{cost} الماس کسر شد\n"
+                    f"انقضا: <b>{exp_str}</b>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id
                 )
-                _bot.answer_callback_query(call.id, "اشتراک {plan['fa']} فعال شد!", show_alert=True)
+                _bot.answer_callback_query(call.id, f"اشتراک {plan['fa']} فعال شد!", show_alert=True)
 
             # ── اشتراک با کارت ──────────────────────────────────────────────
             elif data == "pur_sub_card":
@@ -2640,7 +2640,7 @@ def start_token_bot():
                     icon_custom_emoji_id=get_emoji_id("arrow_blue"))
                 _bot.edit_message_text(
                     f"💳 <b>پرداخت اشتراک {plan['fa']}</b>\n\n"
-                    "مبلغ: <b>{plan['toman']:,} تومان</b>\n"
+                    f"مبلغ: <b>{plan['toman']:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
                     "به نام: <b>غفاری</b>\n\n"
                     f"بعد از واریز، تصویر رسید را ارسال کنید 👇",
@@ -2660,7 +2660,7 @@ def start_token_bot():
                 _bot.edit_message_text(
                     "<b>خرید الماس</b>\n\n"
                     "نرخ: هر ۱۰۰ الماس = <b>{100 * DIAMOND_RATE:,} تومان</b>\n"
-                    "حداقل خرید: <b>{DIAMOND_MIN_BUY} الماس</b>\n\n"
+                    f"حداقل خرید: <b>{DIAMOND_MIN_BUY} الماس</b>\n\n"
                     f"چه تعداد الماس می‌خوای؟ (عدد بنویس)\n"
                     f"مثال: <code>200</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
@@ -2693,8 +2693,8 @@ def start_token_bot():
                             _bot.send_message(
                                 payment["tg_id"],
                                 "<b>پرداخت تأیید شد!</b>\n\n"
-                                "اشتراک {plan.get('fa','')  } شما فعال شد\n"
-                                "انقضا: <b>{exp_str}</b>"
+                                f"اشتراک {plan.get('fa','')  } شما فعال شد\n"
+                                f"انقضا: <b>{exp_str}</b>"
                             )
                         except Exception: pass
 
@@ -2705,7 +2705,7 @@ def start_token_bot():
                             _bot.send_message(
                                 payment["tg_id"],
                                 "<b>پرداخت تأیید شد!</b>\n\n"
-                                "<b>{amount} الماس</b> به حسابتان اضافه شد!"
+                                f"<b>{amount} الماس</b> به حسابتان اضافه شد!"
                             )
                         except Exception: pass
 
@@ -2743,8 +2743,8 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
 
         except Exception as e:
-            print("خطا در callback_purchase: {e}")
-            _bot.answer_callback_query(call.id, "خطا: {str(e)[:80]}", show_alert=True)
+            print(f"خطا در callback_purchase: {e}")
+            _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
 
     # ── دریافت پیام‌های مرتبط با خرید (مبلغ الماس + رسید) ───────────────────
     @_bot.message_handler(
@@ -2767,7 +2767,7 @@ def start_token_bot():
                 except (ValueError, AttributeError):
                     return _bot.reply_to(message, "لطفاً یک عدد معتبر وارد کنید.")
                 if amount < DIAMOND_MIN_BUY:
-                    return _bot.reply_to(message, "حداقل {DIAMOND_MIN_BUY} الماس باید خرید.")
+                    return _bot.reply_to(message, f"حداقل {DIAMOND_MIN_BUY} الماس باید خرید.")
                 toman = amount * DIAMOND_RATE
                 card = _get_card_number()
                 payment_id = db.create_payment(
@@ -2780,8 +2780,8 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("لغو", callback_data="pur_back", style="danger"),
                     icon_custom_emoji_id=get_emoji_id("cross_red"))
                 _bot.reply_to(message,
-                    "<b>خرید {amount} الماس</b>\n\n"
-                    "مبلغ: <b>{toman:,} تومان</b>\n"
+                    f"<b>خرید {amount} الماس</b>\n\n"
+                    f"مبلغ: <b>{toman:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
                     "به نام: <b>غفاری</b>\n\n"
                     f"بعد از واریز، تصویر رسید را ارسال کنید 👇",
@@ -2818,9 +2818,9 @@ def start_token_bot():
 
                 admin_text = (
                     f"🧾 <b>رسید جدید</b>\n\n"
-                    "کاربر: {user_display}\n"
+                    f"کاربر: {user_display}\n"
                     f"🆔 تلگرام: <code>{tg_id}</code>\n"
-                    "نوع: {desc}\n"
+                    f"نوع: {desc}\n"
                     f"🔢 شناسه پرداخت: <code>{payment_id}</code>"
                 )
                 admin_markup = types.InlineKeyboardMarkup(row_width=2)
@@ -2841,7 +2841,7 @@ def start_token_bot():
                     )
                     db.update_payment(payment_id, admin_msg_id=admin_msg.message_id)
                 except Exception as e:
-                    print("ارسال رسید به ادمین: {e}")
+                    print(f"ارسال رسید به ادمین: {e}")
 
                 _purchase_states.pop(tg_id, None)
                 _bot.reply_to(message,
@@ -2851,7 +2851,7 @@ def start_token_bot():
                 )
 
         except Exception as e:
-            print("خطا در handle_purchase_state: {e}")
+            print(f"خطا در handle_purchase_state: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 📢 پنل مدیریت مالک
@@ -2929,10 +2929,10 @@ def start_token_bot():
                 if channels:
                     text = "<b>چنل‌های اجباری فعلی:</b>\n\n"
                     for ch in channels:
-                        text += "<code>{ch}</code>\n"
+                        text += f"<code>{ch}</code>\n"
                         ch_clean = ch.lstrip("@")
                         # 🔴 دکمه حذف با رنگ danger (قرمز)
-                        markup.add(types.InlineKeyboardButton("حذف {ch}", callback_data=f"rmch_{ch_clean}", style="danger"),
+                        markup.add(types.InlineKeyboardButton(f"حذف {ch}", callback_data=f"rmch_{ch_clean}", style="danger"),
                             icon_custom_emoji_id=get_emoji_id("cross_red"))
                 else:
                     text = "لیست چنل‌ها خالی است.\n\n"
@@ -2957,7 +2957,7 @@ def start_token_bot():
                     ch = "@" + ch
                 if db.remove_forced_channel(ch):
                     cache.invalidate("membership_")
-                    _bot.answer_callback_query(call.id, "چنل {ch} حذف شد")
+                    _bot.answer_callback_query(call.id, f"چنل {ch} حذف شد")
                     call.data = "admin_channels"
                     callback_admin(call)
                 else:
@@ -3003,7 +3003,7 @@ def start_token_bot():
                 start_idx = (page - 1) * PAGE_SIZE
                 page_accounts = accounts[start_idx: start_idx + PAGE_SIZE]
 
-                lines = ["<b>کاربران ({total} نفر) — صفحه {page}/{total_pages}</b>\n"]
+                lines = [f"<b>کاربران ({total} نفر) — صفحه {page}/{total_pages}</b>\n"]
                 for i, acc in enumerate(page_accounts, start_idx + 1):
                     bal = db.get_token_balance(acc["id"])
                     remaining = _format_plan_remaining(acc["id"])
@@ -3013,7 +3013,7 @@ def start_token_bot():
                     if tg_id_val:
                         pv_link = f"tg://user?id={tg_id_val}"
                         username_part = f"@{tg_username_val} | " if tg_username_val else ""
-                        tg_id_line = "<a href='{pv_link}'>{username_part}پیوی کاربر</a> (<code>{tg_id_val}</code>)"
+                        tg_id_line = f"<a href=f'{pv_link}'>{username_part}پیوی کاربر</a> (<code>{tg_id_val}</code>)"
                     else:
                         tg_id_line = "تلگرام: ─"
                     lines.append(
@@ -3096,11 +3096,11 @@ def start_token_bot():
                     markup = types.InlineKeyboardMarkup(row_width=2)
                     for c in challenges:
                         text += f"<b>ID {c['id']}:</b> {c['team1']} vs {c['team2']}\n"
-                        text += "{c['match_time']} | {pe('diamond', '💎')} {c['bet_amount']}\n\n"
+                        text += f"{c['match_time']} | {pe('diamond', '💎')} {c['bet_amount']}\n\n"
                         # 🟢 دکمه‌های تعیین برنده با رنگ success (سبز)
                         markup.add(
-                            types.InlineKeyboardButton("{c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}", style="success"),
-                            types.InlineKeyboardButton("{c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}", style="success",
+                            types.InlineKeyboardButton(f"{c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}", style="success"),
+                            types.InlineKeyboardButton(f"{c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}", style="success",
                                 icon_custom_emoji_id=get_emoji_id("checkmark_green"))
                         )
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
@@ -3124,15 +3124,15 @@ def start_token_bot():
                 if success:
                     won_count = sum(1 for r in results if r["result"] == "won")
                     lost_count = sum(1 for r in results if r["result"] == "lost")
-                    _bot.answer_callback_query(call.id, "برنده: {winner_team}\n{pe('trophy', '🏆')} {won_count} برنده | {pe('cross_red', '❌')} {lost_count} بازنده", show_alert=True)
+                    _bot.answer_callback_query(call.id, f"برنده: {winner_team}\n{pe('trophy', '🏆')} {won_count} برنده | {pe('cross_red', '❌')} {lost_count} بازنده", show_alert=True)
                     for r in results:
                         if r["result"] == "won":
                             try:
-                                _bot.send_message(r["user_tg_id"], "تبریک! شرط شما درست بود.\n{pe('diamond', '💎')} <b>{r['amount']} الماس</b> دریافت کردید.")
+                                _bot.send_message(r["user_tg_id"], f"تبریک! شرط شما درست بود.\n{pe('diamond', '💎')} <b>{r['amount']} الماس</b> دریافت کردید.")
                             except: 
                                 pass
                 else:
-                    _bot.answer_callback_query(call.id, "خطا: {results}", show_alert=True)
+                    _bot.answer_callback_query(call.id, f"خطا: {results}", show_alert=True)
                 return
             
             elif data == "admin_today_games":
@@ -3141,7 +3141,7 @@ def start_token_bot():
                     today_matches = _wc_get_today_matches()
                 except Exception as e:
                     today_matches = None
-                    print("خطا در دریافت بازی‌های امروز: {e}")
+                    print(f"خطا در دریافت بازی‌های امروز: {e}")
 
                 if today_matches is None:
                     text = "خطا در ارتباط با Football API.\nلاگ سرور را بررسی کنید."
@@ -3269,12 +3269,12 @@ def start_token_bot():
                     challenge_id = db.create_wc_challenge(match_id, home, away, dt)
                     if challenge_id:
                         _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
-                        _bot.answer_callback_query(call.id, "چالش {home} vs {away} ارسال شد!", show_alert=True)
+                        _bot.answer_callback_query(call.id, f"چالش {home} vs {away} ارسال شد!", show_alert=True)
                     else:
                         _bot.answer_callback_query(call.id, "خطا در ساخت چالش", show_alert=True)
                 except Exception as e:
-                    print("wc_sendnow: {e}")
-                    _bot.answer_callback_query(call.id, "خطا: {str(e)[:80]}", show_alert=True)
+                    print(f"wc_sendnow: {e}")
+                    _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
                 return
             
             elif data == "admin_transfer":
@@ -3446,7 +3446,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
                     icon_custom_emoji_id=get_emoji_id("cross_red"))
                 _bot.edit_message_text(
-                    "<b>پنل {plan_label}</b>\n\n"
+                    f"<b>پنل {plan_label}</b>\n\n"
                     "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -3471,7 +3471,7 @@ def start_token_bot():
                     amount = gift_info["amount"]
                     db.add_tokens(account["id"], amount)
                     new_balance = db.get_token_balance(account["id"])
-                    gift_desc = "{amount} الماس"
+                    gift_desc = f"{amount} الماس"
                     try:
                         _bot.send_message(
                             tg_id,
@@ -3486,9 +3486,9 @@ def start_token_bot():
                         pass
                     admin_msg = (
                         "<b>هدیه با موفقیت ارسال شد!</b>\n\n"
-                        "کاربر: <b>{account['username']}</b>\n"
-                        "هدیه: <b>{amount} الماس</b>\n"
-                        "موجودی جدید: <b>{new_balance}</b>"
+                        f"کاربر: <b>{account['username']}</b>\n"
+                        f"هدیه: <b>{amount} الماس</b>\n"
+                        f"موجودی جدید: <b>{new_balance}</b>"
                     )
                 else:
                     days = gift_info["days"]
@@ -3496,7 +3496,7 @@ def start_token_bot():
                     db.set_subscription(account["id"], "gift", days)
                     sub = db.get_subscription(account["id"])
                     end_date = sub.get("end_date", "نامشخص") if sub else "نامشخص"
-                    gift_desc = "پنل {plan_label}"
+                    gift_desc = f"پنل {plan_label}"
                     try:
                         _bot.send_message(
                             tg_id,
@@ -3511,9 +3511,9 @@ def start_token_bot():
                         pass
                     admin_msg = (
                         "<b>هدیه با موفقیت ارسال شد!</b>\n\n"
-                        "کاربر: <b>{account['username']}</b>\n"
-                        "هدیه: <b>پنل {plan_label}</b>\n"
-                        "انقضا: <b>{end_date}</b>"
+                        f"کاربر: <b>{account['username']}</b>\n"
+                        f"هدیه: <b>پنل {plan_label}</b>\n"
+                        f"انقضا: <b>{end_date}</b>"
                     )
 
                 _owner_states.pop(call.from_user.id, None)
@@ -3581,11 +3581,11 @@ def start_token_bot():
                     guides = []
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = "<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            "حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
+                            f"حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
                 else:
                     txt = "<b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="admin_guide_add", style="success"))
@@ -3622,11 +3622,11 @@ def start_token_bot():
                 # نمایش دوباره لیست
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = "<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            "حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
+                            f"حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
                 else:
                     txt = "<b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="admin_guide_add", style="success"))
@@ -3657,18 +3657,18 @@ def start_token_bot():
                 info = (
                     "<b>تنظیمات پیام خوش‌آمد</b>\n\n"
                     f"{'🖼 عکس: تنظیم شده ✅' if cur_photo else '🖼 عکس: تنظیم نشده ❌'}\n\n"
-                    "<b>متن فعلی:</b>\n<code>{preview or '(پیش‌فرض)'}</code>\n\n"
+                    f"<b>متن فعلی:</b>\n<code>{preview or '(پیش‌فرض)'}</code>\n\n"
                     "━━━━━━━━━━━━━━━━\n"
                     "<b>متغیرهای قابل استفاده:</b>\n"
-                    "  <code>{name}</code> — یوزرنیم کاربر\n"
-                    "  <code>{name_full}</code> — نام کامل تلگرام\n"
-                    "  <code>{mention}</code> — منشن با نام\n"
-                    "  <code>{tag}</code> — @یوزرنیم\n"
-                    "  <code>{tg_id}</code> — ایدی عددی\n"
-                    "  <code>{time}</code> — وقت تهران\n"
-                    "  <code>{balance}</code> — موجودی الماس\n"
-                    "  <code>{total_earned}</code> — کل دریافتی\n"
-                    "  <code>{sub_status}</code> — وضعیت اشتراک"
+                    f"  <code>{name}</code> — یوزرنیم کاربر\n"
+                    f"  <code>{name_full}</code> — نام کامل تلگرام\n"
+                    f"  <code>{mention}</code> — منشن با نام\n"
+                    f"  <code>{tag}</code> — @یوزرنیم\n"
+                    f"  <code>{tg_id}</code> — ایدی عددی\n"
+                    f"  <code>{time}</code> — وقت تهران\n"
+                    f"  <code>{balance}</code> — موجودی الماس\n"
+                    f"  <code>{total_earned}</code> — کل دریافتی\n"
+                    f"  <code>{sub_status}</code> — وضعیت اشتراک"
                 )
                 _bot.edit_message_text(info,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -3684,9 +3684,9 @@ def start_token_bot():
                     "<b>تغییر متن خوش‌آمد</b>\n\n"
                     "متن جدید را ارسال کنید.\n\n"
                     "متغیرهای قابل استفاده:\n"
-                    "<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
-                    "<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
-                    "<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>",
+                    f"<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
+                    f"<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
+                    f"<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
                 return
@@ -3728,16 +3728,16 @@ def start_token_bot():
             elif data == "admin_welcome_preview":
                 # پیش‌نمایش برای خود مالک
                 default_welcome = (
-                    "سلام {name}!\n\n"
-                    "وقت تهران: {time}\n\n"
-                    "موجودی الماس: {balance}\n"
-                    "کل دریافتی: {total_earned}\n\n"
-                    "اشتراک سلف:\n{sub_status}"
+                    f"سلام {name}!\n\n"
+                    f"وقت تهران: {time}\n\n"
+                    f"موجودی الماس: {balance}\n"
+                    f"کل دریافتی: {total_earned}\n\n"
+                    f"اشتراک سلف:\n{sub_status}"
                 )
                 template = db.get_global_setting("welcome_text", default_welcome) or default_welcome
                 tg_user = call.from_user
                 full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
-                mention = f"<a href='tg://user?id={tg_user.id}'>{full_name}</a>"
+                mention = f"<a href=f'tg://user?id={tg_user.id}'>{full_name}</a>"
                 try:
                     preview_text = template.format(
                         name=tg_user.username or "مالک",
@@ -3751,7 +3751,7 @@ def start_token_bot():
                         sub_status="فعال — پیش‌نمایش",
                     )
                 except Exception as fmt_err:
-                    preview_text = "خطا در قالب‌بندی: {fmt_err}"
+                    preview_text = f"خطا در قالب‌بندی: {fmt_err}"
                 welcome_photo = db.get_global_setting("welcome_photo_id", "")
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_welcome_settings", style="danger"),
@@ -3775,7 +3775,7 @@ def start_token_bot():
                 admins = db.get_sub_admins()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if admins:
-                    text_lines = ["<b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
+                    text_lines = [f"<b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
                     for a in admins:
                         name = a.get("name") or "بدون نام"
                         tg_id_a = a["telegram_id"]
@@ -3783,10 +3783,10 @@ def start_token_bot():
                         perm_count = len([p for p in perms.split(",") if p]) if perms else 0
                         text_lines.append(f"• {name} — <code>{tg_id_a}</code> | {perm_count} دسترسی")
                         markup.add(types.InlineKeyboardButton(
-                            "دسترسی‌های {name}", callback_data=f"admin_perm_edit_{tg_id_a}", style="primary"
+                            f"دسترسی‌های {name}", callback_data=f"admin_perm_edit_{tg_id_a}", style="primary"
                         ))
                         markup.add(types.InlineKeyboardButton(
-                            "حذف {name}", callback_data=f"admin_del_admin_{tg_id_a}", style="danger"
+                            f"حذف {name}", callback_data=f"admin_del_admin_{tg_id_a}", style="danger"
                         ))
                     admin_text = "\n".join(text_lines)
                 else:
@@ -3825,13 +3825,13 @@ def start_token_bot():
                 admins = db.get_sub_admins()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if admins:
-                    text_lines = ["<b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
+                    text_lines = [f"<b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
                     for a in admins:
                         name = a.get("name") or "بدون نام"
                         tg_id = a["telegram_id"]
                         text_lines.append(f"• {name} — <code>{tg_id}</code>")
                         markup.add(types.InlineKeyboardButton(
-                            "حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
+                            f"حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
                         ))
                     admin_text = "\n".join(text_lines)
                 else:
@@ -3870,7 +3870,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("بازگشت به ادمین‌ها", callback_data="admin_manage_admins", style="danger"),
                     icon_custom_emoji_id=get_emoji_id("arrow_blue"))
                 _bot.edit_message_text(
-                    "<b>دسترسی‌های ادمین: {name}</b>\n<code>{edit_tg_id}</code>\n\n"
+                    f"<b>دسترسی‌های ادمین: {name}</b>\n<code>{edit_tg_id}</code>\n\n"
                     "برای فعال/غیرفعال کردن هر بخش روی آن کلیک کنید:\n"
                     "= دسترسی دارد | ⬜️ = دسترسی ندارد",
                     chat_id=call.message.chat.id,
@@ -3911,9 +3911,9 @@ def start_token_bot():
                 if missions:
                     text = "<b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
-                        text += "{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
+                        text += f"{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
                         # 🔴 دکمه حذف با رنگ danger (قرمز)
-                        markup.add(types.InlineKeyboardButton("حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}", style="danger"),
+                        markup.add(types.InlineKeyboardButton(f"حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}", style="danger"),
                             icon_custom_emoji_id=get_emoji_id("cross_red"))
                 else:
                     text = "هیچ ماموریتی تعریف نشده.\n\n"
@@ -3971,7 +3971,7 @@ def start_token_bot():
                         text += f"\n• {lot.get('start_time','?')} تا {lot.get('end_time','?')} — {lot.get('winners_count','?')} برنده — {status}"
                         if lot.get("status") == "active":
                             markup.add(types.InlineKeyboardButton(
-                                "لغو قرعه‌کشی {lot.get('start_time','?')}",
+                                f"لغو قرعه‌کشی {lot.get('start_time','?')}",
                                 callback_data=f"lottery_cancel_{lot.get('id','')}",
                                 style="danger"
                             ))
@@ -4016,7 +4016,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("➕ ایجاد قرعه‌کشی جدید", callback_data="lottery_create", style="success"))
                 markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="admin_panel", style="danger"),
                     icon_custom_emoji_id=get_emoji_id("arrow_blue"))
-                _bot.edit_message_text("<b>مدیریت قرعه‌کشی</b>\n\n{pe('checkmark_green', '✅')} قرعه‌کشی لغو شد.",
+                _bot.edit_message_text(f"<b>مدیریت قرعه‌کشی</b>\n\n{pe('checkmark_green', '✅')} قرعه‌کشی لغو شد.",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
 
             elif data == "lottery_confirm":
@@ -4070,9 +4070,9 @@ def start_token_bot():
                     icon_custom_emoji_id=get_emoji_id("arrow_blue"))
                 _bot.edit_message_text(
                     "<b>قرعه‌کشی با موفقیت ثبت شد!</b>\n\n"
-                    "شروع: <b>{lot_data['start_time']}</b>\n"
-                    "پایان: <b>{lot_data['end_time']}</b>\n"
-                    "تعداد برنده: <b>{lot_data['winners_count']} نفر</b>\n"
+                    f"شروع: <b>{lot_data['start_time']}</b>\n"
+                    f"پایان: <b>{lot_data['end_time']}</b>\n"
+                    f"تعداد برنده: <b>{lot_data['winners_count']} نفر</b>\n"
                     "جوایز: {' | '.join(lot_data['prizes'])}\n\n"
                     f"ربات در ساعت {lot_data['start_time']} قرعه‌کشی را اعلام می‌کند.",
                     chat_id=call.message.chat.id,
@@ -4084,9 +4084,9 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id, "گزینه نامعتبر")
         
         except Exception as e:
-            print("خطا در callback_admin: {e}")
+            print(f"خطا در callback_admin: {e}")
             try:
-                _bot.answer_callback_query(call.id, "خطا: {str(e)[:100]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:100]}", show_alert=True)
             except: 
                 pass
 
@@ -4105,7 +4105,7 @@ def start_token_bot():
             if state == "broadcast_msg":
                 _owner_states.pop(message.from_user.id, None)
                 tg_ids = db.get_all_telegram_ids()
-                _bot.reply_to(message, "در حال ارسال به {len(tg_ids)} کاربر...")
+                _bot.reply_to(message, f"در حال ارسال به {len(tg_ids)} کاربر...")
                 sent, failed = 0, 0
                 for tid in tg_ids:
                     try:
@@ -4119,7 +4119,7 @@ def start_token_bot():
                     except Exception:
                         failed += 1
                 _bot.reply_to(message,
-                    "ارسال تمام شد!\n\n📤 موفق: {sent}\n{pe('cross_red', '❌')} بلاک‌شده/خطا: {failed}",
+                    f"ارسال تمام شد!\n\n📤 موفق: {sent}\n{pe('cross_red', '❌')} بلاک‌شده/خطا: {failed}",
                     reply_markup=_owner_keyboard())
                 return
 
@@ -4128,7 +4128,7 @@ def start_token_bot():
                     text = "@" + text
                 if db.add_forced_channel(text):
                     cache.invalidate("membership_")
-                    _bot.reply_to(message, "چنل <b>{text}</b> اضافه شد.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"چنل <b>{text}</b> اضافه شد.", reply_markup=_owner_keyboard())
                 else:
                     _bot.reply_to(message, "خطا یا تکراری است.", reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
@@ -4136,17 +4136,17 @@ def start_token_bot():
             elif state == "wc_team1":
                 state_data["data"]["team1"] = text
                 state_data["state"] = "wc_team2"
-                _bot.reply_to(message, "تیم اول: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله  از ۴:\nنام <b>تیم دوم</b> را ارسال کنید:")
+                _bot.reply_to(message, f"تیم اول: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله  از ۴:\nنام <b>تیم دوم</b> را ارسال کنید:")
             
             elif state == "wc_team2":
                 state_data["data"]["team2"] = text
                 state_data["state"] = "wc_time"
-                _bot.reply_to(message, "تیم دوم: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله  از ۴:\n ساعت بازی را ارسال کنید:\n\nمثال: <code>20:30</code>")
+                _bot.reply_to(message, f"تیم دوم: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله  از ۴:\n ساعت بازی را ارسال کنید:\n\nمثال: <code>20:30</code>")
             
             elif state == "wc_time":
                 state_data["data"]["time"] = text
                 state_data["state"] = "wc_bet"
-                _bot.reply_to(message, "ساعت: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله ۴ از ۴:\n{pe('diamond', '💎')} مبلغ شرط (الماس) را ارسال کنید:\n\nمثال: <code>10</code>")
+                _bot.reply_to(message, f"ساعت: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله ۴ از ۴:\n{pe('diamond', '💎')} مبلغ شرط (الماس) را ارسال کنید:\n\nمثال: <code>10</code>")
             
             elif state == "wc_bet":
                 try:
@@ -4165,7 +4165,7 @@ def start_token_bot():
                 )
                 # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
                 markup.add(
-                    types.InlineKeyboardButton("{data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}", style="danger",
+                    types.InlineKeyboardButton(f"{data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}", style="danger",
                         icon_custom_emoji_id=get_emoji_id("exclamation_red"))
                 )
                 
@@ -4173,26 +4173,26 @@ def start_token_bot():
                     msg = _bot.send_message(group,
                         f"⚽️ <b>چالش جام جهانی!</b>\n\n"
                         f"🆚 <b>{data['team1']}</b> در برابر <b>{data['team2']}</b>\n"
-                        "ساعت: <b>{data['time']}</b>\n"
-                        "مبلغ شرط: <b>{bet_amount} الماس</b>\n\n"
+                        f"ساعت: <b>{data['time']}</b>\n"
+                        f"مبلغ شرط: <b>{bet_amount} الماس</b>\n\n"
                         f"کدام تیم برنده می‌شود؟ شرط ببندید!",
                         reply_markup=markup)
                     db.update_challenge_message(challenge_id, msg.message_id, msg.chat.id)
                     _bot.reply_to(message, 
                         "چالش با موفقیت ایجاد شد!\n\n"
                         f"🆚 {data['team1']} vs {data['team2']}\n"
-                        "{data['time']} | {pe('diamond', '💎')} {bet_amount}\n"
-                        "ID چالش: <code>{challenge_id}</code>",
+                        f"{data['time']} | {pe('diamond', '💎')} {bet_amount}\n"
+                        f"ID چالش: <code>{challenge_id}</code>",
                         reply_markup=_owner_keyboard())
                 except Exception as e:
-                    _bot.reply_to(message, "خطا در ارسال به گروه: {e}\nمطمئن شوید ربات در {group} ادمین است.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"خطا در ارسال به گروه: {e}\nمطمئن شوید ربات در {group} ادمین است.", reply_markup=_owner_keyboard())
                 
                 _owner_states.pop(message.from_user.id, None)
             
             elif state == "transfer_user":
                 state_data["data"]["username"] = text.lstrip("@")
                 state_data["state"] = "transfer_amount"
-                _bot.reply_to(message, "کاربر: <b>{text}</b>\n\n{pe('diamond', '💎')} مبلغ الماس را ارسال کنید:")
+                _bot.reply_to(message, f"کاربر: <b>{text}</b>\n\n{pe('diamond', '💎')} مبلغ الماس را ارسال کنید:")
             
             elif state == "transfer_amount":
                 try:
@@ -4203,7 +4203,7 @@ def start_token_bot():
                 username = state_data["data"]["username"]
                 to_account = db.get_account_by_username(username)
                 if not to_account:
-                    _bot.reply_to(message, "کاربر '{username}' یافت نشد.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"کاربر f'{username}' یافت نشد.", reply_markup=_owner_keyboard())
                     _owner_states.pop(message.from_user.id, None)
                     return
                 
@@ -4213,19 +4213,19 @@ def start_token_bot():
                 to_tg_id = db.get_telegram_id_by_owner(to_account["id"])
                 if to_tg_id:
                     try:
-                        _bot.send_message(to_tg_id, "<b>{amount} الماس</b> از طرف سیستم دریافت کردید!\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>")
+                        _bot.send_message(to_tg_id, f"<b>{amount} الماس</b> از طرف سیستم دریافت کردید!\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>")
                     except: 
                         pass
                 
                 _bot.reply_to(message, 
-                    "<b>{amount} الماس</b> به <b>{to_account['username']}</b> داده شد.\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>",
+                    f"<b>{amount} الماس</b> به <b>{to_account['username']}</b> داده شد.\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
             
             elif state == "give_user":
                 state_data["data"]["username"] = text.lstrip("@")
                 state_data["state"] = "give_amount"
-                _bot.reply_to(message, "کاربر: <b>{text}</b>\n\n{pe('diamond', '💎')} مبلغ الماس را ارسال کنید:")
+                _bot.reply_to(message, f"کاربر: <b>{text}</b>\n\n{pe('diamond', '💎')} مبلغ الماس را ارسال کنید:")
             
             elif state == "give_amount":
                 try:
@@ -4236,7 +4236,7 @@ def start_token_bot():
                 username = state_data["data"]["username"]
                 account = db.get_account_by_username(username)
                 if not account:
-                    _bot.reply_to(message, "کاربر '{username}' یافت نشد.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"کاربر f'{username}' یافت نشد.", reply_markup=_owner_keyboard())
                     _owner_states.pop(message.from_user.id, None)
                     return
                 
@@ -4247,13 +4247,13 @@ def start_token_bot():
                 tg_id = db.get_telegram_id_by_owner(account["id"])
                 if tg_id:
                     try:
-                        _bot.send_message(tg_id, "<b>{amount} الماس</b> از طرف مالک دریافت کردید!\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>")
+                        _bot.send_message(tg_id, f"<b>{amount} الماس</b> از طرف مالک دریافت کردید!\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>")
                     except: 
                         pass
                 
                 _bot.reply_to(message, 
-                    "<b>{amount}</b> الماس به <b>{account['username']}</b> داده شد.\n"
-                    "موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
+                    f"<b>{amount}</b> الماس به <b>{account['username']}</b> داده شد.\n"
+                    f"موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4272,7 +4272,7 @@ def start_token_bot():
                     icon_custom_emoji_id=get_emoji_id("cross_red"))
                 _bot.reply_to(
                     message,
-                    "<b>هدیه الماس: {amount} الماس</b>\n\n"
+                    f"<b>هدیه الماس: {amount} الماس</b>\n\n"
                     "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
                     reply_markup=markup
                 )
@@ -4303,11 +4303,11 @@ def start_token_bot():
 
                 if gift_type == "diamond":
                     amount = state_data["data"]["amount"]
-                    gift_desc = "{amount} الماس"
+                    gift_desc = f"{amount} الماس"
                 else:
                     days = state_data["data"]["days"]
                     plan_label = state_data["data"]["plan_label"]
-                    gift_desc = "پنل {plan_label} ({days} روز)"
+                    gift_desc = f"پنل {plan_label} ({days} روز)"
 
                 # ذخیره اطلاعات تایید هدیه
                 import hashlib, time
@@ -4325,12 +4325,12 @@ def start_token_bot():
 
                 confirm_text = (
                     "<b>تایید هدیه</b>\n\n"
-                    "<b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
+                    f"<b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
                     f"🆔 <b>ایدی تلگرام:</b> @{account.get('username', '-')}\n"
                     f"🔢 <b>ایدی عددی:</b> <code>{tg_id}</code>\n"
-                    "<b>پلن باقی‌مانده:</b> {plan_remaining}\n"
-                    "<b>موجودی:</b> {balance} الماس\n"
-                    "<b>{gift_desc} هدیه</b>\n\n"
+                    f"<b>پلن باقی‌مانده:</b> {plan_remaining}\n"
+                    f"<b>موجودی:</b> {balance} الماس\n"
+                    f"<b>{gift_desc} هدیه</b>\n\n"
                     f"آیا تایید می‌کنید؟"
                 )
                 markup = types.InlineKeyboardMarkup(row_width=2)
@@ -4348,7 +4348,7 @@ def start_token_bot():
                 card = text.strip().replace("-", "").replace(" ", "")
                 db.set_global_setting("card_number", card)
                 _bot.reply_to(message,
-                    "شماره کارت ذخیره شد:\n<code>{card}</code>",
+                    f"شماره کارت ذخیره شد:\n<code>{card}</code>",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4361,7 +4361,7 @@ def start_token_bot():
                 state_data["data"]["channel"] = ch
                 state_data["state"] = "mission_reward"
                 _bot.reply_to(message,
-                    "کانال: <b>{ch}</b>\n\n{pe('diamond', '💎')} مقدار جایزه (الماس) را ارسال کنید:",
+                    f"کانال: <b>{ch}</b>\n\n{pe('diamond', '💎')} مقدار جایزه (الماس) را ارسال کنید:",
                     parse_mode="HTML")
 
             elif state == "mission_reward":
@@ -4378,7 +4378,7 @@ def start_token_bot():
                     return
                 db.add_mission(ch, reward)
                 _bot.reply_to(message,
-                    "ماموریت اضافه شد!\n{pe('arrow_blue', '🔸')} {ch} — {pe('diamond', '💎')}{reward} الماس",
+                    f"ماموریت اضافه شد!\n{pe('arrow_blue', '🔸')} {ch} — {pe('diamond', '💎')}{reward} الماس",
                     parse_mode="HTML",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
@@ -4406,7 +4406,7 @@ def start_token_bot():
                 except Exception:
                     pass
                 _bot.reply_to(message,
-                    "<b>{name}</b> (<code>{new_admin_id}</code>) به عنوان ادمین اضافه شد.",
+                    f"<b>{name}</b> (<code>{new_admin_id}</code>) به عنوان ادمین اضافه شد.",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4424,11 +4424,11 @@ def start_token_bot():
                     )
                 except KeyError as e:
                     return _bot.reply_to(message,
-                        "متغیر نامعتبر: <code>{e}</code>\n\n"
+                        f"متغیر نامعتبر: <code>{e}</code>\n\n"
                         "متغیرهای مجاز:\n"
-                        "<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
-                        "<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
-                        "<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>")
+                        f"<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
+                        f"<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
+                        f"<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>")
                 db.set_global_setting("welcome_text", new_text)
                 _owner_states.pop(message.from_user.id, None)
                 markup = types.InlineKeyboardMarkup()
@@ -4468,7 +4468,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_guide_manage", style="danger"),
                     icon_custom_emoji_id=get_emoji_id("cross_red"))
                 _bot.reply_to(message,
-                    "اسم آموزش: <b>{guide_name}</b>\n\n"
+                    f"اسم آموزش: <b>{guide_name}</b>\n\n"
                     "نوع آموزش را انتخاب کنید:",
                     reply_markup=markup)
 
@@ -4511,7 +4511,7 @@ def start_token_bot():
                 db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
                 _owner_states.pop(message.from_user.id, None)
                 _bot.reply_to(message,
-                    "آموزش «<b>{guide_name}</b>» ({'ویدیو' if media_type == 'video' else 'عکس'}) ذخیره شد.",
+                    f"آموزش «<b>{guide_name}</b>» ({'ویدیو' if media_type == 'video' else 'عکس'}) ذخیره شد.",
                     reply_markup=_owner_keyboard())
 
             elif state == "guide_send_text":
@@ -4535,7 +4535,7 @@ def start_token_bot():
                 db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
                 _owner_states.pop(message.from_user.id, None)
                 _bot.reply_to(message,
-                    "آموزش متنی «<b>{guide_name}</b>» ذخیره شد.",
+                    f"آموزش متنی «<b>{guide_name}</b>» ذخیره شد.",
                     reply_markup=_owner_keyboard())
 
             # ── قرعه‌کشی states ─────────────────────────────────────────────
@@ -4550,7 +4550,7 @@ def start_token_bot():
                 state_data["data"]["start_time"] = t
                 state_data["state"] = "lottery_end_time"
                 _bot.reply_to(message,
-                    "ساعت شروع: <b>{t}</b>\n\n"
+                    f"ساعت شروع: <b>{t}</b>\n\n"
                     "<b>مرحله ۲ از ۵: ساعت پایان</b>\n\n"
                     "ساعت پایان قرعه‌کشی را ارسال کنید:\n"
                     "مثال: <code>23:00</code>")
@@ -4566,7 +4566,7 @@ def start_token_bot():
                 state_data["data"]["end_time"] = t
                 state_data["state"] = "lottery_winners_count"
                 _bot.reply_to(message,
-                    "ساعت پایان: <b>{t}</b>\n\n"
+                    f"ساعت پایان: <b>{t}</b>\n\n"
                     "<b>مرحله ۳ از ۵: تعداد برنده</b>\n\n"
                     "تعداد برندگان را وارد کنید:\n"
                     "مثال: <code>3</code>")
@@ -4580,7 +4580,7 @@ def start_token_bot():
                 state_data["data"]["current_prize"] = 1
                 state_data["state"] = "lottery_prize"
                 _bot.reply_to(message,
-                    "تعداد برنده: <b>{cnt} نفر</b>\n\n"
+                    f"تعداد برنده: <b>{cnt} نفر</b>\n\n"
                     "<b>مرحله ۴ از ۵: تعیین جوایز</b>\n\n"
                     f"جایزه نفر <b>اول</b> را وارد کنید:\n"
                     "مثال: <code>۱ میلیون تومان</code>")
@@ -4599,7 +4599,7 @@ def start_token_bot():
                     ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم"]
                     next_ord = ordinals[current] if current < len(ordinals) else f"{current+1}م"
                     _bot.reply_to(message,
-                        "جایزه نفر {ordinals[current-1]}: <b>{prize}</b>\n\n"
+                        f"جایزه نفر {ordinals[current-1]}: <b>{prize}</b>\n\n"
                         f"جایزه نفر <b>{next_ord}</b> را وارد کنید:")
                 else:
                     # همه جوایز ثبت شد — نمایش تأیید
@@ -4619,15 +4619,15 @@ def start_token_bot():
                     )
                     _bot.reply_to(message,
                         "<b>مرحله ۵ از ۵: تأیید قرعه‌کشی</b>\n\n"
-                        "زمان: <b>{d['start_time']}</b> تا <b>{d['end_time']}</b>\n"
-                        "تعداد برنده: <b>{d['winners_count']} نفر</b>\n"
-                        "جوایز:{prize_text}\n\n"
+                        f"زمان: <b>{d['start_time']}</b> تا <b>{d['end_time']}</b>\n"
+                        f"تعداد برنده: <b>{d['winners_count']} نفر</b>\n"
+                        f"جوایز:{prize_text}\n\n"
                         "آیا تأیید می‌کنید؟",
                         reply_markup=markup)
         
         except Exception as e:
-            print("خطا در handle_owner_state: {e}")
-            _bot.reply_to(message, "خطا: {e}", reply_markup=_owner_keyboard())
+            print(f"خطا در handle_owner_state: {e}")
+            _bot.reply_to(message, f"خطا: {e}", reply_markup=_owner_keyboard())
             _owner_states.pop(message.from_user.id, None)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -4696,7 +4696,7 @@ def start_token_bot():
             # ── کاربران ──────────────────────────────────────────────────────
             if data == "sa_users":
                 accounts = db.get_all_accounts()
-                lines = ["<b>لیست کاربران ({len(accounts)} نفر):</b>\n"]
+                lines = [f"<b>لیست کاربران ({len(accounts)} نفر):</b>\n"]
                 for a in accounts[:30]:
                     uname = a.get("username", "-")
                     lines.append(f"• @{uname}")
@@ -4716,7 +4716,7 @@ def start_token_bot():
                 if not challenges:
                     text = "<b>بازی‌های امروز</b>\n\nهیچ بازی‌ای برای امروز ثبت نشده."
                 else:
-                    lines = ["<b>بازی‌های امروز ({len(challenges)} بازی):</b>\n"]
+                    lines = [f"<b>بازی‌های امروز ({len(challenges)} بازی):</b>\n"]
                     for c in challenges:
                         lines.append(f"⚽ {c.get('team1','-')} vs {c.get('team2','-')} — {c.get('time','-')}")
                     text = "\n".join(lines)
@@ -4745,9 +4745,9 @@ def start_token_bot():
                 if missions:
                     text = "<b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
-                        text += "{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
+                        text += f"{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
                         markup.add(types.InlineKeyboardButton(
-                            "حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
+                            f"حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
                 else:
                     text = "هیچ ماموریتی تعریف نشده.\n\n"
                 markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="sa_add_mission", style="success"))
@@ -4777,9 +4777,9 @@ def start_token_bot():
                 if missions:
                     text = "<b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
-                        text += "{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
+                        text += f"{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
                         markup.add(types.InlineKeyboardButton(
-                            "حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
+                            f"حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
                 else:
                     text = "هیچ ماموریتی تعریف نشده.\n\n"
                 markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="sa_add_mission", style="success"))
@@ -4858,7 +4858,7 @@ def start_token_bot():
                 markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_back", style="danger"),
                     icon_custom_emoji_id=get_emoji_id("cross_red"))
                 _bot.edit_message_text(
-                    "<b>پنل {plan_label}</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:",
+                    f"<b>پنل {plan_label}</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
@@ -4878,11 +4878,11 @@ def start_token_bot():
                     try:
                         _bot.send_message(target_tg_id,
                             "<b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
-                            "مشخصات هدیه:\n{pe('diamond', '💎')} <b>الماس هدیه:</b> {amount} الماس\n"
-                            "<b>موجودی جدید:</b> {new_balance} الماس")
+                            f"مشخصات هدیه:\n{pe('diamond', '💎')} <b>الماس هدیه:</b> {amount} الماس\n"
+                            f"<b>موجودی جدید:</b> {new_balance} الماس")
                     except Exception:
                         pass
-                    result_text = "<b>{amount} الماس</b> به <b>{account['username']}</b> هدیه داده شد."
+                    result_text = f"<b>{amount} الماس</b> به <b>{account['username']}</b> هدیه داده شد."
                 else:
                     days = gift_info["days"]
                     plan_label = gift_info["plan_label"]
@@ -4890,10 +4890,10 @@ def start_token_bot():
                     try:
                         _bot.send_message(target_tg_id,
                             "<b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
-                            "مشخصات هدیه:\n{pe('edit_box', '📋')} <b>پنل هدیه:</b> {plan_label} ({days} روز)")
+                            f"مشخصات هدیه:\n{pe('edit_box', '📋')} <b>پنل هدیه:</b> {plan_label} ({days} روز)")
                     except Exception:
                         pass
-                    result_text = "پنل <b>{plan_label}</b> به <b>{account['username']}</b> هدیه داده شد."
+                    result_text = f"پنل <b>{plan_label}</b> به <b>{account['username']}</b> هدیه داده شد."
                 _subadmin_states.pop(tg_id, None)
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="sa_back", style="primary"),
@@ -4928,11 +4928,11 @@ def start_token_bot():
                     guides = []
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = "<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            "حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
+                            f"حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
                 else:
                     txt = "<b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="sa_guide_add", style="success"))
@@ -4965,11 +4965,11 @@ def start_token_bot():
                     db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = "<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            "حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
+                            f"حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
                 else:
                     txt = "هیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="sa_guide_add", style="success"))
@@ -4980,8 +4980,8 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id, "آموزش حذف شد")
 
         except Exception as e:
-            print("خطا در callback_subadmin: {e}")
-            _bot.answer_callback_query(call.id, "خطا: {e}", show_alert=True)
+            print(f"خطا در callback_subadmin: {e}")
+            _bot.answer_callback_query(call.id, f"خطا: {e}", show_alert=True)
 
     @_bot.message_handler(func=lambda m: m.from_user.id in _subadmin_states and m.chat.type == 'private',
                           content_types=["text", "photo", "document"])
@@ -4997,7 +4997,7 @@ def start_token_bot():
             if state == "sa_broadcast_msg":
                 _subadmin_states.pop(tg_id, None)
                 tg_ids = db.get_all_telegram_ids()
-                _bot.reply_to(message, "در حال ارسال به {len(tg_ids)} کاربر...")
+                _bot.reply_to(message, f"در حال ارسال به {len(tg_ids)} کاربر...")
                 sent, failed = 0, 0
                 for tid in tg_ids:
                     try:
@@ -5010,7 +5010,7 @@ def start_token_bot():
                         sent += 1
                     except Exception:
                         failed += 1
-                _bot.reply_to(message, "ارسال تمام شد!\n📤 موفق: {sent}\n{pe('cross_red', '❌')} خطا: {failed}",
+                _bot.reply_to(message, f"ارسال تمام شد!\n📤 موفق: {sent}\n{pe('cross_red', '❌')} خطا: {failed}",
                     reply_markup=_subadmin_panel_keyboard())
 
             elif state == "sa_mission_channel":
@@ -5019,7 +5019,7 @@ def start_token_bot():
                     ch = "@" + ch
                 state_data["data"]["channel"] = ch
                 state_data["state"] = "sa_mission_reward"
-                _bot.reply_to(message, "کانال: <b>{ch}</b>\n\n{pe('diamond', '💎')} مقدار جایزه (الماس) را وارد کنید:")
+                _bot.reply_to(message, f"کانال: <b>{ch}</b>\n\n{pe('diamond', '💎')} مقدار جایزه (الماس) را وارد کنید:")
 
             elif state == "sa_mission_reward":
                 try:
@@ -5031,7 +5031,7 @@ def start_token_bot():
                 ch = state_data.get("data", {}).get("channel")
                 db.add_mission(ch, reward)
                 _subadmin_states.pop(tg_id, None)
-                _bot.reply_to(message, "ماموریت اضافه شد!\n{pe('arrow_blue', '🔸')} {ch} — {pe('diamond', '💎')}{reward} الماس",
+                _bot.reply_to(message, f"ماموریت اضافه شد!\n{pe('arrow_blue', '🔸')} {ch} — {pe('diamond', '💎')}{reward} الماس",
                     reply_markup=_subadmin_panel_keyboard())
 
             elif state == "sa_gift_diamond_amount":
@@ -5044,7 +5044,7 @@ def start_token_bot():
                 state_data["data"]["amount"] = amount
                 state_data["state"] = "sa_gift_tg_id"
                 _bot.reply_to(message,
-                    "<b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
+                    f"<b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
 
             elif state == "sa_gift_tg_id":
                 try:
@@ -5060,11 +5060,11 @@ def start_token_bot():
                 plan_remaining = sub["end_date"] if sub and sub.get("end_date") else "ندارد"
                 if gift_type == "diamond":
                     amount = state_data["data"]["amount"]
-                    gift_desc = "{amount} الماس"
+                    gift_desc = f"{amount} الماس"
                 else:
                     days = state_data["data"]["days"]
                     plan_label = state_data["data"]["plan_label"]
-                    gift_desc = "پنل {plan_label} ({days} روز)"
+                    gift_desc = f"پنل {plan_label} ({days} روز)"
                 import hashlib, time as _time
                 gift_key = hashlib.md5(f"{target_tg_id}{_time.time()}".encode()).hexdigest()[:8]
                 state_data["gift_pending"] = {
@@ -5077,11 +5077,11 @@ def start_token_bot():
                 state_data["state"] = "sa_gift_awaiting_confirm"
                 confirm_text = (
                     "<b>تایید هدیه</b>\n\n"
-                    "<b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
+                    f"<b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
                     f"🔢 <b>ایدی عددی:</b> <code>{target_tg_id}</code>\n"
-                    "<b>پلن باقی‌مانده:</b> {plan_remaining}\n"
-                    "<b>موجودی:</b> {balance} الماس\n"
-                    "<b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
+                    f"<b>پلن باقی‌مانده:</b> {plan_remaining}\n"
+                    f"<b>موجودی:</b> {balance} الماس\n"
+                    f"<b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
                 )
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
@@ -5095,8 +5095,8 @@ def start_token_bot():
                 _bot.reply_to(message, "لطفاً روی دکمه تایید یا لغو کلیک کنید.")
 
         except Exception as e:
-            print("خطا در handle_subadmin_state: {e}")
-            _bot.reply_to(message, "خطا: {e}")
+            print(f"خطا در handle_subadmin_state: {e}")
+            _bot.reply_to(message, f"خطا: {e}")
             _subadmin_states.pop(tg_id, None)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -5109,7 +5109,7 @@ def start_token_bot():
                 return
             _do_missions(message.from_user.id, message.chat.id)
         except Exception as e:
-            print("خطا در cmd_missions: {e}")
+            print(f"خطا در cmd_missions: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "menu_missions")
     def callback_menu_missions(call):
@@ -5155,10 +5155,10 @@ def start_token_bot():
                         caption=f"🖼 <b>{g['name']}</b>", reply_markup=back_markup)
                 else:
                     _bot.send_message(chat_id,
-                        "<b>{g['name']}</b>\n\n{g.get('content', '')}",
+                        f"<b>{g['name']}</b>\n\n{g.get('content', '')}",
                         reply_markup=back_markup)
             except Exception as e:
-                _bot.send_message(chat_id, "خطا در نمایش آموزش: {e}")
+                _bot.send_message(chat_id, f"خطا در نمایش آموزش: {e}")
 
     def _show_guide_menu(tg_id, chat_id):
         import json as _json
@@ -5182,7 +5182,7 @@ def start_token_bot():
             markup.add(types.InlineKeyboardButton("منوی اصلی", callback_data="back_main", style="danger"),
                 icon_custom_emoji_id=get_emoji_id("arrow_blue"))
         _bot.send_message(chat_id,
-            "<b>راهنما</b>\n\n{len(guides)} آموزش موجود است. یکی را انتخاب کنید:",
+            f"<b>راهنما</b>\n\n{len(guides)} آموزش موجود است. یکی را انتخاب کنید:",
             reply_markup=markup)
 
     def _do_missions(tg_id, chat_id):
@@ -5206,7 +5206,7 @@ def start_token_bot():
                 if not done:
                     # 🔵 دکمه عضویت با رنگ primary (آبی)
                     markup.add(types.InlineKeyboardButton(
-                        "عضویت در {m['channel_username']}",
+                        f"عضویت در {m['channel_username']}",
                         url=f"https://t.me/{ch_clean}",
                         style="primary"
                     ))
@@ -5215,7 +5215,7 @@ def start_token_bot():
                 icon_custom_emoji_id=get_emoji_id("checkmark_green"))
             _bot.send_message(chat_id, "\n".join(lines), reply_markup=markup)
         except Exception as e:
-            print("خطا در _do_missions: {e}")
+            print(f"خطا در _do_missions: {e}")
     @_bot.callback_query_handler(func=lambda call: call.data == "check_missions")
     def callback_check_missions(call):
         try:
@@ -5246,17 +5246,17 @@ def start_token_bot():
                 if not pending:
                     return _bot.answer_callback_query(call.id, "همه ماموریت‌ها قبلاً انجام شده!", show_alert=True)
                 return _bot.answer_callback_query(call.id,
-                    "ماموریت انجام نشده!\nابتدا در {len(pending)} کانال عضو شوید سپس دوباره بررسی کنید.",
+                    f"ماموریت انجام نشده!\nابتدا در {len(pending)} کانال عضو شوید سپس دوباره بررسی کنید.",
                     show_alert=True)
 
             cache.invalidate(f"account_{call.from_user.id}")
             new_balance = db.get_token_balance(account["id"])
             _bot.answer_callback_query(call.id,
-                "تبریک! {len(newly_done)} ماموریت انجام شد!\n{pe('diamond', '💎')} +{total_reward} الماس دریافت کردید!",
+                f"تبریک! {len(newly_done)} ماموریت انجام شد!\n{pe('diamond', '💎')} +{total_reward} الماس دریافت کردید!",
                 show_alert=True)
         except Exception as e:
-            print("خطا در callback_check_missions: {e}")
-            _bot.answer_callback_query(call.id, "خطا: {str(e)[:80]}", show_alert=True)
+            print(f"خطا در callback_check_missions: {e}")
+            _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # ✅ پیام‌های ناشناخته
@@ -5271,7 +5271,7 @@ def start_token_bot():
             kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
             _bot.reply_to(message, "دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
         except Exception as e:
-            print("خطا در cmd_unknown: {e}")
+            print(f"خطا در cmd_unknown: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🃏 بازی حکم
@@ -5334,9 +5334,9 @@ def start_token_bot():
         names = "\n".join(f"  • {g['names'].get(uid,'?')}" for uid in players)
         return (
             f"🎮 <b>بازی حکم</b>\n"
-            "سازنده: {g['creator_name']}\n"
-            "شرط: <b>{g['bet']} الماس</b>\n"
-            "بازیکنان ({len(players)}/4):\n{names}\n\n"
+            f"سازنده: {g['creator_name']}\n"
+            f"شرط: <b>{g['bet']} الماس</b>\n"
+            f"بازیکنان ({len(players)}/4):\n{names}\n\n"
             f"{'✅ آماده شروع! تایمر شروع شد...' if len(players)>=2 else '⏳ منتظر بازیکن دیگر...'}"
         )
 
@@ -5376,7 +5376,7 @@ def start_token_bot():
             balance = db.get_token_balance(account["id"])
             if balance < bet:
                 return _bot.reply_to(message,
-                    "موجودی کافی ندارید!\nنیاز: {bet} الماس — موجودی: {balance} الماس")
+                    f"موجودی کافی ندارید!\nنیاز: {bet} الماس — موجودی: {balance} الماس")
 
             uname = message.from_user.username
             display = f"@{uname}" if uname else message.from_user.first_name
@@ -5421,7 +5421,7 @@ def start_token_bot():
             game["msg_id"] = msg.message_id
 
         except Exception as e:
-            print("cmd_hokm_start: {e}")
+            print(f"cmd_hokm_start: {e}")
 
     # ── ورود / خروج ─────────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_join_"))
@@ -5457,7 +5457,7 @@ def start_token_bot():
                 balance = db.get_token_balance(account["id"])
                 if balance < game["bet"]:
                     return _bot.answer_callback_query(call.id,
-                        "موجودی کافی ندارید! نیاز: {game['bet']} الماس", show_alert=True)
+                        f"موجودی کافی ندارید! نیاز: {game['bet']} الماس", show_alert=True)
                 uname = call.from_user.username
                 display = f"@{uname}" if uname else call.from_user.first_name
                 game["players"].append(user_id)
@@ -5495,7 +5495,7 @@ def start_token_bot():
                 pass
 
         except Exception as e:
-            print("callback_hokm_join: {e}")
+            print(f"callback_hokm_join: {e}")
 
     # ── لغو بازی ────────────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_cancel_"))
@@ -5522,7 +5522,7 @@ def start_token_bot():
             )
             _bot.answer_callback_query(call.id, "بازی لغو شد.")
         except Exception as e:
-            print("callback_hokm_cancel: {e}")
+            print(f"callback_hokm_cancel: {e}")
 
     # ── کمکی: پیام واحد هر بازیکن — فقط یک‌بار ارسال، بقیه موارد فقط ادیت می‌شود ──
     def _hokm_send_or_edit(uid, game, text, kb=None):
@@ -5540,7 +5540,7 @@ def start_token_bot():
             msg = _bot.send_message(uid, text, parse_mode="HTML", reply_markup=kb)
             game.setdefault("player_msg", {})[uid] = msg.message_id
         except Exception as e:
-            print("_hokm_send_or_edit {uid}: {e}")
+            print(f"_hokm_send_or_edit {uid}: {e}")
 
     def _hokm_status_lines(game, uid):
         """خطوط وضعیت کلی بازی برای پیام شخصی هر بازیکن"""
@@ -5550,7 +5550,7 @@ def start_token_bot():
         if game.get("state") == "playing":
             t0 = game["tricks"][0]
             t1 = game["tricks"][1]
-            lines.append("تیم حاکم: {t0} | تیم رقیب: {t1}")
+            lines.append(f"تیم حاکم: {t0} | تیم رقیب: {t1}")
             if game.get("round_cards"):
                 played = " | ".join(
                     f"{game['names'][u]}: {_hokm_card_label(c)}"
@@ -5560,7 +5560,7 @@ def start_token_bot():
             if game.get("turn_order"):
                 current = game["turn_order"][game["current_turn_idx"]]
                 who = "شما" if current == uid else game["names"].get(current, "?")
-                lines.append("نوبت: <b>{who}</b>")
+                lines.append(f"نوبت: <b>{who}</b>")
         return lines
 
     def _hokm_send_hand(uid, game, extra_lines=None, extra_rows=None):
@@ -5591,7 +5591,7 @@ def start_token_bot():
 
             _hokm_send_or_edit(uid, game, "\n".join(lines), kb)
         except Exception as e:
-            print("_hokm_send_hand {uid}: {e}")
+            print(f"_hokm_send_hand {uid}: {e}")
 
     def _hokm_broadcast_hands(game, extra_lines=None):
         """به‌روزرسانی پیام شخصی همه بازیکنان با ادیت (بدون ارسال پیام جدید)"""
@@ -5614,7 +5614,7 @@ def start_token_bot():
             try:
                 _bot.edit_message_text(
                     "<b>بازی حکم شروع شد!</b>\n\n"
-                    "بازیکنان:\n{names_list}\n\n"
+                    f"بازیکنان:\n{names_list}\n\n"
                     f"📩 برای ادامه بازی به پیوی ربات مراجعه کنید.",
                     chat_id, game["msg_id"],
                     parse_mode="HTML"
@@ -5655,14 +5655,14 @@ def start_token_bot():
                 ))
                 text = (
                     f"🎮 <b>بازی حکم شروع شد!</b>\n\n"
-                    "کارت قرعه شما: <b>{card_label}</b>\n"
-                    "حاکم: <b>{hakem_name}</b>{'  ← شما!' if is_hakem else ''}\n\n"
+                    f"کارت قرعه شما: <b>{card_label}</b>\n"
+                    f"حاکم: <b>{hakem_name}</b>{'  ← شما!' if is_hakem else ''}\n\n"
                     f"برای ادامه دکمه زیر را بزنید:"
                 )
                 _hokm_send_or_edit(uid, game, text, kb)
 
         except Exception as e:
-            print("_hokm_begin: {e}")
+            print(f"_hokm_begin: {e}")
 
     # ── دکمه شروع بازی در پیوی ───────────────────────────────────────────────
     _hokm_ready: dict = {}   # chat_id -> set of ready user_ids
@@ -5693,7 +5693,7 @@ def start_token_bot():
                 _hokm_deal_initial(game_id)
 
         except Exception as e:
-            print("callback_hokm_ready: {e}")
+            print(f"callback_hokm_ready: {e}")
 
     # ── پخش ۴ کارت اولیه و نمایش به هر بازیکن ───────────────────────────────
     def _hokm_deal_initial(game_id):
@@ -5735,7 +5735,7 @@ def start_token_bot():
                     _hokm_send_hand(uid, game, extra_lines=["منتظر انتخاب حکم توسط حاکم..."])
 
         except Exception as e:
-            print("_hokm_deal_initial: {e}")
+            print(f"_hokm_deal_initial: {e}")
 
     # ── انتخاب حکم توسط حاکم ────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_trump_"))
@@ -5755,13 +5755,13 @@ def start_token_bot():
 
             game["trump"] = suit
             suit_label = _SUIT_NAMES[suit]
-            _bot.answer_callback_query(call.id, "حکم {suit_label} انتخاب شد!")
+            _bot.answer_callback_query(call.id, f"حکم {suit_label} انتخاب شد!")
 
             # پخش کامل کارت‌ها (پیام شخصی هر بازیکن همین‌جا ادیت می‌شود و حکم انتخابی را نشان می‌دهد)
             _hokm_deal_full(game_id)
 
         except Exception as e:
-            print("callback_hokm_trump: {e}")
+            print(f"callback_hokm_trump: {e}")
 
     # ── پخش کامل کارت‌ها ─────────────────────────────────────────────────────
     def _hokm_deal_full(game_id):
@@ -5808,7 +5808,7 @@ def start_token_bot():
             _hokm_broadcast_hands(game)
 
         except Exception as e:
-            print("_hokm_deal_full: {e}")
+            print(f"_hokm_deal_full: {e}")
 
     # ── انتخاب کارت (بازی) ───────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_play_"))
@@ -5841,7 +5841,7 @@ def start_token_bot():
                 if has_lead:
                     return _bot.answer_callback_query(
                         call.id,
-                        "باید از خال {_SUIT_EMOJI.get(game['lead_suit'],'')} پیروی کنید!",
+                        f"باید از خال {_SUIT_EMOJI.get(game['lead_suit'],'')} پیروی کنید!",
                         show_alert=True
                     )
 
@@ -5850,7 +5850,7 @@ def start_token_bot():
             if not game["lead_suit"]:
                 game["lead_suit"] = card["suit"]
 
-            _bot.answer_callback_query(call.id, "{_hokm_card_label(card)} بازی شد.")
+            _bot.answer_callback_query(call.id, f"{_hokm_card_label(card)} بازی شد.")
 
             n = len(game["players"])
             game["current_turn_idx"] = (game["current_turn_idx"] + 1) % n
@@ -5863,7 +5863,7 @@ def start_token_bot():
                 _hokm_broadcast_hands(game)
 
         except Exception as e:
-            print("callback_hokm_play: {e}")
+            print(f"callback_hokm_play: {e}")
 
     # ── تعیین برنده هر دست ───────────────────────────────────────────────────
     def _hokm_resolve_round(game_id):
@@ -5892,7 +5892,7 @@ def start_token_bot():
             round_summary = [
                 "🏁 <b>دست تمام شد!</b>",
                 f"کارت‌ها: {cards_played}",
-                "برنده: <b>{winner_name}</b>",
+                f"برنده: <b>{winner_name}</b>",
             ]
 
             # ریست دست
@@ -5913,7 +5913,7 @@ def start_token_bot():
                 _hokm_broadcast_hands(game, extra_lines=round_summary)
 
         except Exception as e:
-            print("_hokm_resolve_round: {e}")
+            print(f"_hokm_resolve_round: {e}")
 
     def _hokm_card_value(card, trump, lead):
         if card["suit"] == trump:
@@ -5959,14 +5959,14 @@ def start_token_bot():
                 "",
                 f"{'🥇 تیم حاکم' if team0_won else '🥇 تیم رقیب'} برنده شد!",
                 "",
-                "برندگان: <b>{win_names}</b>",
-                "بازندگان: {lose_names}",
+                f"برندگان: <b>{win_names}</b>",
+                f"بازندگان: {lose_names}",
                 "",
-                "مجموع شرط: {total} الماس",
+                f"مجموع شرط: {total} الماس",
                 f"🏛 مالیات ۱۰٪: {tax} الماس",
-                "هر برنده: <b>{payout_each} الماس</b>",
+                f"هر برنده: <b>{payout_each} الماس</b>",
                 "",
-                "نتیجه: تیم حاکم {game['tricks'][0]} — تیم رقیب {game['tricks'][1]}",
+                f"نتیجه: تیم حاکم {game['tricks'][0]} — تیم رقیب {game['tricks'][1]}",
             ])
             result_text = "\n".join(result_lines)
 
@@ -5984,7 +5984,7 @@ def start_token_bot():
                 _hokm_games.pop(game_id, None)
 
         except Exception as e:
-            print("_hokm_finish: {e}")
+            print(f"_hokm_finish: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🪨📄✂️ بازی سنگ کاغذ قیچی گروهی — ۵ راند — فقط یک پیام (همیشه ادیت می‌شود)
@@ -6045,10 +6045,10 @@ def start_token_bot():
         if state == "waiting":
             return (
                 "🎮 <b>بازی سنگ کاغذ قیچی — ۵ راند!</b>\n\n"
-                "نفر اول: <b>{p1}</b>\n"
+                f"نفر اول: <b>{p1}</b>\n"
                 "نفر دوم: در انتظار...\n\n"
-                "شرط هر نفر: <b>{bet} {pe('diamond', '💎')} الماس</b>\n"
-                "جایزه برنده: <b>{payout} {pe('diamond', '💎')} الماس</b> (مالیات ۱۰٪)\n\n"
+                f"شرط هر نفر: <b>{bet} {pe('diamond', '💎')} الماس</b>\n"
+                f"جایزه برنده: <b>{payout} {pe('diamond', '💎')} الماس</b> (مالیات ۱۰٪)\n\n"
                 "⬇️ برای ورود به بازی دکمه زیر را بزنید"
             )
 
@@ -6065,20 +6065,20 @@ def start_token_bot():
             c1_done = "" if game.get("choice1") else f"{pe('timer_1m', '⏳')}"
             c2_done = "" if game.get("choice2") else f"{pe('timer_1m', '⏳')}"
             lines.append(f"🎮 <b>سنگ کاغذ قیچی — راند {rnd} از {_RPS_ROUNDS}</b>")
-            lines.append("{p1}  {c1_done}")
-            lines.append("{p2}  {c2_done}")
+            lines.append(f"{p1}  {c1_done}")
+            lines.append(f"{p2}  {c2_done}")
 
         if last_line:
             lines.append("")
             lines.append(last_line)
 
         lines.append("")
-        lines.append("امتیاز: {p1} <b>{s1}</b> — <b>{s2}</b> {p2}")
+        lines.append(f"امتیاز: {p1} <b>{s1}</b> — <b>{s2}</b> {p2}")
         lines.append(bar)
 
         if state == "playing":
             lines.append("")
-            lines.append("شرط: <b>{bet} {pe('diamond', '💎')}</b> هر نفر")
+            lines.append(f"شرط: <b>{bet} {pe('diamond', '💎')}</b> هر نفر")
             lines.append("⬇️ انتخاب خود را بزنید:")
 
         return "\n".join(lines)
@@ -6121,7 +6121,7 @@ def start_token_bot():
                 reply_markup=markup
             )
         except Exception as e:
-            print("_rps_render: {e}")
+            print(f"_rps_render: {e}")
 
     # ── دستور شروع بازی: "بازی 100" ──────────────────────────────────────────
     @_bot.message_handler(func=lambda m: (
@@ -6149,7 +6149,7 @@ def start_token_bot():
             if balance < bet:
                 return _bot.reply_to(
                     message,
-                    "موجودی کافی نیست!\n{pe('diamond', '💎')} موجودی شما: {balance} الماس\n{pe('diamond', '💰')} شرط: {bet} الماس"
+                    f"موجودی کافی نیست!\n{pe('diamond', '💎')} موجودی شما: {balance} الماس\n{pe('diamond', '💰')} شرط: {bet} الماس"
                 )
 
             with _rps_lock:
@@ -6206,8 +6206,8 @@ def start_token_bot():
                 cache.invalidate(f"account_{g['player1']}")
                 try:
                     _bot.edit_message_text(
-                        "<b>بازی لغو شد!</b>\n\n{g['player1_name']} منتظر حریف ماند ولی کسی نیامد.\n"
-                        "{g['bet']} الماس به حساب برگشت.",
+                        f"<b>بازی لغو شد!</b>\n\n{g['player1_name']} منتظر حریف ماند ولی کسی نیامد.\n"
+                        f"{g['bet']} الماس به حساب برگشت.",
                         g["chat_id"], g["msg_id"],
                         parse_mode="HTML",
                         reply_markup=types.InlineKeyboardMarkup()
@@ -6217,7 +6217,7 @@ def start_token_bot():
             threading.Timer(300, _rps_timeout, args=[game_id]).start()
 
         except Exception as e:
-            print("cmd_rps_start: {e}")
+            print(f"cmd_rps_start: {e}")
 
     # ── ورود نفر دوم (روی همان پیام) ─────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_join_"))
@@ -6244,7 +6244,7 @@ def start_token_bot():
                 if balance < bet:
                     return _bot.answer_callback_query(
                         call.id,
-                        "موجودی کافی نیست!\n{pe('diamond', '💎')} موجودی: {balance}\n{pe('diamond', '💰')} شرط: {bet}",
+                        f"موجودی کافی نیست!\n{pe('diamond', '💎')} موجودی: {balance}\n{pe('diamond', '💰')} شرط: {bet}",
                         show_alert=True
                     )
 
@@ -6269,11 +6269,11 @@ def start_token_bot():
                 game["choice2"] = None
                 game["last_round_line"] = ""
 
-            _bot.answer_callback_query(call.id, "وارد بازی شدید! {bet} الماس کسر شد.")
+            _bot.answer_callback_query(call.id, f"وارد بازی شدید! {bet} الماس کسر شد.")
             _rps_render(game_id)
 
         except Exception as e:
-            print("callback_rps_join: {e}")
+            print(f"callback_rps_join: {e}")
 
     # ── انتخاب سنگ/کاغذ/قیچی (روی همان پیام واحد گروه) ───────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_pick_"))
@@ -6303,7 +6303,7 @@ def start_token_bot():
                 else:
                     return _bot.answer_callback_query(call.id, "شما در این بازی نیستید.", show_alert=True)
 
-                _bot.answer_callback_query(call.id, "{_RPS_CHOICES.get(choice, choice)} انتخاب شد! منتظر رقیب...")
+                _bot.answer_callback_query(call.id, f"{_RPS_CHOICES.get(choice, choice)} انتخاب شد! منتظر رقیب...")
                 both_chosen = bool(game["choice1"] and game["choice2"])
 
             if both_chosen:
@@ -6313,7 +6313,7 @@ def start_token_bot():
                 _rps_render(game_id)
 
         except Exception as e:
-            print("callback_rps_pick: {e}")
+            print(f"callback_rps_pick: {e}")
 
     def _rps_resolve_round(game_id):
         """پردازش نتیجه یک راند و آپدیت همان پیام واحد بازی"""
@@ -6340,14 +6340,14 @@ def start_token_bot():
                 p2 = game["player2_name"]
 
                 if result == "win1":
-                    round_result_line = "{p1} این راند را برد!"
+                    round_result_line = f"{p1} این راند را برد!"
                 elif result == "win2":
-                    round_result_line = "{p2} این راند را برد!"
+                    round_result_line = f"{p2} این راند را برد!"
                 else:
                     round_result_line = "این راند مساوی شد!"
 
                 game["last_round_line"] = (
-                    "راند {rnd}: {p1}={label1} | {p2}={label2}\n{round_result_line}"
+                    f"راند {rnd}: {p1}={label1} | {p2}={label2}\n{round_result_line}"
                 )
 
                 is_last = (rnd >= _RPS_ROUNDS)
@@ -6364,7 +6364,7 @@ def start_token_bot():
                 _rps_render(game_id)
 
         except Exception as e:
-            print("_rps_resolve_round: {e}")
+            print(f"_rps_resolve_round: {e}")
 
     def _rps_finish(game_id):
         """پایان بازی — تعیین برنده نهایی، واریز جایزه و ادیت همان پیام واحد"""
@@ -6389,21 +6389,21 @@ def start_token_bot():
                 db.add_tokens(game["account1"], payout)
                 cache.invalidate(f"account_{game['player1']}")
                 winner_name = p1_name
-                result_line = "<b>{winner_name}</b> برنده شد! ({s1} — {s2})"
+                result_line = f"<b>{winner_name}</b> برنده شد! ({s1} — {s2})"
                 payout_line = (
-                    "مجموع شرط: {total} {pe('diamond', '💎')}\n"
+                    f"مجموع شرط: {total} {pe('diamond', '💎')}\n"
                     f"🏛 مالیات ۱۰٪: {tax} {pe('diamond', '💎')}\n"
-                    "جایزه: <b>{payout} الماس</b> به {winner_name}"
+                    f"جایزه: <b>{payout} الماس</b> به {winner_name}"
                 )
             elif s2 > s1:
                 db.add_tokens(game["account2"], payout)
                 cache.invalidate(f"account_{game['player2']}")
                 winner_name = p2_name
-                result_line = "<b>{winner_name}</b> برنده شد! ({s2} — {s1})"
+                result_line = f"<b>{winner_name}</b> برنده شد! ({s2} — {s1})"
                 payout_line = (
-                    "مجموع شرط: {total} {pe('diamond', '💎')}\n"
+                    f"مجموع شرط: {total} {pe('diamond', '💎')}\n"
                     f"🏛 مالیات ۱۰٪: {tax} {pe('diamond', '💎')}\n"
-                    "جایزه: <b>{payout} الماس</b> به {winner_name}"
+                    f"جایزه: <b>{payout} الماس</b> به {winner_name}"
                 )
             else:
                 # مساوی: برگشت شرط بدون مالیات
@@ -6411,14 +6411,14 @@ def start_token_bot():
                 db.add_tokens(game["account2"], bet)
                 cache.invalidate(f"account_{game['player1']}")
                 cache.invalidate(f"account_{game['player2']}")
-                result_line = "<b>مساوی!</b> ({s1} — {s2})"
+                result_line = f"<b>مساوی!</b> ({s1} — {s2})"
                 payout_line = f"↩️ هر نفر {bet} {pe('diamond', '💎')} الماس دریافت کرد."
 
             bar = _rps_score_bar(s1, s2)
             final_text = (
                 "🏁 <b>نتیجه نهایی — سنگ کاغذ قیچی</b>\n\n"
-                "{p1_name}:  <b>{s1}</b> امتیاز\n"
-                "{p2_name}:  <b>{s2}</b> امتیاز\n"
+                f"{p1_name}:  <b>{s1}</b> امتیاز\n"
+                f"{p2_name}:  <b>{s2}</b> امتیاز\n"
                 f"{bar}\n\n"
                 f"{result_line}\n\n"
                 f"{payout_line}"
@@ -6438,7 +6438,7 @@ def start_token_bot():
                     pass
 
         except Exception as e:
-            print("_rps_finish: {e}")
+            print(f"_rps_finish: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎰 قرعه‌کشی — Scheduler
@@ -6502,9 +6502,9 @@ def start_token_bot():
 
                             msg_text = (
                                 "<b>قرعه‌کشی شروع شد!</b>\n\n"
-                                "مهلت شرکت: تا ساعت <b>{lot['end_time']}</b>\n"
-                                "تعداد برنده: <b>{lot['winners_count']} نفر</b>\n"
-                                "جوایز:{prize_lines}\n\n"
+                                f"مهلت شرکت: تا ساعت <b>{lot['end_time']}</b>\n"
+                                f"تعداد برنده: <b>{lot['winners_count']} نفر</b>\n"
+                                f"جوایز:{prize_lines}\n\n"
                                 "👇 برای شرکت روی دکمه کلیک کنید:"
                             )
                             markup = types.InlineKeyboardMarkup()
@@ -6518,9 +6518,9 @@ def start_token_bot():
                             lot["announce_msg_id"] = sent_msg.message_id
                             lot["announce_chat_id"] = sent_msg.chat.id
                             changed = True
-                            print("قرعه‌کشی {lot['id']} اعلام شد")
+                            print(f"قرعه‌کشی {lot['id']} اعلام شد")
                         except Exception as e:
-                            print("خطا در اعلام قرعه‌کشی: {e}")
+                            print(f"خطا در اعلام قرعه‌کشی: {e}")
 
                     # ── پایان قرعه‌کشی و انتخاب برندگان ─────────────────
                     if lot.get("announced") and not lot.get("finished") and now_teh >= end_dt:
@@ -6558,7 +6558,7 @@ def start_token_bot():
 
                                 result_text = (
                                     "<b>نتایج قرعه‌کشی اعلام شد!</b>\n\n"
-                                    "برندگان ({len(selected)} نفر):{winner_lines}\n\n"
+                                    f"برندگان ({len(selected)} نفر):{winner_lines}\n\n"
                                     "تبریک به برندگان عزیز!"
                                 )
 
@@ -6566,15 +6566,15 @@ def start_token_bot():
                             lot["finished"] = True
                             lot["status"] = "done"
                             changed = True
-                            print("قرعه‌کشی {lot['id']} پایان یافت")
+                            print(f"قرعه‌کشی {lot['id']} پایان یافت")
                         except Exception as e:
-                            print("خطا در پایان قرعه‌کشی: {e}")
+                            print(f"خطا در پایان قرعه‌کشی: {e}")
 
                 if changed:
                     db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
 
             except Exception as e:
-                print("خطا در lottery_scheduler: {e}")
+                print(f"خطا در lottery_scheduler: {e}")
 
     # ── handler شرکت در قرعه‌کشی (از کانال) ─────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("join_lottery_"))
@@ -6617,7 +6617,7 @@ def start_token_bot():
                 lot["participants"] = participants
                 db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
                 return _bot.answer_callback_query(call.id,
-                    "ثبت‌نام شما انجام شد! ({len(participants)} نفر شرکت کرده‌اند)",
+                    f"ثبت‌نام شما انجام شد! ({len(participants)} نفر شرکت کرده‌اند)",
                     show_alert=True)
 
         _bot.answer_callback_query(call.id, "قرعه‌کشی یافت نشد یا پایان یافته.", show_alert=True)
@@ -6647,9 +6647,9 @@ def start_token_bot():
                     except:
                         pass
                 else:
-                    print("خطای polling: {e}")
+                    print(f"خطای polling: {e}")
                     time.sleep(3)
 
     t = threading.Thread(target=_polling_loop, daemon=True)
     t.start()
-    print("ربات الماس @{BOT_USERNAME} استارت شد")
+    print(f"ربات الماس @{BOT_USERNAME} استارت شد")
