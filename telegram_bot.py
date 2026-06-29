@@ -8,21 +8,6 @@ import datetime
 import random
 import re
 
-# ─── سیستم ایموجی‌های پرمیوم ──────────────────────────────────────────────────
-# نکته: تابع e() با نام «pe» (premium emoji) ایمپورت می‌شه، چون توی این فایل جای
-# زیادی از «except Exception as e» استفاده شده و اسم e با اون تداخل پیدا می‌کرد.
-from emoji_system import (
-    e as pe,
-    tg_emoji,
-    build_message,
-    bullet_line,
-    emoji_list,
-    format_template,
-    send_emoji_message,
-    get_emoji_id,
-    EMOJIS,
-)
-
 # ─── وقت تهران ───────────────────────────────────────────────────────────────
 _TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 
@@ -66,7 +51,7 @@ def _format_plan_remaining(owner_id: int) -> str:
     now_teh = datetime.datetime.now(_TEHRAN_OFFSET).replace(tzinfo=None)
     secs = (exp - now_teh).total_seconds()
     if secs <= 0:
-        return "منقضی شده"
+        return "❌ منقضی شده"
 
     days = int(secs // 86400)
     hours = int((secs % 86400) // 3600)
@@ -200,7 +185,7 @@ def _kp_markup(digits, mode="code"):
         types.InlineKeyboardButton("0", callback_data=f"{prefix}0", style="primary"),   # 🔵 آبی
         types.InlineKeyboardButton("✔️", callback_data=f"{prefix}confirm", style="success"),  # 🟢 سبز
     )
-    markup.add(types.InlineKeyboardButton("لغو", callback_data="reg_cancel", style="danger"))  # 🔴 قرمز
+    markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger"))  # 🔴 قرمز
     return markup
 
 
@@ -234,7 +219,7 @@ def _check_membership_cached(user_id):
         cache.set(cache_key, result)
         return result
     except Exception as e:
-        print(f"خطا در بررسی عضویت: {e}")
+        print(f"⚠️ خطا در بررسی عضویت: {e}")
         return True, []
 
 
@@ -253,16 +238,16 @@ def start_token_bot():
     global _bot, BOT_USERNAME
 
     if not config.BOT_TOKEN:
-        print("BOT_TOKEN تنظیم نشده — ربات الماس غیرفعال است")
+        print("⚠️ BOT_TOKEN تنظیم نشده — ربات الماس غیرفعال است")
         return
 
     try:
         _bot = telebot.TeleBot(config.BOT_TOKEN, parse_mode="HTML", threaded=True, num_threads=8)
         me = _bot.get_me()
         BOT_USERNAME = me.username
-        print(f"ربات الماس: @{BOT_USERNAME}")
+        print(f"🤖 ربات الماس: @{BOT_USERNAME}")
     except Exception as e:
-        print(f"خطا در اتصال ربات الماس: {e}")
+        print(f"❌ خطا در اتصال ربات الماس: {e}")
         _bot = None
         return
 
@@ -280,13 +265,11 @@ def start_token_bot():
         for ch in missing_channels:
             ch_clean = ch.lstrip("@")
             # 🟢 دکمه عضویت با رنگ primary (آبی)
-            markup.add(types.InlineKeyboardButton(f"عضویت در {ch}", url=f"https://t.me/{ch_clean}", style="primary"),
-                icon_custom_emoji_id=get_emoji_id("megaphone"))
+            markup.add(types.InlineKeyboardButton(f"📢 عضویت در {ch}", url=f"https://t.me/{ch_clean}", style="primary"))
         # 🟢 دکمه بررسی با رنگ success (سبز)
-        markup.add(types.InlineKeyboardButton("بررسی عضویت من", callback_data="check_join", style="success"),
-            icon_custom_emoji_id=get_emoji_id("checkmark_green"))
+        markup.add(types.InlineKeyboardButton("✅ بررسی عضویت من", callback_data="check_join", style="success"))
         
-        channels_list = "\n".join([f"{ch}" for ch in missing_channels])
+        channels_list = "\n".join([f"🔸 {ch}" for ch in missing_channels])
         _bot.reply_to(
             message,
             "⛔️ <b>ورود به ربات منوط به عضویت در کانال‌های زیر است:</b>\n\n"
@@ -307,55 +290,34 @@ def start_token_bot():
     def _user_keyboard(show_remove_self=True):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton("مدیریت سلف", style="primary"),  # 🔵 آبی
+            types.KeyboardButton("🤖 مدیریت سلف", style="primary"),  # 🔵 آبی
         )
         return markup
 
     def _owner_keyboard(show_remove_self=True):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton("مدیریت", style="danger"),        # 🔴 قرمز
-            types.KeyboardButton("مدیریت سلف", style="primary")   # 🔵 آبی
+            types.KeyboardButton("📢 مدیریت", style="danger"),        # 🔴 قرمز
+            types.KeyboardButton("🤖 مدیریت سلف", style="primary")   # 🔵 آبی
         )
         return markup
 
     def _main_inline_keyboard(account=None):
         # ✅ دکمه‌های اصلی کاربر به‌صورت InlineKeyboardButton
-        # نکته: ایموجی یونیکد رو هم توی متن نگه می‌داریم (fallback ایمن برای
-        # حالتی که icon_custom_emoji_id به هر دلیلی نمایش داده نشه) و علاوه
-        # بر اون، آیکون پرمیوم رو هم از طریق icon_custom_emoji_id ست می‌کنیم.
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton(
-                "موجودی", callback_data="menu_balance", style="primary",
-                icon_custom_emoji_id=get_emoji_id("diamond"),
-            ),
-            types.InlineKeyboardButton(
-                "هدیه روزانه", callback_data="menu_daily", style="success",
-                icon_custom_emoji_id=get_emoji_id("gift"),
-            ),
+            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success")   # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton(
-                "رفرال", callback_data="menu_referral", style="primary",
-                icon_custom_emoji_id=get_emoji_id("link_chain"),
-            ),
-            types.InlineKeyboardButton(
-                "خرید", callback_data="menu_buy", style="success",
-                icon_custom_emoji_id=get_emoji_id("diamond_blue"),
-            ),
+            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success")      # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton(
-                "ماموریت‌ها", callback_data="menu_missions", style="primary",
-                icon_custom_emoji_id=get_emoji_id("trophy"),
-            )
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton(
-                "راهنما", callback_data="guide_menu", style="success",
-                icon_custom_emoji_id=get_emoji_id("book"),
-            )
+            types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="success")        # 🟢 سبز
         )
         # ✅ اگر اکانت سلف دارد ولی سلف به اکانت تلگرامی فعلی وصل نیست، دکمه ورود دوباره نمایش داده می‌شود
         if account is not None:
@@ -365,10 +327,7 @@ def start_token_bot():
                 is_logged_in = True
             if not is_logged_in:
                 markup.add(
-                    types.InlineKeyboardButton(
-                        "ورود سلف با ربات", callback_data="reg_start", style="success",
-                        icon_custom_emoji_id=get_emoji_id("robot"),
-                    )  # 🟢 سبز
+                    types.InlineKeyboardButton("🤖 ورود سلف با ربات", callback_data="reg_start", style="success")  # 🟢 سبز
                 )
         return markup
 
@@ -376,45 +335,45 @@ def start_token_bot():
         # ✅ دکمه‌های شیشه‌ای پنل مدیریت
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("چنل‌های اجباری", callback_data="admin_channels", style="primary"),   # 🔵 آبی
-            types.InlineKeyboardButton("کاربران", callback_data="admin_users", style="primary")              # 🔵 آبی
+            types.InlineKeyboardButton("📢 چنل‌های اجباری", callback_data="admin_channels", style="primary"),   # 🔵 آبی
+            types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary")              # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("جام جهانی", callback_data="admin_wc", style="success"),              # 🟢 سبز
-            types.InlineKeyboardButton("بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("🏆 جام جهانی", callback_data="admin_wc", style="success"),              # 🟢 سبز
+            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="admin_today_games", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("انتقال الماس", callback_data="admin_transfer", style="primary"),    # 🔵 آبی
-            types.InlineKeyboardButton("دادن الماس", callback_data="admin_give", style="success")           # 🟢 سبز
+            types.InlineKeyboardButton("💎 انتقال الماس", callback_data="admin_transfer", style="primary"),    # 🔵 آبی
+            types.InlineKeyboardButton("💰 دادن الماس", callback_data="admin_give", style="success")           # 🟢 سبز
         )
         markup.add(
             types.InlineKeyboardButton("💳 تنظیم شماره کارت", callback_data="admin_set_card", style="primary"), # 🔵 آبی
             types.InlineKeyboardButton("🧾 پرداخت‌های معلق", callback_data="admin_payments", style="danger")   # 🔴 قرمز
         )
         markup.add(
-            types.InlineKeyboardButton("پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
-            types.InlineKeyboardButton("ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="admin_broadcast", style="primary"),      # 🔵 آبی
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="admin_missions", style="success")       # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
+            types.InlineKeyboardButton("🎁 هدیه", callback_data="admin_gift", style="success")                 # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("مدیریت ادمین‌ها", callback_data="admin_manage_admins", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("👮 مدیریت ادمین‌ها", callback_data="admin_manage_admins", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("مدیریت راهنما", callback_data="admin_guide_manage", style="success")    # 🟢 سبز
+            types.InlineKeyboardButton("📚 مدیریت راهنما", callback_data="admin_guide_manage", style="success")    # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary") # 🔵 آبی
+            types.InlineKeyboardButton("✏️ تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary") # 🔵 آبی
         )
         markup.add(
-            types.InlineKeyboardButton("قرعه‌کشی", callback_data="admin_lottery", style="success")           # 🟢 سبز
+            types.InlineKeyboardButton("🎰 قرعه‌کشی", callback_data="admin_lottery", style="success")           # 🟢 سبز
         )
         markup.add(
-            types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
+            types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger")               # 🔴 قرمز
         )
         return markup
 
@@ -444,29 +403,29 @@ def start_token_bot():
 
             parts = message.text.strip().split()
             if len(parts) < 3:
-                return _bot.reply_to(message, "فرمت: شرط بندی [مقدار]\nمثال: شرط بندی 100")
+                return _bot.reply_to(message, "❗ فرمت: شرط بندی [مقدار]\nمثال: شرط بندی 100")
 
             try:
                 amount = int(parts[2])
                 if amount < 1:
-                    return _bot.reply_to(message, "مقدار باید بیشتر از ۰ باشد.")
+                    return _bot.reply_to(message, "❌ مقدار باید بیشتر از ۰ باشد.")
             except ValueError:
-                return _bot.reply_to(message, "مقدار باید عدد باشد.")
+                return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
 
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
 
             balance = db.get_token_balance(account["id"])
             if balance < amount:
                 return _bot.reply_to(
                     message,
-                    f"موجودی کافی ندارید!\nنیاز: {amount} الماس — موجودی: {balance} الماس"
+                    f"❌ موجودی کافی ندارید!\nنیاز: {amount} الماس — موجودی: {balance} الماس"
                 )
 
             bet_id = db.create_bet(account["id"], message.from_user.id, amount, message.chat.id)
             if not bet_id:
-                return _bot.reply_to(message, "خطا در ساخت شرط‌بندی. دوباره امتحان کنید.")
+                return _bot.reply_to(message, "❌ خطا در ساخت شرط‌بندی. دوباره امتحان کنید.")
 
             _active_bets[bet_id] = {
                 "creator_tg_id": message.from_user.id,
@@ -491,7 +450,7 @@ def start_token_bot():
             # 🔴 دکمه لغو شرط‌بندی برای سازنده
             markup.add(
                 types.InlineKeyboardButton(
-                    "لغو شرط‌بندی",
+                    "❌ لغو شرط‌بندی",
                     callback_data=f"cancel_bet_{bet_id}",
                     style="danger"  # 🔴 قرمز
                 )
@@ -499,11 +458,11 @@ def start_token_bot():
 
             msg = _bot.reply_to(
                 message,
-                "<b>شرط‌بندی باز شد!</b>\n\n"
-                f"سازنده: {creator_name}\n"
-                f"مبلغ: <b>{amount} الماس</b>\n"
-                f"جایزه برنده: <b>{payout} الماس</b> (بعد از ۱۷٪ مالیات)\n\n"
-                "منتظر حریف...\n"
+                f"🎲 <b>شرط‌بندی باز شد!</b>\n\n"
+                f"👤 سازنده: {creator_name}\n"
+                f"💎 مبلغ: <b>{amount} الماس</b>\n"
+                f"🏆 جایزه برنده: <b>{payout} الماس</b> (بعد از ۱۷٪ مالیات)\n\n"
+                f"⏳ منتظر حریف...\n"
                 f"(اولین نفری که دکمه بزند وارد می‌شود)",
                 reply_markup=markup
             )
@@ -513,8 +472,8 @@ def start_token_bot():
             threading.Timer(300, _auto_cancel_bet, args=[bet_id, message.chat.id, msg.message_id]).start()
 
         except Exception as e:
-            print(f"خطا در cmd_bet: {e}")
-            _bot.reply_to(message, f"خطا: {e}")
+            print(f"❌ خطا در cmd_bet: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
 
     # ── Callback: ورود به شرط‌بندی ─────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("join_bet_"))
@@ -525,17 +484,17 @@ def start_token_bot():
             # بررسی حافظه محلی اول (سریع‌تر)
             bet_mem = _active_bets.get(bet_id)
             if bet_mem is None:
-                return _bot.answer_callback_query(call.id, "این شرط‌بندی یافت نشد یا منقضی شده.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی یافت نشد یا منقضی شده.", show_alert=True)
 
             if bet_mem["opponent_tg_id"] is not None:
-                return _bot.answer_callback_query(call.id, "این شرط‌بندی قبلاً تکمیل شده است.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی قبلاً تکمیل شده است.", show_alert=True)
 
             if bet_mem["creator_tg_id"] == call.from_user.id:
-                return _bot.answer_callback_query(call.id, "شما سازنده این شرط هستید! منتظر حریف باشید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ شما سازنده این شرط هستید! منتظر حریف باشید.", show_alert=True)
 
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
             # ورود به دیتابیس (کسر موجودی نفر دوم + آپدیت وضعیت)
             success, msg_txt = db.join_bet(bet_id, account["id"], call.from_user.id)
@@ -549,7 +508,7 @@ def start_token_bot():
                 f"@{call.from_user.username}" if call.from_user.username
                 else call.from_user.first_name
             )
-            _bot.answer_callback_query(call.id, "وارد شرط‌بندی شدید! بازی شروع می‌شود...", show_alert=True)
+            _bot.answer_callback_query(call.id, "✅ وارد شرط‌بندی شدید! بازی شروع می‌شود...", show_alert=True)
 
             bet = db.get_bet(bet_id)
             if not bet:
@@ -576,13 +535,13 @@ def start_token_bot():
             tax = round(total * BET_TAX)
 
             result_text = (
-                "<b>شرط‌بندی به پایان رسید!</b>\n\n"
+                f"🎉 <b>شرط‌بندی به پایان رسید!</b>\n\n"
                 f"⚔️ حریف: {opponent_name}\n"
-                f"مبلغ هر نفر: {amount} الماس\n"
-                f"مجموع: {total} الماس\n"
+                f"💎 مبلغ هر نفر: {amount} الماس\n"
+                f"💰 مجموع: {total} الماس\n"
                 f"🏛 مالیات (۱۷٪): {tax} الماس\n\n"
-                f"<b>برنده: {winner_name}</b>\n"
-                f"<b>جایزه: {payout} الماس</b>"
+                f"🏆 <b>برنده: {winner_name}</b>\n"
+                f"💎 <b>جایزه: {payout} الماس</b>"
             )
 
             # ویرایش پیام اصلی
@@ -599,7 +558,7 @@ def start_token_bot():
             try:
                 _bot.send_message(
                     winner_tg_id,
-                    f"<b>تبریک! شرط‌بندی را بردید!</b>\n{pe('diamond', '💎')} <b>{payout} الماس</b> به حسابتان واریز شد."
+                    f"🎉 <b>تبریک! شرط‌بندی را بردید!</b>\n💎 <b>{payout} الماس</b> به حسابتان واریز شد."
                 )
             except Exception:
                 pass
@@ -612,7 +571,7 @@ def start_token_bot():
             try:
                 _bot.send_message(
                     loser_tg_id,
-                    f"😔 متأسفانه این بار نبردید.\n{pe('diamond', '💎')} {amount} الماس از حسابتان کسر شد."
+                    f"😔 متأسفانه این بار نبردید.\n💎 {amount} الماس از حسابتان کسر شد."
                 )
             except Exception:
                 pass
@@ -620,9 +579,9 @@ def start_token_bot():
             _active_bets.pop(bet_id, None)
 
         except Exception as e:
-            print(f"خطا در callback_join_bet: {e}")
+            print(f"❌ خطا در callback_join_bet: {e}")
             try:
-                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:100]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
             except Exception:
                 pass
 
@@ -634,32 +593,32 @@ def start_token_bot():
 
             bet_mem = _active_bets.get(bet_id)
             if bet_mem is None:
-                return _bot.answer_callback_query(call.id, "این شرط‌بندی یافت نشد یا قبلاً لغو شده.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ این شرط‌بندی یافت نشد یا قبلاً لغو شده.", show_alert=True)
 
             if bet_mem["opponent_tg_id"] is not None:
-                return _bot.answer_callback_query(call.id, "حریف وارد شده — دیگر نمی‌توانید لغو کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ حریف وارد شده — دیگر نمی‌توانید لغو کنید.", show_alert=True)
 
             if bet_mem["creator_tg_id"] != call.from_user.id:
-                return _bot.answer_callback_query(call.id, "فقط سازنده شرط می‌تواند لغو کند.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ فقط سازنده شرط می‌تواند لغو کند.", show_alert=True)
 
             db.cancel_bet(bet_id)
             _active_bets.pop(bet_id, None)
 
             try:
                 _bot.edit_message_text(
-                    f"<b>شرط‌بندی لغو شد!</b>\n\nسازنده شرط را لغو کرد.\n{pe('diamond', '💎')} مبلغ به سازنده بازگشت داده شد.",
+                    "🚫 <b>شرط‌بندی لغو شد!</b>\n\nسازنده شرط را لغو کرد.\n💎 مبلغ به سازنده بازگشت داده شد.",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id
                 )
             except Exception:
                 pass
 
-            _bot.answer_callback_query(call.id, "شرط‌بندی لغو شد و مبلغ بازگشت داده شد.", show_alert=True)
+            _bot.answer_callback_query(call.id, "✅ شرط‌بندی لغو شد و مبلغ بازگشت داده شد.", show_alert=True)
 
         except Exception as e:
-            print(f"خطا در callback_cancel_bet: {e}")
+            print(f"❌ خطا در callback_cancel_bet: {e}")
             try:
-                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:100]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
             except Exception:
                 pass
 
@@ -675,14 +634,14 @@ def start_token_bot():
 
             try:
                 _bot.edit_message_text(
-                    f"<b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n{pe('diamond', '💎')} مبلغ به سازنده بازگشت داده شد.",
+                    "⏰ <b>شرط‌بندی لغو شد!</b>\n\nهیچ حریفی وارد نشد.\n💎 مبلغ به سازنده بازگشت داده شد.",
                     chat_id=chat_id,
                     message_id=message_id
                 )
             except Exception:
-                _bot.send_message(chat_id, "یک شرط‌بندی به دلیل نبود حریف لغو شد.")
+                _bot.send_message(chat_id, "⏰ یک شرط‌بندی به دلیل نبود حریف لغو شد.")
         except Exception as e:
-            print(f"خطا در _auto_cancel_bet: {e}")
+            print(f"❌ خطا در _auto_cancel_bet: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 💰 دستور موجودی در گروه
@@ -692,17 +651,17 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
             
             stats = db.get_token_stats(account["id"])
             _bot.reply_to(
                 message,
-                "<b>موجودی شما:</b>\n\n"
-                f"الماس: <b>{stats['balance']}</b>\n"
-                f"کل دریافتی: <b>{stats['total_earned']}</b>"
+                f"💎 <b>موجودی شما:</b>\n\n"
+                f"💰 الماس: <b>{stats['balance']}</b>\n"
+                f"📊 کل دریافتی: <b>{stats['total_earned']}</b>"
             )
         except Exception as e:
-            print(f"خطا در cmd_balance_group: {e}")
+            print(f"❌ خطا در cmd_balance_group: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 💎 انتقال الماس
@@ -716,25 +675,25 @@ def start_token_bot():
             if len(parts) == 2 and message.reply_to_message:
                 target_user = message.reply_to_message.from_user
                 if not target_user or target_user.is_bot:
-                    return _bot.reply_to(message, "نمی‌توان به این کاربر الماس انتقال داد.")
+                    return _bot.reply_to(message, "❌ نمی‌توان به این کاربر الماس انتقال داد.")
 
                 try:
                     amount = int(parts[1])
                     if amount < 1:
-                        return _bot.reply_to(message, "مقدار باید بیشتر از 0 باشد.")
+                        return _bot.reply_to(message, "❌ مقدار باید بیشتر از 0 باشد.")
                 except ValueError:
-                    return _bot.reply_to(message, "مقدار باید عدد باشد.")
+                    return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
 
                 if target_user.id == message.from_user.id:
-                    return _bot.reply_to(message, "نمی‌توانید به خودتان الماس انتقال دهید.")
+                    return _bot.reply_to(message, "❌ نمی‌توانید به خودتان الماس انتقال دهید.")
 
                 from_account = _get_account_cached(message.from_user.id)
                 if not from_account:
-                    return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.")
+                    return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
 
                 to_account = db.get_account_by_tg_id(target_user.id)
                 if not to_account:
-                    return _bot.reply_to(message, "این کاربر در پنل وب ثبت‌نام نکرده است.")
+                    return _bot.reply_to(message, "❌ این کاربر در پنل وب ثبت‌نام نکرده است.")
 
                 success, msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
 
@@ -745,7 +704,7 @@ def start_token_bot():
                         try:
                             _bot.send_message(
                                 to_tg_id,
-                                f"<b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                                f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
                             )
                         except Exception:
                             pass
@@ -754,26 +713,26 @@ def start_token_bot():
 
             # ── حالت معمول: «انتقال [یوزرنیم] [عدد]» ─────────────────────────
             if len(parts) < 3:
-                return _bot.reply_to(message, "فرمت: انتقال [یوزرنیم] [تعداد]\nمثال: انتقال @ali 10\nیا روی پیام کاربر ریپلای کنید و بنویسید: انتقال [تعداد]")
+                return _bot.reply_to(message, "❗ فرمت: انتقال [یوزرنیم] [تعداد]\nمثال: انتقال @ali 10\nیا روی پیام کاربر ریپلای کنید و بنویسید: انتقال [تعداد]")
             
             username = parts[1].lstrip("@")
             try:
                 amount = int(parts[2])
                 if amount < 1:
-                    return _bot.reply_to(message, "مقدار باید بیشتر از 0 باشد.")
+                    return _bot.reply_to(message, "❌ مقدار باید بیشتر از 0 باشد.")
             except:
-                return _bot.reply_to(message, "مقدار باید عدد باشد.")
+                return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
             
             from_account = _get_account_cached(message.from_user.id)
             if not from_account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
             
             to_account = db.get_account_by_username(username)
             if not to_account:
-                return _bot.reply_to(message, f"کاربر f'{username}' یافت نشد.")
+                return _bot.reply_to(message, f"❌ کاربر '{username}' یافت نشد.")
             
             if to_account["id"] == from_account["id"]:
-                return _bot.reply_to(message, "نمی‌توانید به خودتان الماس انتقال دهید.")
+                return _bot.reply_to(message, "❌ نمی‌توانید به خودتان الماس انتقال دهید.")
             
             success, msg = db.transfer_diamonds(from_account["id"], to_account["id"], amount)
             
@@ -784,7 +743,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             to_tg_id,
-                            f"<b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
+                            f"💎 <b>{amount} الماس</b> از @{message.from_user.username or 'کاربر'} دریافت کردید!"
                         )
                     except:
                         pass
@@ -792,8 +751,8 @@ def start_token_bot():
             _bot.reply_to(message, msg)
             
         except Exception as e:
-            print(f"خطا در cmd_transfer: {e}")
-            _bot.reply_to(message, f"خطا: {e}")
+            print(f"❌ خطا در cmd_transfer: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # ⚽ سیستم جام جهانی — football-data.org
@@ -817,7 +776,7 @@ def start_token_bot():
         import urllib.request, urllib.error, json as _json
         api_key = getattr(config, "FOOTBALL_API_KEY", "")
         if not api_key:
-            print("FOOTBALL_API_KEY تنظیم نشده — درخواست به Football API ارسال نشد.")
+            print("⚠️ FOOTBALL_API_KEY تنظیم نشده — درخواست به Football API ارسال نشد.")
             return {}
         url = f"https://api.football-data.org/v4/{endpoint}"
         req = urllib.request.Request(url, headers={"X-Auth-Token": api_key})
@@ -830,10 +789,10 @@ def start_token_bot():
                 body = e.read().decode()[:300]
             except Exception:
                 pass
-            print(f"Football API HTTP {e.code} [{endpoint}]: {body}")
+            print(f"❌ Football API HTTP {e.code} [{endpoint}]: {body}")
             return {}
         except Exception as e:
-            print(f"Football API error [{endpoint}]: {e}")
+            print(f"❌ Football API error [{endpoint}]: {e}")
             return {}
 
     def _wc_get_matches() -> list:
@@ -883,7 +842,7 @@ def start_token_bot():
         """ارسال چالش به کانال"""
         channel = getattr(config, "WC_CHANNEL_ID", "")
         if not channel:
-            print("WC_CHANNEL_ID تنظیم نشده! چالش جام جهانی به هیچ کانالی ارسال نمی‌شود.")
+            print("⚠️ WC_CHANNEL_ID تنظیم نشده! چالش جام جهانی به هیچ کانالی ارسال نمی‌شود.")
             return
         # اگر آیدی کانال به‌صورت عددی (مثل -1001234567) ست شده، به int تبدیل می‌کنیم
         chat_target = channel
@@ -899,30 +858,28 @@ def start_token_bot():
         )
         # 🟢 دکمه مساوی با رنگ success (سبز)
         markup.add(
-            types.InlineKeyboardButton("مساوی", callback_data=f"wc_pick_{challenge_id}_draw", style="success",
-                icon_custom_emoji_id=get_emoji_id("person_check"))
+            types.InlineKeyboardButton("🤝 مساوی", callback_data=f"wc_pick_{challenge_id}_draw", style="success")
         )
         # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
         markup.add(
-            types.InlineKeyboardButton(f"{team2}", callback_data=f"wc_pick_{challenge_id}_team2", style="danger",
-                icon_custom_emoji_id=get_emoji_id("exclamation_red"))
+            types.InlineKeyboardButton(f"🔴 {team2}", callback_data=f"wc_pick_{challenge_id}_team2", style="danger")
         )
         now_tehran = _now_tehran().strftime("%Y/%m/%d — %H:%M")
         text = (
             f"⚽️ <b>چالش جام جهانی ۲۰۲۶</b>\n\n"
             f"🆚 <b>{team1}</b>  vs  <b>{team2}</b>\n"
-            f"زمان بازی: <b>{match_time_str}</b>\n"
-            f"ارسال در: {now_tehran} (تهران)\n\n"
-            f"محدوده شرط: {min_bet:,} – {max_bet:,} الماس\n"
-            "برندگان ۲ برابر مبلغ شرط دریافت می‌کنند!\n\n"
+            f"⏰ زمان بازی: <b>{match_time_str}</b>\n"
+            f"🕐 ارسال در: {now_tehran} (تهران)\n\n"
+            f"💎 محدوده شرط: {min_bet:,} – {max_bet:,} الماس\n"
+            f"🏆 برندگان ۲ برابر مبلغ شرط دریافت می‌کنند!\n\n"
             f"👇 روی تیم مورد نظرت کلیک کن:"
         )
         try:
             msg = _bot.send_message(chat_target, text, reply_markup=markup)
             db.set_wc_channel_msg(challenge_id, msg.message_id)
-            print(f"چالش به کانال {chat_target} ارسال شد (msg_id={msg.message_id})")
+            print(f"✅ چالش به کانال {chat_target} ارسال شد (msg_id={msg.message_id})")
         except Exception as e:
-            print(f"ارسال چالش به کانال {chat_target} ناموفق بود: {e}\n"
+            print(f"❌ ارسال چالش به کانال {chat_target} ناموفق بود: {e}\n"
                   f"   بررسی کنید که ربات ادمین کانال باشد و WC_CHANNEL_ID درست تنظیم شده باشد (مثل @channel یا -100xxxxxxxxxx).")
 
     def _wc_auto_fetch_and_create():
@@ -960,10 +917,10 @@ def start_token_bot():
                 challenge_id = db.create_wc_challenge(match_id, home, away, dt)
                 if challenge_id:
                     _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
-                    print(f"چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
+                    print(f"✅ چالش جدید ساخته شد: {home} vs {away} (ID: {challenge_id})")
                     time.sleep(0.3)  # جلوگیری از flood در ارسال به کانال
         except Exception as e:
-            print(f"_wc_auto_fetch_and_create: {e}")
+            print(f"❌ _wc_auto_fetch_and_create: {e}")
 
     def _wc_auto_check_results():
         """بررسی نتایج بازی‌های تمام‌شده و اعلام برنده"""
@@ -990,8 +947,8 @@ def start_token_bot():
                 result_text = (
                     f"🏁 <b>پایان چالش!</b>\n\n"
                     f"⚽️ {ch['team1']} vs {ch['team2']}\n"
-                    f"نتیجه: <b>{option_fa}</b>\n\n"
-                    "برندگان ۲ برابر مبلغ شرطشان دریافت کردند!"
+                    f"🏆 نتیجه: <b>{option_fa}</b>\n\n"
+                    f"✅ برندگان ۲ برابر مبلغ شرطشان دریافت کردند!"
                 )
                 if channel and ch.get("channel_msg_id"):
                     try:
@@ -1007,13 +964,13 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             winner["user_tg_id"],
-                            f"<b>تبریک!</b> شرط‌بندی {ch['team1']} vs {ch['team2']} را بردید!\n"
-                            f"<b>{winner['payout']} الماس</b> به حسابتان واریز شد."
+                            f"🎉 <b>تبریک!</b> شرط‌بندی {ch['team1']} vs {ch['team2']} را بردید!\n"
+                            f"💎 <b>{winner['payout']} الماس</b> به حسابتان واریز شد."
                         )
                     except Exception:
                         pass
         except Exception as e:
-            print(f"_wc_auto_check_results: {e}")
+            print(f"❌ _wc_auto_check_results: {e}")
 
     def _wc_scheduler():
         """
@@ -1070,14 +1027,14 @@ def start_token_bot():
                     challenge_id = db.create_wc_challenge(match_id, home, away, dt)
                     if challenge_id:
                         _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
-                        print(f"چالش ۱ ساعت قبل ارسال شد: {home} vs {away}")
+                        print(f"✅ چالش ۱ ساعت قبل ارسال شد: {home} vs {away}")
                     time.sleep(0.5)
 
                 # ─── چک نتایج بازی‌های تموم‌شده ─────────────────────────────
                 _wc_auto_check_results()
 
             except Exception as e:
-                print(f"_wc_scheduler: {e}")
+                print(f"❌ _wc_scheduler: {e}")
             time.sleep(POLL)
 
     # اجرای scheduler در Thread جداگانه
@@ -1087,21 +1044,21 @@ def start_token_bot():
     # ── تست اولیه دسترسی به کانال جام جهانی ─────────────────────────────────
     _wc_channel_cfg = getattr(config, "WC_CHANNEL_ID", "")
     if not _wc_channel_cfg:
-        print("WC_CHANNEL_ID تنظیم نشده — چالش‌های جام جهانی به هیچ کانالی ارسال نمی‌شوند.")
+        print("⚠️ WC_CHANNEL_ID تنظیم نشده — چالش‌های جام جهانی به هیچ کانالی ارسال نمی‌شوند.")
     else:
         _wc_target = int(_wc_channel_cfg) if str(_wc_channel_cfg).lstrip("-").isdigit() else _wc_channel_cfg
         try:
             chat_info = _bot.get_chat(_wc_target)
             member = _bot.get_chat_member(_wc_target, _bot.get_me().id)
             if member.status not in ("administrator", "creator"):
-                print(f"ربات در کانال {_wc_target} ادمین نیست — ارسال پیام به کانال شکست خواهد خورد.")
+                print(f"⚠️ ربات در کانال {_wc_target} ادمین نیست — ارسال پیام به کانال شکست خواهد خورد.")
             else:
-                print(f"دسترسی به کانال جام جهانی تأیید شد: {getattr(chat_info, 'title', _wc_target)}")
+                print(f"✅ دسترسی به کانال جام جهانی تأیید شد: {getattr(chat_info, 'title', _wc_target)}")
         except Exception as e:
-            print(f"ربات نتوانست به کانال {_wc_target} دسترسی پیدا کند: {e}\n"
+            print(f"❌ ربات نتوانست به کانال {_wc_target} دسترسی پیدا کند: {e}\n"
                   f"   بررسی کنید ربات در کانال عضو/ادمین باشد و WC_CHANNEL_ID صحیح باشد.")
     if not getattr(config, "FOOTBALL_API_KEY", ""):
-        print("FOOTBALL_API_KEY تنظیم نشده — هیچ بازی‌ای از Football API دریافت نمی‌شود.")
+        print("⚠️ FOOTBALL_API_KEY تنظیم نشده — هیچ بازی‌ای از Football API دریافت نمی‌شود.")
 
     # ── Callback: کاربر روی تیم کلیک کرد ────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("wc_pick_"))
@@ -1111,11 +1068,11 @@ def start_token_bot():
             challenge_id = int(cid)
             challenge = db.get_wc_challenge(challenge_id)
             if not challenge or challenge["status"] != "pending":
-                return _bot.answer_callback_query(call.id, "این چالش دیگر فعال نیست.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ این چالش دیگر فعال نیست.", show_alert=True)
 
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
             min_bet = getattr(config, "WC_MIN_BET", 10)
             max_bet = getattr(config, "WC_MAX_BET", 5000)
@@ -1128,24 +1085,24 @@ def start_token_bot():
                 "account_id": account["id"],
             }
 
-            _bot.answer_callback_query(call.id, f"انتخاب: {option_fa}", show_alert=False)
+            _bot.answer_callback_query(call.id, f"✅ انتخاب: {option_fa}", show_alert=False)
             try:
                 _bot.send_message(
                     call.from_user.id,
                     f"⚽️ انتخاب شما: <b>{option_fa}</b>\n\n"
-                    f"مبلغ شرط را وارد کنید ({min_bet} تا {max_bet} الماس):\n"
+                    f"💎 مبلغ شرط را وارد کنید ({min_bet} تا {max_bet} الماس):\n"
                     f"مثال: <code>شرکت 200</code>"
                 )
             except Exception:
                 # اگر چت خصوصی باز نیست
                 _bot.answer_callback_query(
                     call.id,
-                    f"انتخاب: {option_fa}\n\n"
+                    f"✅ انتخاب: {option_fa}\n\n"
                     f"برای ثبت شرط، به ربات پیام بده:\nشرکت [مبلغ]\nمثال: شرکت 200",
                     show_alert=True
                 )
         except Exception as e:
-            print(f"callback_wc_pick: {e}")
+            print(f"❌ callback_wc_pick: {e}")
 
     # ── Handler: کاربر مبلغ شرط را وارد کرد ────────────────────────────────
     @_bot.message_handler(func=lambda m: m.text and m.text.strip().startswith("شرکت ") and m.chat.type == "private")
@@ -1154,20 +1111,20 @@ def start_token_bot():
             tg_id = message.from_user.id
             pending = _wc_pending_bet.get(tg_id)
             if not pending:
-                return _bot.reply_to(message, "ابتدا روی تیم مورد نظر در کانال کلیک کنید.")
+                return _bot.reply_to(message, "❌ ابتدا روی تیم مورد نظر در کانال کلیک کنید.")
 
             parts = message.text.strip().split()
             if len(parts) < 2:
-                return _bot.reply_to(message, "فرمت: شرکت [مبلغ]\nمثال: شرکت 200")
+                return _bot.reply_to(message, "❌ فرمت: شرکت [مبلغ]\nمثال: شرکت 200")
             try:
                 amount = int(parts[1])
             except ValueError:
-                return _bot.reply_to(message, "مبلغ باید عدد باشد.")
+                return _bot.reply_to(message, "❌ مبلغ باید عدد باشد.")
 
             min_bet = getattr(config, "WC_MIN_BET", 10)
             max_bet = getattr(config, "WC_MAX_BET", 5000)
             if amount < min_bet or amount > max_bet:
-                return _bot.reply_to(message, f"مبلغ باید بین {min_bet} و {max_bet} الماس باشد.")
+                return _bot.reply_to(message, f"❌ مبلغ باید بین {min_bet} و {max_bet} الماس باشد.")
 
             challenge_id = pending["challenge_id"]
             selected_option = pending["selected_option"]
@@ -1176,7 +1133,7 @@ def start_token_bot():
             challenge = db.get_wc_challenge(challenge_id)
             if not challenge:
                 _wc_pending_bet.pop(tg_id, None)
-                return _bot.reply_to(message, "چالش یافت نشد.")
+                return _bot.reply_to(message, "❌ چالش یافت نشد.")
 
             option_fa = {"team1": challenge["team1"], "team2": challenge["team2"], "draw": "مساوی"}.get(selected_option, selected_option)
             success, msg_txt = db.join_wc_challenge(challenge_id, account_id, tg_id, selected_option, amount)
@@ -1186,18 +1143,18 @@ def start_token_bot():
                 balance = db.get_token_balance(account_id)
                 _bot.reply_to(
                     message,
-                    "<b>شرط ثبت شد!</b>\n\n"
+                    f"✅ <b>شرط ثبت شد!</b>\n\n"
                     f"⚽️ {challenge['team1']} vs {challenge['team2']}\n"
-                    f"انتخاب: <b>{option_fa}</b>\n"
-                    f"مبلغ: <b>{amount} الماس</b>\n"
-                    f"موجودی باقی‌مانده: {balance} الماس\n\n"
-                    f"در صورت برد، <b>{amount * 2} الماس</b> دریافت می‌کنید!"
+                    f"🎯 انتخاب: <b>{option_fa}</b>\n"
+                    f"💎 مبلغ: <b>{amount} الماس</b>\n"
+                    f"💰 موجودی باقی‌مانده: {balance} الماس\n\n"
+                    f"🏆 در صورت برد، <b>{amount * 2} الماس</b> دریافت می‌کنید!"
                 )
             else:
                 _bot.reply_to(message, msg_txt)
         except Exception as e:
-            print(f"cmd_wc_join: {e}")
-            _bot.reply_to(message, f"خطا: {e}")
+            print(f"❌ cmd_wc_join: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
 
     # ── Callback قدیمی bet_wc_ (سازگاری) ────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("bet_wc_"))
@@ -1208,18 +1165,18 @@ def start_token_bot():
             team_choice = parts[3]
             challenge = db.get_wc_challenge(challenge_id)
             if not challenge or challenge["status"] != "pending":
-                return _bot.answer_callback_query(call.id, "این چالش فعال نیست.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ این چالش فعال نیست.", show_alert=True)
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
             _wc_pending_bet[call.from_user.id] = {
                 "challenge_id": challenge_id,
                 "selected_option": team_choice,
                 "account_id": account["id"],
             }
-            _bot.answer_callback_query(call.id, "انتخاب ثبت شد! حالا مبلغ رو بنویس:\nشرکت [مبلغ]", show_alert=True)
+            _bot.answer_callback_query(call.id, f"✅ انتخاب ثبت شد! حالا مبلغ رو بنویس:\nشرکت [مبلغ]", show_alert=True)
         except Exception as e:
-            print(f"خطا در callback_bet_wc: {e}")
+            print(f"❌ خطا در callback_bet_wc: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # /start
@@ -1239,16 +1196,16 @@ def start_token_bot():
                 try:
                     _bot.send_message(
                         tg_id,
-                        "<b>یک روز سلف رایگان هدیه گرفتید!</b>\n\n"
-                        f"انقضا: <b>{exp_str}</b> (وقت تهران)\n\n"
-                        f"برای تمدید، از منوی {pe('inbox', '🛒')} خرید استفاده کنید."
+                        f"🎁 <b>یک روز سلف رایگان هدیه گرفتید!</b>\n\n"
+                        f"⏰ انقضا: <b>{exp_str}</b> (وقت تهران)\n\n"
+                        f"برای تمدید، از منوی 🛒 خرید استفاده کنید."
                     )
                 except Exception:
                     pass
                 # تایمر اطلاع‌رسانی انقضا
                 threading.Timer(86400, _notify_subscription_expired, args=[account_id, tg_id]).start()
         except Exception as e:
-            print(f"_grant_free_trial: {e}")
+            print(f"❌ _grant_free_trial: {e}")
 
     def _notify_subscription_expired(account_id: int, tg_id: int):
         """اطلاع‌رسانی پایان اشتراک"""
@@ -1266,23 +1223,21 @@ def start_token_bot():
             site_url = getattr(config, "SITE_URL", "")
             markup = types.InlineKeyboardMarkup()
             # 🟢 دکمه تمدید با رنگ success (سبز)
-            markup.add(types.InlineKeyboardButton("تمدید اشتراک", callback_data="pur_sub_diamond", style="success"),
-                icon_custom_emoji_id=get_emoji_id("inbox"))
+            markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
             if site_url:
                 # 🔵 دکمه وب‌سایت با رنگ primary (آبی)
-                markup.add(types.InlineKeyboardButton("پنل وب", url=site_url, style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("link_chain"))
+                markup.add(types.InlineKeyboardButton("🌐 پنل وب", url=site_url, style="primary"))
             try:
                 _bot.send_message(
                     tg_id,
-                    "<b>اشتراک سلف شما به پایان رسید!</b>\n\n"
+                    "⏰ <b>اشتراک سلف شما به پایان رسید!</b>\n\n"
                     "برای ادامه استفاده از سلف‌بات، اشتراک خود را تمدید کنید. 👇",
                     reply_markup=markup
                 )
             except Exception:
                 pass
         except Exception as e:
-            print(f"_notify_subscription_expired: {e}")
+            print(f"❌ _notify_subscription_expired: {e}")
 
     def _start_subscription_checker():
         """هر ۳۰ دقیقه اشتراک‌های نزدیک به انقضا رو چک می‌کنه"""
@@ -1292,7 +1247,7 @@ def start_token_bot():
                     time.sleep(1800)  # 30 دقیقه
                     _check_expiring_subscriptions()
                 except Exception as e:
-                    print(f"subscription checker: {e}")
+                    print(f"❌ subscription checker: {e}")
         threading.Thread(target=_checker, daemon=True).start()
 
     def _check_expiring_subscriptions():
@@ -1315,12 +1270,11 @@ def start_token_bot():
                 try:
                     markup = types.InlineKeyboardMarkup()
                     # 🟢 دکمه تمدید با رنگ success (سبز)
-                    markup.add(types.InlineKeyboardButton("تمدید اشتراک", callback_data="pur_sub_diamond", style="success"),
-                        icon_custom_emoji_id=get_emoji_id("inbox"))
+                    markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
                     _bot.send_message(
                         tg_id,
-                        "<b>اشتراک شما در حال انقضاست!</b>\n\n"
-                        f"باقی‌مانده: <b>{remaining}</b>\n\n"
+                        f"⚠️ <b>اشتراک شما در حال انقضاست!</b>\n\n"
+                        f"⏰ باقی‌مانده: <b>{remaining}</b>\n\n"
                         f"برای تمدید همین الان اقدام کنید 👇",
                         reply_markup=markup
                     )
@@ -1331,7 +1285,7 @@ def start_token_bot():
                 except Exception:
                     pass
         except Exception as e:
-            print(f"_check_expiring_subscriptions: {e}")
+            print(f"❌ _check_expiring_subscriptions: {e}")
 
     _start_subscription_checker()
 
@@ -1352,14 +1306,14 @@ def start_token_bot():
         try:
             # 🔴 دکمه لغو با رنگ danger (قرمز)
             _bot.edit_message_text(
-                "<b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
+                "📱 <b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
                 "شماره تلفن خود را با کد کشور وارد کنید:\n"
                 "مثال: <code>+989123456789</code>\n\n"
                 "⏱ این فرم ۵ دقیقه اعتبار دارد.",
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 reply_markup=types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("لغو", callback_data="reg_cancel", style="danger")  # 🔴 قرمز
+                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger")  # 🔴 قرمز
                 ),
             )
         except Exception:
@@ -1383,7 +1337,7 @@ def start_token_bot():
         session["step"] = "sending_code"
         session["expires"] = time.time() + _REG_TIMEOUT
 
-        wait_msg = _bot.reply_to(message, "در حال ارسال کد تأیید...")
+        wait_msg = _bot.reply_to(message, "⏳ در حال ارسال کد تأیید...")
 
         try:
             from telethon import TelegramClient
@@ -1424,7 +1378,7 @@ def start_token_bot():
                 _bot.delete_message(message.chat.id, wait_msg.message_id)
             except Exception:
                 pass
-            _bot.reply_to(message, f"خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
+            _bot.reply_to(message, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
 
     # ── مرحله ۲fa: دریافت رمز دومرحله‌ای به صورت متن ────────────────────────
     @_bot.message_handler(
@@ -1439,7 +1393,7 @@ def start_token_bot():
         password = message.text.strip()
 
         if not password:
-            _bot.reply_to(message, "رمز نمی‌تواند خالی باشد. دوباره تایپ کنید:")
+            _bot.reply_to(message, "❗ رمز نمی‌تواند خالی باشد. دوباره تایپ کنید:")
             return
 
         try:
@@ -1447,7 +1401,7 @@ def start_token_bot():
         except Exception:
             pass
 
-        wait_msg = _bot.send_message(tg_id, "در حال تأیید رمز دو مرحله‌ای...")
+        wait_msg = _bot.send_message(tg_id, "⏳ در حال تأیید رمز دو مرحله‌ای...")
 
         try:
             from telethon import TelegramClient
@@ -1478,8 +1432,8 @@ def start_token_bot():
 
             sent = _bot.send_message(
                 tg_id,
-                "رمز دو مرحله‌ای تأیید شد!\n\n"
-                "<b>مرحله ۳ — رمز عبور پنل</b>\n\n"
+                "✅ رمز دو مرحله‌ای تأیید شد!\n\n"
+                "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
                 "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
                 f"(حداقل ۴ رقم)\n\n"
                 f"<code>{_kp_display('', 'pw')}</code>",
@@ -1495,7 +1449,7 @@ def start_token_bot():
             session["digits"] = ""
             _bot.send_message(
                 tg_id,
-                "رمز دو مرحله‌ای اشتباه است!\n\nدوباره رمز را تایپ کنید و بفرستید:",
+                "❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره رمز را تایپ کنید و بفرستید:",
             )
 
     # ── مرحله ۲ & ۳: کیپد (code / pw) ──────────────────────────────────────
@@ -1505,9 +1459,9 @@ def start_token_bot():
 
         if _reg_expired(tg_id):
             _reg_clear(tg_id)
-            _bot.answer_callback_query(call.id, "سشن منقضی شده! دوباره /start بزنید.", show_alert=True)
+            _bot.answer_callback_query(call.id, "⏰ سشن منقضی شده! دوباره /start بزنید.", show_alert=True)
             try:
-                _bot.edit_message_text("سشن منقضی شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                _bot.edit_message_text("⏰ سشن منقضی شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
             except Exception:
                 pass
             return
@@ -1527,7 +1481,7 @@ def start_token_bot():
             return
         elif action.isdigit():
             if len(digits) >= 10:
-                _bot.answer_callback_query(call.id, "حداکثر ۱۰ رقم", show_alert=True)
+                _bot.answer_callback_query(call.id, "❗ حداکثر ۱۰ رقم", show_alert=True)
                 return
             digits += action
         else:
@@ -1539,8 +1493,8 @@ def start_token_bot():
 
         label_map = {
             "code": "📲 <b>مرحله ۲ از ۳ — کد تأیید</b>\n\nکد دریافتی را وارد کنید:",
-            "2fa": "<b>رمز دو مرحله‌ای</b>\n\nرمز دو مرحله‌ای تلگرام را وارد کنید:",
-            "pw": "<b>مرحله ۳ — رمز عبور پنل</b>\n\nرمز عبور برای ورود به پنل وب را وارد کنید:\n(حداقل ۴ رقم)",
+            "2fa": "🔒 <b>رمز دو مرحله‌ای</b>\n\nرمز دو مرحله‌ای تلگرام را وارد کنید:",
+            "pw": "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\nرمز عبور برای ورود به پنل وب را وارد کنید:\n(حداقل ۴ رقم)",
         }
         text = f"{label_map.get(mode, '')}\n\n<code>{display}</code>"
 
@@ -1558,10 +1512,10 @@ def start_token_bot():
     def _process_reg_confirm(call, tg_id, session, mode, digits):
         """پردازش تأیید در هر مرحله"""
         if not digits:
-            _bot.answer_callback_query(call.id, "چیزی وارد نکردید!", show_alert=True)
+            _bot.answer_callback_query(call.id, "❗ چیزی وارد نکردید!", show_alert=True)
             return
 
-        _bot.answer_callback_query(call.id, "در حال بررسی...")
+        _bot.answer_callback_query(call.id, "⏳ در حال بررسی...")
 
         # ── تأیید کد تلگرام ──────────────────────────────────────────────────
         if mode == "code":
@@ -1594,7 +1548,7 @@ def start_token_bot():
 
                     try:
                         _bot.edit_message_text(
-                            "<b>مرحله ۳ — رمز عبور پنل</b>\n\n"
+                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
                             "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
                             "(حداقل ۴ رقم)\n\n"
                             f"<code>{_kp_display('', 'pw')}</code>",
@@ -1614,7 +1568,7 @@ def start_token_bot():
                         session["expires"] = time.time() + _REG_TIMEOUT
                         try:
                             _bot.edit_message_text(
-                                "<b>رمز دو مرحله‌ای</b>\n\n"
+                                "🔒 <b>رمز دو مرحله‌ای</b>\n\n"
                                 "حساب شما رمز دو مرحله‌ای دارد.\n"
                                 "رمز را تایپ کنید و بفرستید:",
                                 chat_id=call.message.chat.id,
@@ -1626,7 +1580,7 @@ def start_token_bot():
                         session["digits"] = ""
                         try:
                             _bot.edit_message_text(
-                                "کد اشتباه بود! دوباره وارد کنید:\n\n"
+                                "❌ کد اشتباه بود! دوباره وارد کنید:\n\n"
                                 f"<code>{_kp_display('', 'code')}</code>",
                                 chat_id=call.message.chat.id,
                                 message_id=call.message.message_id,
@@ -1638,7 +1592,7 @@ def start_token_bot():
                         _reg_clear(tg_id)
                         try:
                             _bot.edit_message_text(
-                                "کد منقضی شده! دوباره /start بزنید.",
+                                "⏰ کد منقضی شده! دوباره /start بزنید.",
                                 chat_id=call.message.chat.id,
                                 message_id=call.message.message_id,
                             )
@@ -1648,7 +1602,7 @@ def start_token_bot():
                         _reg_clear(tg_id)
                         try:
                             _bot.edit_message_text(
-                                f"خطا: {err_str[:200]}\n\nدوباره /start بزنید.",
+                                f"❌ خطا: {err_str[:200]}\n\nدوباره /start بزنید.",
                                 chat_id=call.message.chat.id,
                                 message_id=call.message.message_id,
                             )
@@ -1658,7 +1612,7 @@ def start_token_bot():
             except Exception as e:
                 _reg_clear(tg_id)
                 try:
-                    _bot.edit_message_text(f"خطای داخلی: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    _bot.edit_message_text(f"❌ خطای داخلی: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
@@ -1688,8 +1642,8 @@ def start_token_bot():
                     session["expires"] = time.time() + _REG_TIMEOUT
                     try:
                         _bot.edit_message_text(
-                            "ورود موفق!\n\n"
-                            "<b>مرحله ۳ — رمز عبور پنل</b>\n\n"
+                            "✅ ورود موفق!\n\n"
+                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
                             "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
                             "(حداقل ۴ رقم)\n\n"
                             f"<code>{_kp_display('', 'pw')}</code>",
@@ -1704,7 +1658,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             call.message.chat.id,
-                            "رمز دو مرحله‌ای اشتباه است!\n\nدوباره رمز را تایپ کنید و بفرستید:",
+                            "❌ رمز دو مرحله‌ای اشتباه است!\n\nدوباره رمز را تایپ کنید و بفرستید:",
                         )
                     except Exception:
                         pass
@@ -1712,14 +1666,14 @@ def start_token_bot():
             except Exception as e:
                 _reg_clear(tg_id)
                 try:
-                    _bot.edit_message_text(f"خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    _bot.edit_message_text(f"❌ خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
         # ── ثبت رمز عبور پنل و ساخت اکانت ──────────────────────────────────
         elif mode == "pw":
             if len(digits) < 4:
-                _bot.answer_callback_query(call.id, "رمز باید حداقل ۴ رقم باشد!", show_alert=True)
+                _bot.answer_callback_query(call.id, "❗ رمز باید حداقل ۴ رقم باشد!", show_alert=True)
                 return
 
             try:
@@ -1748,15 +1702,15 @@ def start_token_bot():
                             from app import get_loop
                             bot_manager.start(_acc_id, get_loop(), check_tokens=False)
                         except Exception as _e:
-                            print(f"bot_manager.start (existing): {_e}")
+                            print(f"⚠️ bot_manager.start (existing): {_e}")
                     threading.Thread(target=_start_existing, args=(existing["id"],), daemon=True).start()
 
                     try:
                         _bot.edit_message_text(
-                            "<b>خوش برگشتید!</b>\n\n"
-                            f"{tg_user['name']}\n"
+                            f"✅ <b>خوش برگشتید!</b>\n\n"
+                            f"👤 {tg_user['name']}\n"
                             f"🆔 اکانت موجود بود — سلف‌بات فعال شد!\n\n"
-                            f"موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
+                            f"💎 موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
                             chat_id=call.message.chat.id,
                             message_id=call.message.message_id,
                         )
@@ -1780,7 +1734,7 @@ def start_token_bot():
                 if not new_id:
                     _reg_clear(tg_id)
                     try:
-                        _bot.edit_message_text("خطا در ساخت اکانت. دوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                        _bot.edit_message_text("❌ خطا در ساخت اکانت. دوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
                     except Exception:
                         pass
                     return
@@ -1799,7 +1753,7 @@ def start_token_bot():
                     if not db.get_subscription(new_id):
                         db.set_subscription(new_id, "free_trial", 1)
                 except Exception as _e:
-                    print(f"set free_trial on register: {_e}")
+                    print(f"⚠️ set free_trial on register: {_e}")
 
                 _reg_clear(tg_id)
 
@@ -1811,7 +1765,7 @@ def start_token_bot():
                         from app import get_loop
                         bot_manager.start(_acc_id, get_loop(), check_tokens=False)
                     except Exception as _e:
-                        print(f"bot_manager.start (new): {_e}")
+                        print(f"⚠️ bot_manager.start (new): {_e}")
                     # اطلاع‌رسانی انقضا ۲۴ ساعت بعد
                     threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
                 threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
@@ -1820,18 +1774,17 @@ def start_token_bot():
                 markup_done = types.InlineKeyboardMarkup()
                 if site_url:
                     # 🔵 دکمه ورود با رنگ primary (آبی)
-                    markup_done.add(types.InlineKeyboardButton("ورود به پنل وب", url=site_url, style="primary"),
-                        icon_custom_emoji_id=get_emoji_id("link_chain"))
+                    markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
 
                 try:
                     _bot.edit_message_text(
-                        "<b>اکانت ساخته شد!</b>\n\n"
-                        f"نام: <b>{tg_user['name']}</b>\n"
-                        f"یوزرنیم پنل: <code>{candidate}</code>\n"
-                        "رمز عبور: همان رمزی که وارد کردید\n\n"
-                        f"<b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
-                        "<b>۱ روز سلف رایگان</b> فعال شد!\n\n"
-                        "سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
+                        f"🎉 <b>اکانت ساخته شد!</b>\n\n"
+                        f"👤 نام: <b>{tg_user['name']}</b>\n"
+                        f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n"
+                        f"🔒 رمز عبور: همان رمزی که وارد کردید\n\n"
+                        f"🎁 <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
+                        f"⏰ <b>۱ روز سلف رایگان</b> فعال شد!\n\n"
+                        f"✅ سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=markup_done,
@@ -1847,7 +1800,7 @@ def start_token_bot():
             except Exception as e:
                 _reg_clear(tg_id)
                 try:
-                    _bot.edit_message_text(f"خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                    _bot.edit_message_text(f"❌ خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
@@ -1858,7 +1811,7 @@ def start_token_bot():
         _reg_clear(tg_id)
         _bot.answer_callback_query(call.id)
         try:
-            _bot.edit_message_text("فرایند ثبت‌نام لغو شد.\n\nبرای شروع مجدد /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            _bot.edit_message_text("❌ فرایند ثبت‌نام لغو شد.\n\nبرای شروع مجدد /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         except Exception:
             pass
 
@@ -1877,22 +1830,22 @@ def start_token_bot():
         if not is_logged:
             # سلف وصل نیست — فقط دکمه وصل کردن
             markup.add(types.InlineKeyboardButton(
-                "وصل کردن سلف", callback_data="reg_start", style="success"))
+                "🔗 وصل کردن سلف", callback_data="reg_start", style="success"))
         else:
             if is_running and not is_paused:
                 # سلف روشن است — دکمه خاموش کردن
                 markup.add(types.InlineKeyboardButton(
-                    "خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger"))
+                    "🔴 خاموش کردن سلف", callback_data="self_mgmt_stop", style="danger"))
             else:
                 # سلف خاموش یا pause است — دکمه روشن کردن
                 markup.add(types.InlineKeyboardButton(
-                    "روشن کردن سلف", callback_data="self_mgmt_start", style="success"))
+                    "🟢 روشن کردن سلف", callback_data="self_mgmt_start", style="success"))
             # حذف سلف همیشه نمایش داده می‌شود
             markup.add(types.InlineKeyboardButton(
                 "🗑 حذف سلف از اکانت تلگرام", callback_data="remove_self_ask", style="danger"))
 
         markup.add(types.InlineKeyboardButton(
-            "بازگشت", callback_data="self_mgmt_back", style="danger"))
+            "🔙 بازگشت", callback_data="self_mgmt_back", style="danger"))
         return markup
 
     def _self_management_text(account_id):
@@ -1907,13 +1860,13 @@ def start_token_bot():
             status_icon = "⚫️"
             status_text = "وصل نشده"
         elif is_running and not is_paused:
-            status_icon = ""
+            status_icon = "🟢"
             status_text = "فعال و در حال اجرا"
         elif is_running and is_paused:
             status_icon = "🟡"
             status_text = "متوقف موقت (پلن منقضی)"
         else:
-            status_icon = ""
+            status_icon = "🔴"
             status_text = "خاموش"
 
         # وضعیت اشتراک
@@ -1940,27 +1893,27 @@ def start_token_bot():
                         remaining = f"{hours} ساعت و {mins} دقیقه"
                     else:
                         remaining = f"{mins} دقیقه"
-                    sub_line = f"فعال — باقی‌مانده: <b>{remaining}</b>"
+                    sub_line = f"✅ فعال — باقی‌مانده: <b>{remaining}</b>"
                 else:
-                    sub_line = "منقضی شده"
+                    sub_line = "❌ منقضی شده"
             else:
                 sub_line = "❓ نامشخص"
         else:
-            sub_line = "اشتراک ندارید"
+            sub_line = "❌ اشتراک ندارید"
 
         return (
-            "<b>مدیریت سلف</b>\n\n"
+            f"🤖 <b>مدیریت سلف</b>\n\n"
             f"{status_icon} وضعیت: <b>{status_text}</b>\n"
-            f"اشتراک: {sub_line}\n\n"
+            f"📦 اشتراک: {sub_line}\n\n"
             f"از دکمه‌های زیر استفاده کنید:"
         )
 
-    @_bot.message_handler(func=lambda m: m.text == "مدیریت سلف", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "🤖 مدیریت سلف", chat_types=['private'])
     def cmd_self_management(message):
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.",
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.",
                                      reply_markup=_main_inline_keyboard())
             _bot.send_message(
                 message.chat.id,
@@ -1968,7 +1921,7 @@ def start_token_bot():
                 reply_markup=_self_management_keyboard(account["id"])
             )
         except Exception as e:
-            print(f"خطا در cmd_self_management: {e}")
+            print(f"❌ خطا در cmd_self_management: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data in (
         "self_mgmt_stop", "self_mgmt_start", "self_mgmt_back"
@@ -1977,7 +1930,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "اکانت یافت نشد.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ اکانت یافت نشد.", show_alert=True)
 
             acc_id = account["id"]
             data   = call.data
@@ -1986,7 +1939,7 @@ def start_token_bot():
                 _bot.answer_callback_query(call.id)
                 try:
                     _bot.edit_message_text(
-                        "منوی اصلی:",
+                        "📋 منوی اصلی:",
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=_main_inline_keyboard(account)
@@ -1999,12 +1952,12 @@ def start_token_bot():
                 from bot import bot_manager
                 import time as _time
                 if not bot_manager.is_running(acc_id):
-                    _bot.answer_callback_query(call.id, "سلف از قبل خاموش است.", show_alert=True)
+                    _bot.answer_callback_query(call.id, "⚠️ سلف از قبل خاموش است.", show_alert=True)
                 else:
                     bot_manager.stop(acc_id)
                     # صبر کوتاه تا state بروز شود
                     _time.sleep(0.8)
-                    _bot.answer_callback_query(call.id, "سلف خاموش شد.")
+                    _bot.answer_callback_query(call.id, "🔴 سلف خاموش شد.")
 
             elif data == "self_mgmt_start":
                 from bot import bot_manager
@@ -2012,17 +1965,17 @@ def start_token_bot():
                 import time as _time
                 if not db.get_setting(acc_id, "logged_in", "0") == "1":
                     return _bot.answer_callback_query(
-                        call.id, "سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
+                        call.id, "❌ سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
                 if not db.is_subscribed(acc_id):
                     return _bot.answer_callback_query(
-                        call.id, "اشتراک ندارید یا منقضی شده. ابتدا پلن تهیه کنید.", show_alert=True)
+                        call.id, "❌ اشتراک ندارید یا منقضی شده. ابتدا پلن تهیه کنید.", show_alert=True)
                 if bot_manager.is_running(acc_id) and not bot_manager.is_paused(acc_id):
-                    _bot.answer_callback_query(call.id, "سلف از قبل روشن است.", show_alert=True)
+                    _bot.answer_callback_query(call.id, "✅ سلف از قبل روشن است.", show_alert=True)
                 else:
                     bot_manager.start(acc_id, get_loop(), check_tokens=False, is_restart=True)
                     # صبر کوتاه تا heartbeat ثبت شود
                     _time.sleep(1.2)
-                    _bot.answer_callback_query(call.id, "سلف روشن شد!")
+                    _bot.answer_callback_query(call.id, "🟢 سلف روشن شد!")
 
             # ادیت پیام با وضعیت جدید
             try:
@@ -2036,9 +1989,9 @@ def start_token_bot():
                 pass
 
         except Exception as e:
-            print(f"خطا در callback_self_management: {e}")
+            print(f"❌ خطا در callback_self_management: {e}")
             try:
-                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
             except Exception:
                 pass
 
@@ -2066,7 +2019,7 @@ def start_token_bot():
 
             _run_tg(_do_logout())
         except Exception as e:
-            print(f"خطا در خروج سشن تلگرام: {e}")
+            print(f"⚠️ خطا در خروج سشن تلگرام: {e}")
 
     def _remove_self_from_account(account_id: int):
         """سلف را از اکانت تلگرام فعلی خارج می‌کند ولی دارایی‌ها (الماس، یوزرنیم و ...) را حفظ می‌کند"""
@@ -2077,7 +2030,7 @@ def start_token_bot():
             from bot import bot_manager
             bot_manager.stop(account_id)
         except Exception as e:
-            print(f"خطا در توقف سلف: {e}")
+            print(f"⚠️ خطا در توقف سلف: {e}")
 
         # ۲) خروج واقعی سشن از اکانت تلگرام (revoke)
         _logout_telegram_session(session_data)
@@ -2091,22 +2044,22 @@ def start_token_bot():
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
             if db.get_setting(account["id"], "logged_in", "0") != "1":
-                return _bot.answer_callback_query(call.id, "سلف فعالی برای حذف وجود ندارد.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "⚠️ سلف فعالی برای حذف وجود ندارد.", show_alert=True)
 
             markup = types.InlineKeyboardMarkup(row_width=2)
             # 🟢 دکمه تأیید با رنگ success (سبز)
             markup.add(
-                types.InlineKeyboardButton("بله، حذف کن", callback_data="remove_self_yes", style="success"),
-                types.InlineKeyboardButton("انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
+                types.InlineKeyboardButton("✅ بله، حذف کن", callback_data="remove_self_yes", style="success"),
+                types.InlineKeyboardButton("❌ انصراف", callback_data="remove_self_no", style="danger")  # 🔴 قرمز
             )
             _bot.answer_callback_query(call.id)
             try:
                 _bot.edit_message_text(
-                    "<b>مطمئن هستید؟</b>\n\n"
+                    "⚠️ <b>مطمئن هستید؟</b>\n\n"
                     "با تأیید، سلف از اکانت تلگرامی که الان به آن وصل است خارج می‌شود.\n"
-                    "الماس‌ها و یوزرنیم پنل شما <b>حفظ می‌شوند</b>.\n\n"
+                    "💎 الماس‌ها و یوزرنیم پنل شما <b>حفظ می‌شوند</b>.\n\n"
                     "بعد از خروج می‌توانید دوباره با همین اکانت یا یک اکانت تلگرام دیگر، سلف را وصل کنید — بدون نیاز به ساخت اکانت جدید.",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -2115,13 +2068,13 @@ def start_token_bot():
             except Exception:
                 pass
         except Exception as e:
-            print(f"خطا در callback_remove_self_ask: {e}")
+            print(f"❌ خطا در callback_remove_self_ask: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "remove_self_no")
     def callback_remove_self_no(call):
         _bot.answer_callback_query(call.id, "لغو شد.")
         try:
-            _bot.edit_message_text("عملیات لغو شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+            _bot.edit_message_text("❌ عملیات لغو شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
         except Exception:
             pass
 
@@ -2130,11 +2083,11 @@ def start_token_bot():
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
-            _bot.answer_callback_query(call.id, "در حال خروج سلف...")
+            _bot.answer_callback_query(call.id, "⏳ در حال خروج سلف...")
             try:
-                _bot.edit_message_text("در حال خروج سلف از اکانت تلگرام...", chat_id=call.message.chat.id, message_id=call.message.message_id)
+                _bot.edit_message_text("⏳ در حال خروج سلف از اکانت تلگرام...", chat_id=call.message.chat.id, message_id=call.message.message_id)
             except Exception:
                 pass
 
@@ -2146,21 +2099,20 @@ def start_token_bot():
             try:
                 _bot.send_message(
                     call.message.chat.id,
-                    "<b>سلف با موفقیت از اکانت تلگرام خارج شد.</b>\n\n"
-                    f"یوزرنیم پنل شما (<b>{account['username']}</b>) و موجودی الماس حفظ شدند.\n\n"
+                    "✅ <b>سلف با موفقیت از اکانت تلگرام خارج شد.</b>\n\n"
+                    f"👤 یوزرنیم پنل شما (<b>{account['username']}</b>) و موجودی الماس حفظ شدند.\n\n"
                     "هر زمان خواستید، با همین اکانت یا یک اکانت تلگرام دیگر دوباره وصل شوید 👇",
                     reply_markup=types.InlineKeyboardMarkup(row_width=1).add(
-                        types.InlineKeyboardButton("وصل کردن دوباره سلف", callback_data="reg_start", style="success",
-                            icon_custom_emoji_id=get_emoji_id("robot"))
+                        types.InlineKeyboardButton("🤖 وصل کردن دوباره سلف", callback_data="reg_start", style="success")
                     ),
                 )
                 _bot.send_message(call.message.chat.id, "منوی اصلی:", reply_markup=kb)
             except Exception:
                 pass
         except Exception as e:
-            print(f"خطا در callback_remove_self_yes: {e}")
+            print(f"❌ خطا در callback_remove_self_yes: {e}")
             try:
-                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
             except Exception:
                 pass
 
@@ -2199,21 +2151,18 @@ def start_token_bot():
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 # 🟢 دکمه ساخت اکانت با ربات با رنگ success (سبز)
                 markup.add(
-                    types.InlineKeyboardButton("ساخت اکانت با ربات", callback_data="reg_start", style="success",
-                        icon_custom_emoji_id=get_emoji_id("robot"))
+                    types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start", style="success")
                 )
                 if site_url:
                     # 🔵 دکمه ساخت با وب‌سایت با رنگ primary (آبی)
-                    markup.add(types.InlineKeyboardButton("ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"),
-                        icon_custom_emoji_id=get_emoji_id("link_chain"))
-                markup.add(types.InlineKeyboardButton("راهنما", callback_data="guide_menu", style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("book"))
+                    markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"))
+                markup.add(types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="primary"))
                 _bot.reply_to(
                     message,
-                    "<b>سلام!</b>\n\n"
-                    "اکانت نداری! برای استفاده از ربات باید اکانت بسازی:\n\n"
-                    "<b>ساخت با ربات</b> — مستقیم از همینجا، بدون نیاز به سایت\n"
-                    "<b>ساخت با وب سایت</b> — از طریق پنل وب",
+                    "👋 <b>سلام!</b>\n\n"
+                    "❌ اکانت نداری! برای استفاده از ربات باید اکانت بسازی:\n\n"
+                    "🤖 <b>ساخت با ربات</b> — مستقیم از همینجا، بدون نیاز به سایت\n"
+                    "🌐 <b>ساخت با وب سایت</b> — از طریق پنل وب",
                     reply_markup=markup,
                 )
                 return
@@ -2232,13 +2181,12 @@ def start_token_bot():
                 if not is_logged_in:
                     kb_reconnect = types.InlineKeyboardMarkup(row_width=1)
                     kb_reconnect.add(
-                        types.InlineKeyboardButton("وصل کردن سلف", callback_data="reg_start", style="success",
-                            icon_custom_emoji_id=get_emoji_id("robot"))
+                        types.InlineKeyboardButton("🤖 وصل کردن سلف", callback_data="reg_start", style="success")
                     )
                     _bot.reply_to(
                         message,
-                        f"سلام <b>{account['username']}</b>!\n\n"
-                        "<b>سلف شما به اکانت وصل نیست.</b>\n"
+                        f"👋 سلام <b>{account['username']}</b>!\n\n"
+                        "⚠️ <b>سلف شما به اکانت وصل نیست.</b>\n"
                         "برای وصل کردن دوباره دکمه زیر را بزنید:",
                         parse_mode="HTML",
                         reply_markup=kb_reconnect
@@ -2262,12 +2210,12 @@ def start_token_bot():
                     exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
                 is_active = exp_dt and exp_dt > _dt.datetime.now(_dt.timezone.utc)
                 sub_status = (
-                    f"فعال — پلن {plan_fa}\n"
-                    f"   {pe('calendar', '📅')} انقضا: {_fmt_tehran(sub_exp)}\n"
-                    f"   {pe('timer_1m', '⏳')} باقی‌مانده: {_remaining_str(sub_exp)}"
-                ) if is_active else "اشتراک ندارید"
+                    f"✅ فعال — پلن {plan_fa}\n"
+                    f"   📅 انقضا: {_fmt_tehran(sub_exp)}\n"
+                    f"   ⏳ باقی‌مانده: {_remaining_str(sub_exp)}"
+                ) if is_active else "❌ اشتراک ندارید"
             else:
-                sub_status = "اشتراک ندارید"
+                sub_status = "❌ اشتراک ندارید"
 
             if message.chat.type == 'private':
                 kb_markup = _owner_keyboard() if tg_id == OWNER_TG_ID else _user_keyboard()
@@ -2276,16 +2224,16 @@ def start_token_bot():
 
             # ── ساخت متن خوش‌آمد از قالب قابل تنظیم ─────────────────────────
             default_welcome = (
-                f"سلام {name}!\n\n"
-                f"وقت تهران: {time}\n\n"
-                f"موجودی الماس: {balance}\n"
-                f"کل دریافتی: {total_earned}\n\n"
-                f"اشتراک سلف:\n{sub_status}"
+                "👋 سلام {name}!\n\n"
+                "🕐 وقت تهران: {time}\n\n"
+                "💎 موجودی الماس: {balance}\n"
+                "📊 کل دریافتی: {total_earned}\n\n"
+                "📦 اشتراک سلف:\n{sub_status}"
             )
             welcome_template = db.get_global_setting("welcome_text", default_welcome)
             tg_user = message.from_user
             full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
-            mention = f"<a href=f'tg://user?id={tg_id}'>{full_name or account['username']}</a>"
+            mention = f"<a href='tg://user?id={tg_id}'>{full_name or account['username']}</a>"
             welcome_text = welcome_template.format(
                 name=account["username"],
                 name_full=full_name or account["username"],
@@ -2312,18 +2260,18 @@ def start_token_bot():
                 _bot.reply_to(message, welcome_text, reply_markup=kb_markup)
 
             if message.chat.type == 'private':
-                _bot.send_message(message.chat.id, "منوی اصلی:", reply_markup=_main_inline_keyboard(account))
+                _bot.send_message(message.chat.id, "📋 منوی اصلی:", reply_markup=_main_inline_keyboard(account))
 
             if message.chat.type == 'private':
                 sponsors = getattr(config, 'SPONSORS', [])
                 if sponsors:
-                    sponsors_text = "<b>اسپانسرهای رسمی پروژه:</b>\n"
+                    sponsors_text = "🤝 <b>اسپانسرهای رسمی پروژه:</b>\n"
                     for sp in sponsors:
-                        sponsors_text += f"@{sp['username']}\n"
-                    sponsors_text += f"\n{pe('crown', '👑')} <b>مالک:</b> @{config.OWNER_USERNAME}\n{pe('shield', '🛟')} <b>پشتیبانی:</b> @{getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')}"
+                        sponsors_text += f"🔸 @{sp['username']}\n"
+                    sponsors_text += f"\n👑 <b>مالک:</b> @{config.OWNER_USERNAME}\n🛟 <b>پشتیبانی:</b> @{getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')}"
                     _bot.send_message(message.chat.id, sponsors_text)
         except Exception as e:
-            print(f"خطا در cmd_start: {e}")
+            print(f"❌ خطا در cmd_start: {e}")
 
     def _process_referral_async(referrer_id, tg_id):
         try:
@@ -2331,10 +2279,10 @@ def start_token_bot():
                 referrer_tg = db.get_telegram_id_by_owner(referrer_id)
                 if referrer_tg and _bot:
                     _bot.send_message(referrer_tg, 
-                        "یک نفر با لینک شما عضو شد!\n"
-                        f"<b>+{config.REFERRAL_TOKENS} الماس</b> دریافت کردید {pe('diamond', '💎')}")
+                        f"🎉 یک نفر با لینک شما عضو شد!\n"
+                        f"<b>+{config.REFERRAL_TOKENS} الماس</b> دریافت کردید 💎")
         except Exception as e:
-            print(f"خطا در رفرال: {e}")
+            print(f"❌ خطا در رفرال: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # Callback: بررسی عضویت
@@ -2345,44 +2293,40 @@ def start_token_bot():
             cache.invalidate(f"membership_{call.from_user.id}")
             is_member, missing = _check_membership_cached(call.from_user.id)
             if is_member:
-                _bot.answer_callback_query(call.id, f"عضویت تأیید شد! {pe('checkmark_green', '✅')}")
+                _bot.answer_callback_query(call.id, "عضویت تأیید شد! ✅")
                 try: 
                     _bot.delete_message(call.message.chat.id, call.message.message_id)
                 except: 
                     pass
                 cmd_start(call.message)
             else:
-                _bot.answer_callback_query(call.id, f"هنوز در {len(missing)} کانال عضو نشده‌اید! {pe('cross_red', '❌')}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"هنوز در {len(missing)} کانال عضو نشده‌اید! ❌", show_alert=True)
         except Exception as e:
-            print(f"خطا در callback_check_join: {e}")
+            print(f"❌ خطا در callback_check_join: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # دکمه‌های منوی اصلی
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.text == "موجودی", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "💎 موجودی", chat_types=['private'])
     def cmd_balance(message):
         try:
             if not require_membership(message):
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             stats = db.get_token_stats(account["id"])
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
-            # ── استفاده از ایموجی‌های پرمیوم: چند ایموجی توی یک پیام ──
-            balance_text = (
-                "<b>موجودی الماس</b>\n\n"
-                f"فعلی: <b>{stats['balance']}</b>\n"
-                f"کل: <b>{stats['total_earned']}</b>\n"
-                f"رفرال: <b>{ref_count}</b> نفر\n"
-                f"قیمت هر الماس: <b>{token_price} تومان</b>"
-            )
-            send_emoji_message(_bot, message.chat.id, balance_text,
-                                reply_to_message_id=message.message_id,
-                                reply_markup=_main_inline_keyboard(account))
-        except Exception as ex:
-            print(f"خطا در cmd_balance: {ex}")
+            _bot.reply_to(message,
+                f"💎 <b>موجودی الماس</b>\n\n"
+                f"💰 فعلی: <b>{stats['balance']}</b>\n"
+                f"📊 کل: <b>{stats['total_earned']}</b>\n"
+                f"👥 رفرال: <b>{ref_count}</b> نفر\n"
+                f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
+                reply_markup=_main_inline_keyboard(account))
+        except Exception as e:
+            print(f"❌ خطا در cmd_balance: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "menu_balance")
     def callback_menu_balance(call):
@@ -2391,24 +2335,22 @@ def start_token_bot():
                 return
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
             stats = db.get_token_stats(account["id"])
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
             _bot.answer_callback_query(call.id)
-            balance_text = (
-                "<b>موجودی الماس</b>\n\n"
-                f"فعلی: <b>{stats['balance']}</b>\n"
-                f"کل: <b>{stats['total_earned']}</b>\n"
-                f"رفرال: <b>{ref_count}</b> نفر\n"
-                f"قیمت هر الماس: <b>{token_price} تومان</b>"
-            )
-            send_emoji_message(_bot, call.message.chat.id, balance_text,
-                                reply_markup=_main_inline_keyboard(account))
-        except Exception as ex:
-            print(f"خطا در callback_menu_balance: {ex}")
+            _bot.send_message(call.message.chat.id,
+                f"💎 <b>موجودی الماس</b>\n\n"
+                f"💰 فعلی: <b>{stats['balance']}</b>\n"
+                f"📊 کل: <b>{stats['total_earned']}</b>\n"
+                f"👥 رفرال: <b>{ref_count}</b> نفر\n"
+                f"💵 قیمت هر الماس: <b>{token_price} تومان</b>",
+                reply_markup=_main_inline_keyboard(account))
+        except Exception as e:
+            print(f"❌ خطا در callback_menu_balance: {e}")
 
-    @_bot.message_handler(func=lambda m: m.text == "هدیه روزانه", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "🎁 هدیه روزانه", chat_types=['private'])
     def cmd_daily(message):
         _do_daily(message.from_user.id, message.chat.id, reply_to=message.message_id)
 
@@ -2421,12 +2363,12 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             success, msg = db.claim_daily_token(account["id"])
             cache.invalidate(f"account_{tg_id}")
             if success:
                 stats = db.get_token_stats(account["id"])
-                text = f"{msg}\n\n{pe('diamond', '💎')} موجودی جدید: <b>{stats['balance']}</b>"
+                text = f"{msg}\n\n💎 موجودی جدید: <b>{stats['balance']}</b>"
             else:
                 text = msg
             kwargs = {"reply_markup": _main_inline_keyboard(account)}
@@ -2434,9 +2376,9 @@ def start_token_bot():
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id, text, **kwargs)
         except Exception as e:
-            print(f"خطا در _do_daily: {e}")
+            print(f"❌ خطا در _do_daily: {e}")
 
-    @_bot.message_handler(func=lambda m: m.text == "رفرال", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "🔗 رفرال", chat_types=['private'])
     def cmd_referral(message):
         _do_referral(message.from_user.id, message.chat.id, reply_to=message.message_id)
 
@@ -2449,7 +2391,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             link = f"https://t.me/{BOT_USERNAME}?start=ref_{account['id']}"
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
@@ -2458,12 +2400,12 @@ def start_token_bot():
             if reply_to:
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id,
-                f"<b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
-                f"تعداد: <b>{ref_count}</b>\n"
-                f"پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
+                f"🔗 <b>لینک رفرال شما:</b>\n<code>{link}</code>\n\n"
+                f"👥 تعداد: <b>{ref_count}</b>\n"
+                f"🎁 پاداش: <b>{config.REFERRAL_TOKENS} الماس</b> (معادل {referral_value} تومان)",
                 **kwargs)
         except Exception as e:
-            print(f"خطا در _do_referral: {e}")
+            print(f"❌ خطا در _do_referral: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🛒 سیستم خرید و اشتراک
@@ -2489,7 +2431,7 @@ def start_token_bot():
         markup = types.InlineKeyboardMarkup(row_width=1)
         # 🟢 دکمه‌های خرید با رنگ success (سبز)
         markup.add(
-            types.InlineKeyboardButton("خرید اشتراک با الماس", callback_data="pur_sub_diamond", style="success"),
+            types.InlineKeyboardButton("💎 خرید اشتراک با الماس", callback_data="pur_sub_diamond", style="success"),
         )
         # 🔵 دکمه‌های خرید با کارت با رنگ primary (آبی)
         markup.add(
@@ -2497,7 +2439,7 @@ def start_token_bot():
         )
         # 🟢 دکمه خرید الماس با رنگ success (سبز)
         markup.add(
-            types.InlineKeyboardButton("خرید الماس", callback_data="pur_buy_diamond", style="success"),
+            types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"),
         )
         return markup
 
@@ -2511,11 +2453,10 @@ def start_token_bot():
                 style="primary"
             ))
         # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-        markup.add(types.InlineKeyboardButton("بازگشت", callback_data="pur_back", style="danger"),
-            icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
         return markup
 
-    @_bot.message_handler(func=lambda m: m.text and m.text.strip() in ("خرید", "خرید الماس", f"{pe('inbox', '🛒')} خرید"), chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text and m.text.strip() in ("🛒 خرید الماس", "🛒 خرید"), chat_types=['private'])
     def cmd_buy(message):
         _do_buy(message.from_user.id, message.chat.id, reply_to=message.message_id)
 
@@ -2528,18 +2469,18 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             balance = db.get_token_balance(account["id"])
             kwargs = {"reply_markup": _purchase_main_keyboard()}
             if reply_to:
                 kwargs["reply_to_message_id"] = reply_to
             _bot.send_message(chat_id,
-                "<b>منوی خرید</b>\n\n"
-                f"موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
+                f"🛒 <b>منوی خرید</b>\n\n"
+                f"💎 موجودی فعلی شما: <b>{balance} الماس</b>\n\n"
                 f"یکی از گزینه‌های زیر را انتخاب کنید:",
                 **kwargs)
         except Exception as e:
-            print(f"خطا در _do_buy: {e}")
+            print(f"❌ خطا در _do_buy: {e}")
 
     # ── Callback اصلی خرید ────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("pur_"))
@@ -2549,14 +2490,14 @@ def start_token_bot():
             tg_id = call.from_user.id
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
             # ── بازگشت ──────────────────────────────────────────────────────
             if data == "pur_back":
                 balance = db.get_token_balance(account["id"])
                 _purchase_states.pop(tg_id, None)
                 return _bot.edit_message_text(
-                    f"<b>منوی خرید</b>\n\n{pe('diamond', '💎')} موجودی: <b>{balance} الماس</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                    f"🛒 <b>منوی خرید</b>\n\n💎 موجودی: <b>{balance} الماس</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_purchase_main_keyboard()
                 )
@@ -2565,7 +2506,7 @@ def start_token_bot():
             elif data == "pur_sub_diamond":
                 balance = db.get_token_balance(account["id"])
                 text = (
-                    "<b>خرید اشتراک با الماس</b>\n\n"
+                    f"💎 <b>خرید اشتراک با الماس</b>\n\n"
                     f"موجودی شما: <b>{balance} الماس</b>\n\n"
                     f"یک پلن را انتخاب کنید:"
                 )
@@ -2578,27 +2519,25 @@ def start_token_bot():
                 plan_key = data.split("_", 2)[2]
                 plan = PLANS.get(plan_key)
                 if not plan:
-                    return _bot.answer_callback_query(call.id, "پلن نامعتبر", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ پلن نامعتبر", show_alert=True)
                 balance = db.get_token_balance(account["id"])
                 cost = plan["diamonds"]
                 if balance < cost:
                     need = cost - balance
                     markup = types.InlineKeyboardMarkup()
                     # 🟢 دکمه خرید الماس با رنگ success (سبز)
-                    markup.add(types.InlineKeyboardButton("خرید الماس", callback_data="pur_buy_diamond", style="success"),
-                        icon_custom_emoji_id=get_emoji_id("briefcase"))
+                    markup.add(types.InlineKeyboardButton("🛍 خرید الماس", callback_data="pur_buy_diamond", style="success"))
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="pur_sub_diamond", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_diamond", style="danger"))
                     return _bot.edit_message_text(
-                        "<b>موجودی کافی نیست!</b>\n\n"
-                        f"موجودی: {balance} الماس\n"
-                        f"نیاز: {cost} الماس\n"
-                        f"کمبود: {need} الماس\n\n"
-                        "برای کسب الماس:\n"
-                        f"• دریافت هدیه روزانه {pe('gift', '🎁')}\n"
-                        f"• دعوت دوستان {pe('link_chain', '🔗')}\n"
-                        f"• خرید الماس {pe('briefcase', '🛍')}",
+                        f"❌ <b>موجودی کافی نیست!</b>\n\n"
+                        f"💎 موجودی: {balance} الماس\n"
+                        f"💎 نیاز: {cost} الماس\n"
+                        f"💎 کمبود: {need} الماس\n\n"
+                        f"💡 برای کسب الماس:\n"
+                        f"• دریافت هدیه روزانه 🎁\n"
+                        f"• دعوت دوستان 🔗\n"
+                        f"• خرید الماس 🛍",
                         chat_id=call.message.chat.id, message_id=call.message.message_id,
                         reply_markup=markup
                     )
@@ -2607,12 +2546,12 @@ def start_token_bot():
                 expires = db.set_subscription(account["id"], plan_key, plan["days"])
                 exp_str = expires.strftime("%Y-%m-%d") if expires else "نامشخص"
                 _bot.edit_message_text(
-                    f"<b>اشتراک {plan['fa']} فعال شد!</b>\n\n"
-                    f"{cost} الماس کسر شد\n"
-                    f"انقضا: <b>{exp_str}</b>",
+                    f"✅ <b>اشتراک {plan['fa']} فعال شد!</b>\n\n"
+                    f"💎 {cost} الماس کسر شد\n"
+                    f"📅 انقضا: <b>{exp_str}</b>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id
                 )
-                _bot.answer_callback_query(call.id, f"اشتراک {plan['fa']} فعال شد!", show_alert=True)
+                _bot.answer_callback_query(call.id, f"✅ اشتراک {plan['fa']} فعال شد!", show_alert=True)
 
             # ── اشتراک با کارت ──────────────────────────────────────────────
             elif data == "pur_sub_card":
@@ -2627,7 +2566,7 @@ def start_token_bot():
                 plan_key = data.split("_", 2)[2]
                 plan = PLANS.get(plan_key)
                 if not plan:
-                    return _bot.answer_callback_query(call.id, "پلن نامعتبر", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ پلن نامعتبر", show_alert=True)
                 card = _get_card_number()
                 payment_id = db.create_payment(
                     account["id"], tg_id, "subscription",
@@ -2636,13 +2575,12 @@ def start_token_bot():
                 _purchase_states[tg_id] = {"step": "waiting_receipt_sub", "payment_id": payment_id}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="pur_sub_card", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_sub_card", style="danger"))
                 _bot.edit_message_text(
                     f"💳 <b>پرداخت اشتراک {plan['fa']}</b>\n\n"
-                    f"مبلغ: <b>{plan['toman']:,} تومان</b>\n"
+                    f"💰 مبلغ: <b>{plan['toman']:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
-                    "به نام: <b>غفاری</b>\n\n"
+                    f"👤 به نام: <b>غفاری</b>\n\n"
                     f"بعد از واریز، تصویر رسید را ارسال کنید 👇",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=markup
@@ -2655,12 +2593,11 @@ def start_token_bot():
                 _purchase_states[tg_id] = {"step": "waiting_diamond_amount"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="pur_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="pur_back", style="danger"))
                 _bot.edit_message_text(
-                    "<b>خرید الماس</b>\n\n"
-                    "نرخ: هر ۱۰۰ الماس = <b>{100 * DIAMOND_RATE:,} تومان</b>\n"
-                    f"حداقل خرید: <b>{DIAMOND_MIN_BUY} الماس</b>\n\n"
+                    f"🛍 <b>خرید الماس</b>\n\n"
+                    f"💎 نرخ: هر ۱۰۰ الماس = <b>{100 * DIAMOND_RATE:,} تومان</b>\n"
+                    f"📌 حداقل خرید: <b>{DIAMOND_MIN_BUY} الماس</b>\n\n"
                     f"چه تعداد الماس می‌خوای؟ (عدد بنویس)\n"
                     f"مثال: <code>200</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
@@ -2671,14 +2608,14 @@ def start_token_bot():
             # ── تأیید/رد پرداخت توسط ادمین ─────────────────────────────────
             elif data.startswith("pur_approve_") or data.startswith("pur_reject_"):
                 if tg_id != OWNER_TG_ID:
-                    return _bot.answer_callback_query(call.id, "فقط مالک دسترسی دارد", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ فقط مالک دسترسی دارد", show_alert=True)
                 action = "approve" if data.startswith("pur_approve_") else "reject"
                 payment_id = int(data.split("_")[2])
                 payment = db.get_payment(payment_id)
                 if not payment:
-                    return _bot.answer_callback_query(call.id, "پرداخت یافت نشد", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ پرداخت یافت نشد", show_alert=True)
                 if payment["status"] != "pending":
-                    return _bot.answer_callback_query(call.id, "این پرداخت قبلاً پردازش شده", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "⚠️ این پرداخت قبلاً پردازش شده", show_alert=True)
 
                 if action == "approve":
                     db.update_payment(payment_id, status="approved")
@@ -2692,9 +2629,9 @@ def start_token_bot():
                         try:
                             _bot.send_message(
                                 payment["tg_id"],
-                                "<b>پرداخت تأیید شد!</b>\n\n"
-                                f"اشتراک {plan.get('fa','')  } شما فعال شد\n"
-                                f"انقضا: <b>{exp_str}</b>"
+                                f"✅ <b>پرداخت تأیید شد!</b>\n\n"
+                                f"🎉 اشتراک {plan.get('fa','')  } شما فعال شد\n"
+                                f"📅 انقضا: <b>{exp_str}</b>"
                             )
                         except Exception: pass
 
@@ -2704,8 +2641,8 @@ def start_token_bot():
                         try:
                             _bot.send_message(
                                 payment["tg_id"],
-                                "<b>پرداخت تأیید شد!</b>\n\n"
-                                f"<b>{amount} الماس</b> به حسابتان اضافه شد!"
+                                f"✅ <b>پرداخت تأیید شد!</b>\n\n"
+                                f"💎 <b>{amount} الماس</b> به حسابتان اضافه شد!"
                             )
                         except Exception: pass
 
@@ -2714,18 +2651,17 @@ def start_token_bot():
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("تأیید شد", callback_data="noop", style="success",
-                                icon_custom_emoji_id=get_emoji_id("checkmark_green"))
+                            types.InlineKeyboardButton("✅ تأیید شد", callback_data="noop", style="success")
                         )
                     )
-                    _bot.answer_callback_query(call.id, "پرداخت تأیید شد!", show_alert=True)
+                    _bot.answer_callback_query(call.id, "✅ پرداخت تأیید شد!", show_alert=True)
 
                 else:  # reject
                     db.update_payment(payment_id, status="rejected")
                     try:
                         _bot.send_message(
                             payment["tg_id"],
-                            "<b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید: @" + getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')
+                            "❌ <b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید: @" + getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')
                         )
                     except Exception: pass
                     # 🔴 دکمه رد با رنگ danger (قرمز)
@@ -2733,18 +2669,17 @@ def start_token_bot():
                         chat_id=call.message.chat.id,
                         message_id=call.message.message_id,
                         reply_markup=types.InlineKeyboardMarkup().add(
-                            types.InlineKeyboardButton("رد شد", callback_data="noop", style="danger",
-                                icon_custom_emoji_id=get_emoji_id("cross_red"))
+                            types.InlineKeyboardButton("❌ رد شد", callback_data="noop", style="danger")
                         )
                     )
-                    _bot.answer_callback_query(call.id, "پرداخت رد شد", show_alert=True)
+                    _bot.answer_callback_query(call.id, "❌ پرداخت رد شد", show_alert=True)
 
             elif data == "noop":
                 _bot.answer_callback_query(call.id)
 
         except Exception as e:
-            print(f"خطا در callback_purchase: {e}")
-            _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
+            print(f"❌ خطا در callback_purchase: {e}")
+            _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
 
     # ── دریافت پیام‌های مرتبط با خرید (مبلغ الماس + رسید) ───────────────────
     @_bot.message_handler(
@@ -2765,9 +2700,9 @@ def start_token_bot():
                 try:
                     amount = int(message.text.strip())
                 except (ValueError, AttributeError):
-                    return _bot.reply_to(message, "لطفاً یک عدد معتبر وارد کنید.")
+                    return _bot.reply_to(message, "❌ لطفاً یک عدد معتبر وارد کنید.")
                 if amount < DIAMOND_MIN_BUY:
-                    return _bot.reply_to(message, f"حداقل {DIAMOND_MIN_BUY} الماس باید خرید.")
+                    return _bot.reply_to(message, f"❌ حداقل {DIAMOND_MIN_BUY} الماس باید خرید.")
                 toman = amount * DIAMOND_RATE
                 card = _get_card_number()
                 payment_id = db.create_payment(
@@ -2777,13 +2712,12 @@ def start_token_bot():
                 _purchase_states[tg_id] = {"step": "waiting_receipt_diamond", "payment_id": payment_id}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="pur_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="pur_back", style="danger"))
                 _bot.reply_to(message,
-                    f"<b>خرید {amount} الماس</b>\n\n"
-                    f"مبلغ: <b>{toman:,} تومان</b>\n"
+                    f"🛍 <b>خرید {amount} الماس</b>\n\n"
+                    f"💰 مبلغ: <b>{toman:,} تومان</b>\n"
                     f"💳 شماره کارت: <code>{card}</code>\n"
-                    "به نام: <b>غفاری</b>\n\n"
+                    f"👤 به نام: <b>غفاری</b>\n\n"
                     f"بعد از واریز، تصویر رسید را ارسال کنید 👇",
                     reply_markup=markup
                 )
@@ -2801,7 +2735,7 @@ def start_token_bot():
                 elif message.document:
                     file_id = message.document.file_id
                 else:
-                    return _bot.reply_to(message, "لطفاً تصویر رسید را ارسال کنید.")
+                    return _bot.reply_to(message, "❌ لطفاً تصویر رسید را ارسال کنید.")
 
                 db.update_payment(payment_id, receipt_file_id=file_id)
                 payment = db.get_payment(payment_id)
@@ -2818,20 +2752,19 @@ def start_token_bot():
 
                 admin_text = (
                     f"🧾 <b>رسید جدید</b>\n\n"
-                    f"کاربر: {user_display}\n"
+                    f"👤 کاربر: {user_display}\n"
                     f"🆔 تلگرام: <code>{tg_id}</code>\n"
-                    f"نوع: {desc}\n"
+                    f"📦 نوع: {desc}\n"
                     f"🔢 شناسه پرداخت: <code>{payment_id}</code>"
                 )
                 admin_markup = types.InlineKeyboardMarkup(row_width=2)
                 # 🟢 دکمه تأیید با رنگ success (سبز)
                 admin_markup.add(
-                    types.InlineKeyboardButton("تأیید", callback_data=f"pur_approve_{payment_id}", style="success"),
+                    types.InlineKeyboardButton("✅ تأیید", callback_data=f"pur_approve_{payment_id}", style="success"),
                 )
                 # 🔴 دکمه رد با رنگ danger (قرمز)
                 admin_markup.add(
-                    types.InlineKeyboardButton("رد", callback_data=f"pur_reject_{payment_id}", style="danger",
-                        icon_custom_emoji_id=get_emoji_id("cross_red"))
+                    types.InlineKeyboardButton("❌ رد", callback_data=f"pur_reject_{payment_id}", style="danger")
                 )
                 try:
                     admin_msg = _bot.send_photo(
@@ -2841,27 +2774,27 @@ def start_token_bot():
                     )
                     db.update_payment(payment_id, admin_msg_id=admin_msg.message_id)
                 except Exception as e:
-                    print(f"ارسال رسید به ادمین: {e}")
+                    print(f"❌ ارسال رسید به ادمین: {e}")
 
                 _purchase_states.pop(tg_id, None)
                 _bot.reply_to(message,
-                    "<b>رسید دریافت شد!</b>\n\n"
-                    "پس از تأیید توسط ادمین، اشتراک/الماس شما فعال می‌شود.\n"
+                    "✅ <b>رسید دریافت شد!</b>\n\n"
+                    "⏳ پس از تأیید توسط ادمین، اشتراک/الماس شما فعال می‌شود.\n"
                     "معمولاً کمتر از ۳۰ دقیقه طول می‌کشد."
                 )
 
         except Exception as e:
-            print(f"خطا در handle_purchase_state: {e}")
+            print(f"❌ خطا در handle_purchase_state: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 📢 پنل مدیریت مالک
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.text == "مدیریت", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "📢 مدیریت", chat_types=['private'])
     def cmd_admin_panel(message):
         if message.from_user.id != OWNER_TG_ID:
             return
         _bot.reply_to(message, 
-            "<b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+            "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
             reply_markup=_admin_panel_keyboard())
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -2899,14 +2832,14 @@ def start_token_bot():
         if uid != OWNER_TG_ID:
             # ادمین فرعی: فقط admin_panel و دسترسی‌های مجاز
             if not db.is_sub_admin(uid):
-                return _bot.answer_callback_query(call.id, "دسترسی ندارید", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ دسترسی ندارید", show_alert=True)
             # مدیریت دسترسی‌ها فقط برای مالک
             if data.startswith("admin_perm_") or data == "admin_manage_admins" or data == "admin_add_admin" or data.startswith("admin_del_admin_"):
-                return _bot.answer_callback_query(call.id, "این بخش فقط برای مالک است", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ این بخش فقط برای مالک است", show_alert=True)
             if data not in ("admin_panel", "admin_back"):
                 perm = _get_sub_admin_perm_for_data(data)
                 if perm is None or not db.sub_admin_has_permission(uid, perm):
-                    return _bot.answer_callback_query(call.id, "شما به این بخش دسترسی ندارید", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ شما به این بخش دسترسی ندارید", show_alert=True)
         
         # دکمه‌های غیرفعال (نمایشی)
         if call.data == "admin_users_noop":
@@ -2915,7 +2848,7 @@ def start_token_bot():
         try:
             if data == "admin_panel" or data == "admin_back":
                 _bot.edit_message_text(
-                    "<b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                    "📢 <b>پنل مدیریت مالک</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=_admin_panel_keyboard()
@@ -2927,21 +2860,19 @@ def start_token_bot():
                 channels = db.get_forced_channels()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if channels:
-                    text = "<b>چنل‌های اجباری فعلی:</b>\n\n"
+                    text = "📢 <b>چنل‌های اجباری فعلی:</b>\n\n"
                     for ch in channels:
-                        text += f"<code>{ch}</code>\n"
+                        text += f"🔸 <code>{ch}</code>\n"
                         ch_clean = ch.lstrip("@")
                         # 🔴 دکمه حذف با رنگ danger (قرمز)
-                        markup.add(types.InlineKeyboardButton(f"حذف {ch}", callback_data=f"rmch_{ch_clean}", style="danger"),
-                            icon_custom_emoji_id=get_emoji_id("cross_red"))
+                        markup.add(types.InlineKeyboardButton(f"❌ حذف {ch}", callback_data=f"rmch_{ch_clean}", style="danger"))
                 else:
-                    text = "لیست چنل‌ها خالی است.\n\n"
+                    text = "📋 لیست چنل‌ها خالی است.\n\n"
                 text += "\nبرای افزودن چنل جدید از دکمه زیر استفاده کنید:"
                 # 🟢 دکمه افزودن با رنگ success (سبز)
                 markup.add(types.InlineKeyboardButton("➕ افزودن چنل جدید", callback_data="addch_prompt", style="success"))
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
@@ -2957,21 +2888,20 @@ def start_token_bot():
                     ch = "@" + ch
                 if db.remove_forced_channel(ch):
                     cache.invalidate("membership_")
-                    _bot.answer_callback_query(call.id, f"چنل {ch} حذف شد")
+                    _bot.answer_callback_query(call.id, f"✅ چنل {ch} حذف شد")
                     call.data = "admin_channels"
                     callback_admin(call)
                 else:
-                    _bot.answer_callback_query(call.id, "خطا در حذف")
+                    _bot.answer_callback_query(call.id, "❌ خطا در حذف")
                 return
             
             elif data == "addch_prompt":
                 _owner_states[call.from_user.id] = {"state": "waiting_channel"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
+                    "📝 آیدی چنل را ارسال کنید (با @ شروع شود):\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -2984,8 +2914,7 @@ def start_token_bot():
                 if not accounts:
                     text = "هیچ کاربری ثبت نشده."
                     markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
                     _bot.answer_callback_query(call.id)
@@ -3003,7 +2932,7 @@ def start_token_bot():
                 start_idx = (page - 1) * PAGE_SIZE
                 page_accounts = accounts[start_idx: start_idx + PAGE_SIZE]
 
-                lines = [f"<b>کاربران ({total} نفر) — صفحه {page}/{total_pages}</b>\n"]
+                lines = [f"👥 <b>کاربران ({total} نفر) — صفحه {page}/{total_pages}</b>\n"]
                 for i, acc in enumerate(page_accounts, start_idx + 1):
                     bal = db.get_token_balance(acc["id"])
                     remaining = _format_plan_remaining(acc["id"])
@@ -3013,15 +2942,15 @@ def start_token_bot():
                     if tg_id_val:
                         pv_link = f"tg://user?id={tg_id_val}"
                         username_part = f"@{tg_username_val} | " if tg_username_val else ""
-                        tg_id_line = f"<a href=f'{pv_link}'>{username_part}پیوی کاربر</a> (<code>{tg_id_val}</code>)"
+                        tg_id_line = f"📱 <a href='{pv_link}'>{username_part}پیوی کاربر</a> (<code>{tg_id_val}</code>)"
                     else:
-                        tg_id_line = "تلگرام: ─"
+                        tg_id_line = "📱 تلگرام: ─"
                     lines.append(
                         f"┌─ <b>#{i} {acc['username']}</b>\n"
                         f"├ 🆔 پنل: <code>{acc['id']}</code>\n"
                         f"├ {tg_id_line}\n"
-                        f"├ {pe('diamond', '💎')} موجودی: <b>{bal} الماس</b>\n"
-                        f"└ {pe('timer_1m', '⏳')} پلن: {remaining}"
+                        f"├ 💎 موجودی: <b>{bal} الماس</b>\n"
+                        f"└ ⏳ پلن: {remaining}"
                     )
                 text = "\n\n".join(lines)
 
@@ -3037,8 +2966,7 @@ def start_token_bot():
                         "بعدی ▶️", callback_data=f"admin_users_p{page + 1}"))
                 if nav_buttons:
                     markup.add(*nav_buttons)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
@@ -3053,13 +2981,11 @@ def start_token_bot():
                 # 🟢 دکمه ایجاد چالش با رنگ success (سبز)
                 markup.add(types.InlineKeyboardButton("➕ ایجاد چالش جدید", callback_data="wc_new", style="success"))
                 # 🔵 دکمه چالش‌های فعال با رنگ primary (آبی)
-                markup.add(types.InlineKeyboardButton("چالش‌های فعال", callback_data="wc_list", style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("edit_box"))
+                markup.add(types.InlineKeyboardButton("📋 چالش‌های فعال", callback_data="wc_list", style="primary"))
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>مدیریت چالش‌های جام جهانی</b>\n\nیک گزینه را انتخاب کنید:",
+                    "🏆 <b>مدیریت چالش‌های جام جهانی</b>\n\nیک گزینه را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -3071,11 +2997,10 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "wc_team1", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_wc", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_wc", style="danger"))
                 _bot.edit_message_text(
-                    "<b>ایجاد چالش جدید</b>\n\n"
-                    "مرحله ۱ از ۴:\nنام <b>تیم اول</b> را ارسال کنید:\n\nمثال: <code>ایران</code>",
+                    "🏆 <b>ایجاد چالش جدید</b>\n\n"
+                    "📝 مرحله ۱ از ۴:\nنام <b>تیم اول</b> را ارسال کنید:\n\nمثال: <code>ایران</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -3086,26 +3011,23 @@ def start_token_bot():
             elif data == "wc_list":
                 challenges = db.get_active_challenges()
                 if not challenges:
-                    text = "هیچ چالش فعالی وجود ندارد."
+                    text = "📋 هیچ چالش فعالی وجود ندارد."
                     markup = types.InlineKeyboardMarkup()
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_wc", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc", style="danger"))
                 else:
-                    text = "<b>چالش‌های فعال:</b>\n\n"
+                    text = "🏆 <b>چالش‌های فعال:</b>\n\n"
                     markup = types.InlineKeyboardMarkup(row_width=2)
                     for c in challenges:
                         text += f"<b>ID {c['id']}:</b> {c['team1']} vs {c['team2']}\n"
-                        text += f"{c['match_time']} | {pe('diamond', '💎')} {c['bet_amount']}\n\n"
+                        text += f"⏰ {c['match_time']} | 💎 {c['bet_amount']}\n\n"
                         # 🟢 دکمه‌های تعیین برنده با رنگ success (سبز)
                         markup.add(
-                            types.InlineKeyboardButton(f"{c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}", style="success"),
-                            types.InlineKeyboardButton(f"{c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}", style="success",
-                                icon_custom_emoji_id=get_emoji_id("checkmark_green"))
+                            types.InlineKeyboardButton(f"✅ {c['team1']}", callback_data=f"wcwin_{c['id']}_{c['team1']}", style="success"),
+                            types.InlineKeyboardButton(f"✅ {c['team2']}", callback_data=f"wcwin_{c['id']}_{c['team2']}", style="success")
                         )
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_wc", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_wc", style="danger"))
                 _bot.edit_message_text(
                     text,
                     chat_id=call.message.chat.id,
@@ -3124,31 +3046,30 @@ def start_token_bot():
                 if success:
                     won_count = sum(1 for r in results if r["result"] == "won")
                     lost_count = sum(1 for r in results if r["result"] == "lost")
-                    _bot.answer_callback_query(call.id, f"برنده: {winner_team}\n{pe('trophy', '🏆')} {won_count} برنده | {pe('cross_red', '❌')} {lost_count} بازنده", show_alert=True)
+                    _bot.answer_callback_query(call.id, f"✅ برنده: {winner_team}\n🏆 {won_count} برنده | ❌ {lost_count} بازنده", show_alert=True)
                     for r in results:
                         if r["result"] == "won":
                             try:
-                                _bot.send_message(r["user_tg_id"], f"تبریک! شرط شما درست بود.\n{pe('diamond', '💎')} <b>{r['amount']} الماس</b> دریافت کردید.")
+                                _bot.send_message(r["user_tg_id"], f"🎉 تبریک! شرط شما درست بود.\n💎 <b>{r['amount']} الماس</b> دریافت کردید.")
                             except: 
                                 pass
                 else:
-                    _bot.answer_callback_query(call.id, f"خطا: {results}", show_alert=True)
+                    _bot.answer_callback_query(call.id, f"❌ خطا: {results}", show_alert=True)
                 return
             
             elif data == "admin_today_games":
-                _bot.answer_callback_query(call.id, "در حال دریافت بازی‌های امروز...")
+                _bot.answer_callback_query(call.id, "⏳ در حال دریافت بازی‌های امروز...")
                 try:
                     today_matches = _wc_get_today_matches()
                 except Exception as e:
                     today_matches = None
-                    print(f"خطا در دریافت بازی‌های امروز: {e}")
+                    print(f"❌ خطا در دریافت بازی‌های امروز: {e}")
 
                 if today_matches is None:
-                    text = "خطا در ارتباط با Football API.\nلاگ سرور را بررسی کنید."
+                    text = "❌ خطا در ارتباط با Football API.\nلاگ سرور را بررسی کنید."
                     markup = types.InlineKeyboardMarkup()
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     try:
                         _bot.edit_message_text(text, chat_id=call.message.chat.id,
                             message_id=call.message.message_id, reply_markup=markup)
@@ -3157,11 +3078,10 @@ def start_token_bot():
                     return
 
                 if not getattr(config, "FOOTBALL_API_KEY", ""):
-                    text = "FOOTBALL_API_KEY تنظیم نشده است."
+                    text = "⚠️ FOOTBALL_API_KEY تنظیم نشده است."
                     markup = types.InlineKeyboardMarkup()
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
                     return
@@ -3170,20 +3090,19 @@ def start_token_bot():
                     text = "📭 امروز بازی‌ای ثبت نشده."
                     markup = types.InlineKeyboardMarkup()
                     # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                    markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                        icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                    markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                     _bot.edit_message_text(text, chat_id=call.message.chat.id,
                         message_id=call.message.message_id, reply_markup=markup)
                     return
 
                 # ساخت لیست بازی‌ها با دکمه ارسال برای هر کدام
                 status_fa = {
-                    "SCHEDULED": "", "TIMED": f"{pe('timer_1m', '⏳')}",
-                    "LIVE": "", "IN_PLAY": f"{pe('exclamation_red', '🔴')}", "PAUSED": "⏸️",
-                    "FINISHED": "", "POSTPONED": f"{pe('location', '📌')}",
-                    "SUSPENDED": "⛔️", "CANCELLED": "",
+                    "SCHEDULED": "⏳", "TIMED": "⏳",
+                    "LIVE": "🔴", "IN_PLAY": "🔴", "PAUSED": "⏸️",
+                    "FINISHED": "✅", "POSTPONED": "📌",
+                    "SUSPENDED": "⛔️", "CANCELLED": "❌",
                 }
-                lines = ["<b>بازی‌های امروز — جام جهانی</b>\n"]
+                lines = ["📅 <b>بازی‌های امروز — جام جهانی</b>\n"]
                 markup = types.InlineKeyboardMarkup(row_width=1)
 
                 for m in today_matches:
@@ -3205,7 +3124,7 @@ def start_token_bot():
                     already = db.wc_challenge_exists(match_id)
                     sent_icon = "📤" if already else "📨"
 
-                    lines.append(f"{st} <b>{home}</b> vs <b>{away}</b> — {pe('timer_1h', '⏰')}{time_str}")
+                    lines.append(f"{st} <b>{home}</b> vs <b>{away}</b> — ⏰{time_str}")
                     # 🟢 دکمه ارسال چالش با رنگ success (سبز)
                     markup.add(
                         types.InlineKeyboardButton(
@@ -3216,8 +3135,7 @@ def start_token_bot():
                     )
 
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 text = "\n".join(lines)
 
                 try:
@@ -3230,12 +3148,12 @@ def start_token_bot():
             elif data.startswith("wc_sendnow_"):
                 # ادمین دستی روی دکمه ارسال چالش زد
                 match_id = data[len("wc_sendnow_"):]
-                _bot.answer_callback_query(call.id, "در حال ارسال چالش...")
+                _bot.answer_callback_query(call.id, "⏳ در حال ارسال چالش...")
                 try:
                     today_matches = _wc_get_today_matches()
                     target = next((m for m in today_matches if str(m.get("id")) == match_id), None)
                     if not target:
-                        return _bot.answer_callback_query(call.id, "بازی یافت نشد", show_alert=True)
+                        return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد", show_alert=True)
 
                     home = (target.get("homeTeam", {}).get("shortName") or
                             target.get("homeTeam", {}).get("name") or "؟")
@@ -3243,7 +3161,7 @@ def start_token_bot():
                             target.get("awayTeam", {}).get("name") or "؟")
 
                     if not home.strip() or not away.strip():
-                        return _bot.answer_callback_query(call.id, "نام تیم‌ها هنوز مشخص نیست", show_alert=True)
+                        return _bot.answer_callback_query(call.id, "❌ نام تیم‌ها هنوز مشخص نیست", show_alert=True)
 
                     utc_date = target.get("utcDate", "")
                     try:
@@ -3263,29 +3181,28 @@ def start_token_bot():
                         )
                         if row:
                             _wc_send_challenge_to_channel(row["id"], home, away, match_time_str)
-                            _bot.answer_callback_query(call.id, "چالش مجدداً ارسال شد!", show_alert=True)
+                            _bot.answer_callback_query(call.id, "✅ چالش مجدداً ارسال شد!", show_alert=True)
                             return
 
                     challenge_id = db.create_wc_challenge(match_id, home, away, dt)
                     if challenge_id:
                         _wc_send_challenge_to_channel(challenge_id, home, away, match_time_str)
-                        _bot.answer_callback_query(call.id, f"چالش {home} vs {away} ارسال شد!", show_alert=True)
+                        _bot.answer_callback_query(call.id, f"✅ چالش {home} vs {away} ارسال شد!", show_alert=True)
                     else:
-                        _bot.answer_callback_query(call.id, "خطا در ساخت چالش", show_alert=True)
+                        _bot.answer_callback_query(call.id, "❌ خطا در ساخت چالش", show_alert=True)
                 except Exception as e:
-                    print(f"wc_sendnow: {e}")
-                    _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
+                    print(f"❌ wc_sendnow: {e}")
+                    _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
                 return
             
             elif data == "admin_transfer":
                 _owner_states[call.from_user.id] = {"state": "transfer_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>انتقال الماس (از طرف سیستم)</b>\n\n"
-                    "یوزرنیم کاربر مقصد را ارسال کنید:\n\nمثال: <code>ali</code>",
+                    "💎 <b>انتقال الماس (از طرف سیستم)</b>\n\n"
+                    "📝 یوزرنیم کاربر مقصد را ارسال کنید:\n\nمثال: <code>ali</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -3297,11 +3214,10 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "give_user", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>دادن الماس به کاربر</b>\n\n"
-                    "یوزرنیم کاربر را ارسال کنید:\n\nمثال: <code>ali</code>",
+                    "💰 <b>دادن الماس به کاربر</b>\n\n"
+                    "📝 یوزرنیم کاربر را ارسال کنید:\n\nمثال: <code>ali</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -3314,8 +3230,7 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "set_card"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     f"💳 <b>تنظیم شماره کارت</b>\n\n"
                     f"کارت فعلی: <code>{cur_card}</code>\n\n"
@@ -3330,7 +3245,7 @@ def start_token_bot():
             elif data == "admin_payments":
                 payments = db.get_pending_payments()
                 if not payments:
-                    _bot.answer_callback_query(call.id, "هیچ پرداخت معلقی وجود ندارد", show_alert=True)
+                    _bot.answer_callback_query(call.id, "✅ هیچ پرداخت معلقی وجود ندارد", show_alert=True)
                     return
                 lines = [f"🧾 <b>پرداخت‌های معلق ({len(payments)} مورد)</b>\n"]
                 for p in payments[:10]:
@@ -3344,10 +3259,9 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "broadcast_msg"}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>ارسال پیام عمومی</b>\n\n"
+                    "📣 <b>ارسال پیام عمومی</b>\n\n"
                     "پیام خود را ارسال کنید (متن، عکس یا لینک):\n"
                     "به تمام کاربران ثبت‌شده ارسال می‌شود.",
                     chat_id=call.message.chat.id,
@@ -3365,12 +3279,11 @@ def start_token_bot():
                     lines = [f"⚽️ <b>شرکت‌کنندگان جام جهانی ({len(participants)} نفر):</b>\n"]
                     for i, p in enumerate(participants[:50], 1):
                         uname = f"@{p['username']}"
-                        lines.append(f"{i}. <b>{uname}</b> — {pe('trophy', '🎯')}{p['bet_count']} شرط | {pe('diamond', '💎')}{p['total_bet']} الماس")
+                        lines.append(f"{i}. <b>{uname}</b> — 🎯{p['bet_count']} شرط | 💎{p['total_bet']} الماس")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -3380,14 +3293,12 @@ def start_token_bot():
                 # ── انتخاب نوع هدیه ──────────────────────────────────────────────
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("الماس", callback_data="admin_gift_diamond", style="primary"),
-                    types.InlineKeyboardButton("پنل", callback_data="admin_gift_panel", style="success",
-                        icon_custom_emoji_id=get_emoji_id("edit_box"))
+                    types.InlineKeyboardButton("💎 الماس", callback_data="admin_gift_diamond", style="primary"),
+                    types.InlineKeyboardButton("📋 پنل", callback_data="admin_gift_panel", style="success")
                 )
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>هدیه به کاربر</b>\n\n"
+                    "🎁 <b>هدیه به کاربر</b>\n\n"
                     "نوع هدیه را وارد کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -3400,10 +3311,9 @@ def start_token_bot():
                 # ── هدیه الماس: تعداد الماس ──────────────────────────────────────
                 _owner_states[call.from_user.id] = {"state": "gift_diamond_amount", "data": {"gift_type": "diamond"}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>هدیه الماس</b>\n\n"
+                    "💎 <b>هدیه الماس</b>\n\n"
                     "تعداد الماس هدیه را وارد کنید:\n\nمثال: <code>100</code>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -3416,15 +3326,13 @@ def start_token_bot():
                 # ── هدیه پنل: انتخاب نوع پلن ────────────────────────────────────
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(
-                    types.InlineKeyboardButton("پنل یک ماهه (30 روز)", callback_data="admin_gift_plan_30", style="primary"),
-                    types.InlineKeyboardButton("پنل یک هفته‌ای (7 روز)", callback_data="admin_gift_plan_7", style="primary"),
-                    types.InlineKeyboardButton("پنل یک روزه (1 روز)", callback_data="admin_gift_plan_1", style="primary",
-                        icon_custom_emoji_id=get_emoji_id("calendar"))
+                    types.InlineKeyboardButton("📅 پنل یک ماهه (30 روز)", callback_data="admin_gift_plan_30", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک هفته‌ای (7 روز)", callback_data="admin_gift_plan_7", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک روزه (1 روز)", callback_data="admin_gift_plan_1", style="primary")
                 )
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>هدیه پنل</b>\n\n"
+                    "📋 <b>هدیه پنل</b>\n\n"
                     "نوع پنل هدیه را انتخاب کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -3443,10 +3351,9 @@ def start_token_bot():
                     "data": {"gift_type": "panel", "days": days, "plan_label": plan_label}
                 }
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    f"<b>پنل {plan_label}</b>\n\n"
+                    f"📋 <b>پنل {plan_label}</b>\n\n"
                     "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -3460,7 +3367,7 @@ def start_token_bot():
                 gift_key = data[len("admin_gift_confirm_"):]
                 gift_info = _owner_states.get(call.from_user.id, {}).get("gift_pending")
                 if not gift_info or gift_info.get("key") != gift_key:
-                    _bot.answer_callback_query(call.id, "اطلاعات هدیه منقضی شده. دوباره تلاش کنید.", show_alert=True)
+                    _bot.answer_callback_query(call.id, "❌ اطلاعات هدیه منقضی شده. دوباره تلاش کنید.", show_alert=True)
                     return
 
                 tg_id = gift_info["tg_id"]
@@ -3471,24 +3378,24 @@ def start_token_bot():
                     amount = gift_info["amount"]
                     db.add_tokens(account["id"], amount)
                     new_balance = db.get_token_balance(account["id"])
-                    gift_desc = f"{amount} الماس"
+                    gift_desc = f"💎 {amount} الماس"
                     try:
                         _bot.send_message(
                             tg_id,
-                            "<b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
-                            "مشخصات هدیه:\n"
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n"
                             f"╔══════════════════╗\n"
-                            f"  {pe('diamond', '💎')} <b>الماس هدیه:</b> {amount} الماس\n"
-                            f"  {pe('diamond', '💰')} <b>موجودی جدید:</b> {new_balance} الماس\n"
+                            f"  💎 <b>الماس هدیه:</b> {amount} الماس\n"
+                            f"  💰 <b>موجودی جدید:</b> {new_balance} الماس\n"
                             f"╚══════════════════╝"
                         )
                     except Exception:
                         pass
                     admin_msg = (
-                        "<b>هدیه با موفقیت ارسال شد!</b>\n\n"
-                        f"کاربر: <b>{account['username']}</b>\n"
-                        f"هدیه: <b>{amount} الماس</b>\n"
-                        f"موجودی جدید: <b>{new_balance}</b>"
+                        f"✅ <b>هدیه با موفقیت ارسال شد!</b>\n\n"
+                        f"👤 کاربر: <b>{account['username']}</b>\n"
+                        f"💎 هدیه: <b>{amount} الماس</b>\n"
+                        f"💰 موجودی جدید: <b>{new_balance}</b>"
                     )
                 else:
                     days = gift_info["days"]
@@ -3496,44 +3403,43 @@ def start_token_bot():
                     db.set_subscription(account["id"], "gift", days)
                     sub = db.get_subscription(account["id"])
                     end_date = sub.get("end_date", "نامشخص") if sub else "نامشخص"
-                    gift_desc = f"پنل {plan_label}"
+                    gift_desc = f"📋 پنل {plan_label}"
                     try:
                         _bot.send_message(
                             tg_id,
-                            "<b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
-                            "مشخصات هدیه:\n"
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n"
                             f"╔══════════════════╗\n"
-                            f"  {pe('edit_box', '📋')} <b>پنل هدیه:</b> {plan_label} ({days} روز)\n"
-                            f"  {pe('calendar', '📅')} <b>تاریخ انقضا:</b> {end_date}\n"
+                            f"  📋 <b>پنل هدیه:</b> {plan_label} ({days} روز)\n"
+                            f"  📅 <b>تاریخ انقضا:</b> {end_date}\n"
                             f"╚══════════════════╝"
                         )
                     except Exception:
                         pass
                     admin_msg = (
-                        "<b>هدیه با موفقیت ارسال شد!</b>\n\n"
-                        f"کاربر: <b>{account['username']}</b>\n"
-                        f"هدیه: <b>پنل {plan_label}</b>\n"
-                        f"انقضا: <b>{end_date}</b>"
+                        f"✅ <b>هدیه با موفقیت ارسال شد!</b>\n\n"
+                        f"👤 کاربر: <b>{account['username']}</b>\n"
+                        f"📋 هدیه: <b>پنل {plan_label}</b>\n"
+                        f"📅 انقضا: <b>{end_date}</b>"
                     )
 
                 _owner_states.pop(call.from_user.id, None)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="admin_panel", style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="primary"))
                 _bot.edit_message_text(
                     admin_msg,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
                 )
-                _bot.answer_callback_query(call.id, "هدیه ارسال شد!", show_alert=False)
+                _bot.answer_callback_query(call.id, "✅ هدیه ارسال شد!", show_alert=False)
                 return
 
             elif data == "admin_gift_cancel":
                 _owner_states.pop(call.from_user.id, None)
                 markup = _admin_panel_keyboard()
                 _bot.edit_message_text(
-                    "<b>عملیات هدیه لغو شد.</b>",
+                    "❌ <b>عملیات هدیه لغو شد.</b>",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -3547,8 +3453,7 @@ def start_token_bot():
                 if state_info.get("state") == "guide_type":
                     state_info["state"] = "guide_send_media"
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_guide_manage", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
                 _bot.edit_message_text(
                     "🎥 <b>ارسال آموزش تصویری</b>\n\n"
                     "ویدیو یا عکس آموزشی را در همین پیوی ارسال کنید:",
@@ -3562,10 +3467,9 @@ def start_token_bot():
                 if state_info.get("state") == "guide_type":
                     state_info["state"] = "guide_send_text"
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_guide_manage", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
                 _bot.edit_message_text(
-                    "<b>ارسال آموزش متنی</b>\n\n"
+                    "📝 <b>ارسال آموزش متنی</b>\n\n"
                     "متن آموزش را ارسال کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -3581,16 +3485,15 @@ def start_token_bot():
                     guides = []
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
+                            f"❌ حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
                 else:
-                    txt = "<b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
+                    txt = "📚 <b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="admin_guide_add", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(txt, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -3600,10 +3503,9 @@ def start_token_bot():
                 # ── شروع فلوی افزودن راهنما ────────────────────────────────────
                 _owner_states[call.from_user.id] = {"state": "guide_name", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_guide_manage", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
                 _bot.edit_message_text(
-                    "<b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
+                    "📚 <b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
                 return
@@ -3622,19 +3524,18 @@ def start_token_bot():
                 # نمایش دوباره لیست
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
+                            f"❌ حذف «{g['name']}»", callback_data=f"admin_guide_del_{i}", style="danger"))
                 else:
-                    txt = "<b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
+                    txt = "📚 <b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="admin_guide_add", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(txt, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id, "آموزش حذف شد")
+                _bot.answer_callback_query(call.id, "✅ آموزش حذف شد")
                 return
 
             elif data == "admin_welcome_settings":
@@ -3644,31 +3545,30 @@ def start_token_bot():
                 preview = (cur_text[:120] + "...") if len(cur_text) > 120 else cur_text
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(
-                    types.InlineKeyboardButton("تغییر متن خوش‌آمد", callback_data="admin_welcome_edit_text", style="primary"),
+                    types.InlineKeyboardButton("✏️ تغییر متن خوش‌آمد", callback_data="admin_welcome_edit_text", style="primary"),
                     types.InlineKeyboardButton("🖼 تغییر عکس خوش‌آمد", callback_data="admin_welcome_edit_photo", style="primary"),
                 )
                 if cur_photo:
                     markup.add(types.InlineKeyboardButton("🗑 حذف عکس خوش‌آمد", callback_data="admin_welcome_del_photo", style="danger"))
                 markup.add(types.InlineKeyboardButton("👁 پیش‌نمایش", callback_data="admin_welcome_preview", style="success"))
                 markup.add(types.InlineKeyboardButton("🔄 بازگشت به پیش‌فرض", callback_data="admin_welcome_reset", style="danger"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
 
                 info = (
-                    "<b>تنظیمات پیام خوش‌آمد</b>\n\n"
+                    "✏️ <b>تنظیمات پیام خوش‌آمد</b>\n\n"
                     f"{'🖼 عکس: تنظیم شده ✅' if cur_photo else '🖼 عکس: تنظیم نشده ❌'}\n\n"
-                    f"<b>متن فعلی:</b>\n<code>{preview or '(پیش‌فرض)'}</code>\n\n"
+                    f"📝 <b>متن فعلی:</b>\n<code>{preview or '(پیش‌فرض)'}</code>\n\n"
                     "━━━━━━━━━━━━━━━━\n"
-                    "<b>متغیرهای قابل استفاده:</b>\n"
-                    f"  <code>{name}</code> — یوزرنیم کاربر\n"
-                    f"  <code>{name_full}</code> — نام کامل تلگرام\n"
-                    f"  <code>{mention}</code> — منشن با نام\n"
-                    f"  <code>{tag}</code> — @یوزرنیم\n"
-                    f"  <code>{tg_id}</code> — ایدی عددی\n"
-                    f"  <code>{time}</code> — وقت تهران\n"
-                    f"  <code>{balance}</code> — موجودی الماس\n"
-                    f"  <code>{total_earned}</code> — کل دریافتی\n"
-                    f"  <code>{sub_status}</code> — وضعیت اشتراک"
+                    "📌 <b>متغیرهای قابل استفاده:</b>\n"
+                    "  <code>{name}</code> — یوزرنیم کاربر\n"
+                    "  <code>{name_full}</code> — نام کامل تلگرام\n"
+                    "  <code>{mention}</code> — منشن با نام\n"
+                    "  <code>{tag}</code> — @یوزرنیم\n"
+                    "  <code>{tg_id}</code> — ایدی عددی\n"
+                    "  <code>{time}</code> — وقت تهران\n"
+                    "  <code>{balance}</code> — موجودی الماس\n"
+                    "  <code>{total_earned}</code> — کل دریافتی\n"
+                    "  <code>{sub_status}</code> — وضعیت اشتراک"
                 )
                 _bot.edit_message_text(info,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
@@ -3678,15 +3578,14 @@ def start_token_bot():
             elif data == "admin_welcome_edit_text":
                 _owner_states[call.from_user.id] = {"state": "welcome_edit_text", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_welcome_settings", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger"))
                 _bot.edit_message_text(
-                    "<b>تغییر متن خوش‌آمد</b>\n\n"
+                    "✏️ <b>تغییر متن خوش‌آمد</b>\n\n"
                     "متن جدید را ارسال کنید.\n\n"
                     "متغیرهای قابل استفاده:\n"
-                    f"<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
-                    f"<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
-                    f"<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>",
+                    "<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
+                    "<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
+                    "<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
                 return
@@ -3694,8 +3593,7 @@ def start_token_bot():
             elif data == "admin_welcome_edit_photo":
                 _owner_states[call.from_user.id] = {"state": "welcome_edit_photo", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_welcome_settings", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_welcome_settings", style="danger"))
                 _bot.edit_message_text(
                     "🖼 <b>تغییر عکس خوش‌آمد</b>\n\n"
                     "عکس جدید را ارسال کنید.\n"
@@ -3707,20 +3605,18 @@ def start_token_bot():
             elif data == "admin_welcome_del_photo":
                 db.set_global_setting("welcome_photo_id", "")
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_welcome_settings", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
-                _bot.edit_message_text("عکس خوش‌آمد حذف شد.",
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_welcome_settings", style="danger"))
+                _bot.edit_message_text("✅ عکس خوش‌آمد حذف شد.",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id, "حذف شد")
+                _bot.answer_callback_query(call.id, "✅ حذف شد")
                 return
 
             elif data == "admin_welcome_reset":
                 db.set_global_setting("welcome_text", "")
                 db.set_global_setting("welcome_photo_id", "")
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_welcome_settings", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
-                _bot.edit_message_text("متن و عکس خوش‌آمد به پیش‌فرض بازگشت.",
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_welcome_settings", style="danger"))
+                _bot.edit_message_text("✅ متن و عکس خوش‌آمد به پیش‌فرض بازگشت.",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
                 return
@@ -3728,16 +3624,16 @@ def start_token_bot():
             elif data == "admin_welcome_preview":
                 # پیش‌نمایش برای خود مالک
                 default_welcome = (
-                    f"سلام {name}!\n\n"
-                    f"وقت تهران: {time}\n\n"
-                    f"موجودی الماس: {balance}\n"
-                    f"کل دریافتی: {total_earned}\n\n"
-                    f"اشتراک سلف:\n{sub_status}"
+                    "👋 سلام {name}!\n\n"
+                    "🕐 وقت تهران: {time}\n\n"
+                    "💎 موجودی الماس: {balance}\n"
+                    "📊 کل دریافتی: {total_earned}\n\n"
+                    "📦 اشتراک سلف:\n{sub_status}"
                 )
                 template = db.get_global_setting("welcome_text", default_welcome) or default_welcome
                 tg_user = call.from_user
                 full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
-                mention = f"<a href=f'tg://user?id={tg_user.id}'>{full_name}</a>"
+                mention = f"<a href='tg://user?id={tg_user.id}'>{full_name}</a>"
                 try:
                     preview_text = template.format(
                         name=tg_user.username or "مالک",
@@ -3748,14 +3644,13 @@ def start_token_bot():
                         time=_now_tehran().strftime("%Y/%m/%d — %H:%M"),
                         balance="999",
                         total_earned="9999",
-                        sub_status="فعال — پیش‌نمایش",
+                        sub_status="✅ فعال — پیش‌نمایش",
                     )
                 except Exception as fmt_err:
-                    preview_text = f"خطا در قالب‌بندی: {fmt_err}"
+                    preview_text = f"❌ خطا در قالب‌بندی: {fmt_err}"
                 welcome_photo = db.get_global_setting("welcome_photo_id", "")
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_welcome_settings", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_welcome_settings", style="danger"))
                 if welcome_photo:
                     try:
                         _bot.send_photo(call.message.chat.id, welcome_photo,
@@ -3775,7 +3670,7 @@ def start_token_bot():
                 admins = db.get_sub_admins()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if admins:
-                    text_lines = [f"<b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
+                    text_lines = [f"👮 <b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
                     for a in admins:
                         name = a.get("name") or "بدون نام"
                         tg_id_a = a["telegram_id"]
@@ -3783,17 +3678,16 @@ def start_token_bot():
                         perm_count = len([p for p in perms.split(",") if p]) if perms else 0
                         text_lines.append(f"• {name} — <code>{tg_id_a}</code> | {perm_count} دسترسی")
                         markup.add(types.InlineKeyboardButton(
-                            f"دسترسی‌های {name}", callback_data=f"admin_perm_edit_{tg_id_a}", style="primary"
+                            f"🔑 دسترسی‌های {name}", callback_data=f"admin_perm_edit_{tg_id_a}", style="primary"
                         ))
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف {name}", callback_data=f"admin_del_admin_{tg_id_a}", style="danger"
+                            f"❌ حذف {name}", callback_data=f"admin_del_admin_{tg_id_a}", style="danger"
                         ))
                     admin_text = "\n".join(text_lines)
                 else:
-                    admin_text = "<b>ادمین‌های فرعی</b>\n\nهنوز هیچ ادمینی اضافه نشده."
+                    admin_text = "👮 <b>ادمین‌های فرعی</b>\n\nهنوز هیچ ادمینی اضافه نشده."
                 markup.add(types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
                     admin_text,
                     chat_id=call.message.chat.id,
@@ -3806,10 +3700,9 @@ def start_token_bot():
             elif data == "admin_add_admin":
                 _owner_states[call.from_user.id] = {"state": "add_admin_id", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_manage_admins", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_manage_admins", style="danger"))
                 _bot.edit_message_text(
-                    "<b>افزودن ادمین فرعی</b>\n\n"
+                    "👮 <b>افزودن ادمین فرعی</b>\n\n"
                     "ایدی عددی تلگرام ادمین جدید را وارد کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -3825,27 +3718,26 @@ def start_token_bot():
                 admins = db.get_sub_admins()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if admins:
-                    text_lines = [f"<b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
+                    text_lines = [f"👮 <b>ادمین‌های فرعی ({len(admins)} نفر):</b>\n"]
                     for a in admins:
                         name = a.get("name") or "بدون نام"
                         tg_id = a["telegram_id"]
                         text_lines.append(f"• {name} — <code>{tg_id}</code>")
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
+                            f"❌ حذف {name}", callback_data=f"admin_del_admin_{tg_id}", style="danger"
                         ))
                     admin_text = "\n".join(text_lines)
                 else:
-                    admin_text = "<b>ادمین‌های فرعی</b>\n\nهنوز هیچ ادمینی اضافه نشده."
+                    admin_text = "👮 <b>ادمین‌های فرعی</b>\n\nهنوز هیچ ادمینی اضافه نشده."
                 markup.add(types.InlineKeyboardButton("➕ افزودن ادمین", callback_data="admin_add_admin", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "ادمین حذف شد.\n\n" + admin_text,
+                    "✅ ادمین حذف شد.\n\n" + admin_text,
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
                 )
-                _bot.answer_callback_query(call.id, "ادمین حذف شد")
+                _bot.answer_callback_query(call.id, "✅ ادمین حذف شد")
                 return
 
             elif data.startswith("admin_perm_edit_"):
@@ -3853,7 +3745,7 @@ def start_token_bot():
                 edit_tg_id = int(data[len("admin_perm_edit_"):])
                 admin_info = db.get_sub_admin(edit_tg_id)
                 if not admin_info:
-                    _bot.answer_callback_query(call.id, "ادمین یافت نشد", show_alert=True)
+                    _bot.answer_callback_query(call.id, "❌ ادمین یافت نشد", show_alert=True)
                     return
                 current_perms = set((admin_info.get("permissions") or "").split(","))
                 current_perms.discard("")
@@ -3861,18 +3753,17 @@ def start_token_bot():
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 for perm_key, perm_label in db.ADMIN_PERMISSIONS:
                     has_perm = perm_key in current_perms
-                    icon = "" if has_perm else "⬜️"
+                    icon = "✅" if has_perm else "⬜️"
                     markup.add(types.InlineKeyboardButton(
                         f"{icon} {perm_label}",
                         callback_data=f"admin_perm_toggle_{edit_tg_id}_{perm_key}",
                         style="success" if has_perm else "primary"
                     ))
-                markup.add(types.InlineKeyboardButton("بازگشت به ادمین‌ها", callback_data="admin_manage_admins", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت به ادمین‌ها", callback_data="admin_manage_admins", style="danger"))
                 _bot.edit_message_text(
-                    f"<b>دسترسی‌های ادمین: {name}</b>\n<code>{edit_tg_id}</code>\n\n"
+                    f"🔑 <b>دسترسی‌های ادمین: {name}</b>\n<code>{edit_tg_id}</code>\n\n"
                     "برای فعال/غیرفعال کردن هر بخش روی آن کلیک کنید:\n"
-                    "= دسترسی دارد | ⬜️ = دسترسی ندارد",
+                    "✅ = دسترسی دارد | ⬜️ = دسترسی ندارد",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -3889,15 +3780,15 @@ def start_token_bot():
                 perm_key = parts[1]
                 admin_info = db.get_sub_admin(toggle_tg_id)
                 if not admin_info:
-                    return _bot.answer_callback_query(call.id, "ادمین یافت نشد", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ ادمین یافت نشد", show_alert=True)
                 current_perms = set((admin_info.get("permissions") or "").split(","))
                 current_perms.discard("")
                 if perm_key in current_perms:
                     current_perms.discard(perm_key)
-                    msg = "دسترسی حذف شد"
+                    msg = "❌ دسترسی حذف شد"
                 else:
                     current_perms.add(perm_key)
-                    msg = "دسترسی اضافه شد"
+                    msg = "✅ دسترسی اضافه شد"
                 db.update_sub_admin_permissions(toggle_tg_id, ",".join(current_perms))
                 _bot.answer_callback_query(call.id, msg)
                 # رفرش صفحه دسترسی‌ها
@@ -3909,19 +3800,17 @@ def start_token_bot():
                 missions = db.get_active_missions()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if missions:
-                    text = "<b>ماموریت‌های فعال:</b>\n\n"
+                    text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
-                        text += f"{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
+                        text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
                         # 🔴 دکمه حذف با رنگ danger (قرمز)
-                        markup.add(types.InlineKeyboardButton(f"حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}", style="danger"),
-                            icon_custom_emoji_id=get_emoji_id("cross_red"))
+                        markup.add(types.InlineKeyboardButton(f"❌ حذف {m['channel_username']}", callback_data=f"del_mission_{m['id']}", style="danger"))
                 else:
-                    text = "هیچ ماموریتی تعریف نشده.\n\n"
+                    text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
                 # 🟢 دکمه افزودن ماموریت با رنگ success (سبز)
                 markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="add_mission_prompt", style="success"))
                 # 🔴 دکمه بازگشت با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -3930,7 +3819,7 @@ def start_token_bot():
             elif data.startswith("del_mission_"):
                 mid = int(data.split("_")[2])
                 db.remove_mission(mid)
-                _bot.answer_callback_query(call.id, "ماموریت حذف شد")
+                _bot.answer_callback_query(call.id, "✅ ماموریت حذف شد")
                 call.data = "admin_missions"
                 callback_admin(call)
                 return
@@ -3939,10 +3828,9 @@ def start_token_bot():
                 _owner_states[call.from_user.id] = {"state": "mission_channel", "data": {}}
                 markup = types.InlineKeyboardMarkup()
                 # 🔴 دکمه لغو با رنگ danger (قرمز)
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_missions", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_missions", style="danger"))
                 _bot.edit_message_text(
-                    "<b>افزودن ماموریت</b>\n\nآیدی کانال را ارسال کنید (با @):\nمثال: <code>@mychannel</code>",
+                    "🎯 <b>افزودن ماموریت</b>\n\nآیدی کانال را ارسال کنید (با @):\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     parse_mode="HTML", reply_markup=markup
                 )
@@ -3963,23 +3851,22 @@ def start_token_bot():
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(types.InlineKeyboardButton("➕ ایجاد قرعه‌کشی جدید", callback_data="lottery_create", style="success"))
                 
-                text = "<b>مدیریت قرعه‌کشی</b>\n\n"
+                text = "🎰 <b>مدیریت قرعه‌کشی</b>\n\n"
                 if active:
-                    text += "قرعه‌کشی‌های فعال:\n"
+                    text += "📋 قرعه‌کشی‌های فعال:\n"
                     for lot in active:
-                        status = "فعال" if lot.get("status") == "active" else f"{pe('checkmark_green', '✅')} پایان یافته"
+                        status = "🟢 فعال" if lot.get("status") == "active" else "✅ پایان یافته"
                         text += f"\n• {lot.get('start_time','?')} تا {lot.get('end_time','?')} — {lot.get('winners_count','?')} برنده — {status}"
                         if lot.get("status") == "active":
                             markup.add(types.InlineKeyboardButton(
-                                f"لغو قرعه‌کشی {lot.get('start_time','?')}",
+                                f"❌ لغو قرعه‌کشی {lot.get('start_time','?')}",
                                 callback_data=f"lottery_cancel_{lot.get('id','')}",
                                 style="danger"
                             ))
                 else:
                     text += "هیچ قرعه‌کشی فعالی وجود ندارد."
                 
-                markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(text, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -3987,11 +3874,10 @@ def start_token_bot():
             elif data == "lottery_create":
                 _owner_states[uid] = {"state": "lottery_start_time", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_lottery", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger"))
                 _bot.edit_message_text(
-                    "<b>ایجاد قرعه‌کشی</b>\n\n"
-                    "<b>مرحله ۱ از ۵: ساعت شروع</b>\n\n"
+                    "🎰 <b>ایجاد قرعه‌کشی</b>\n\n"
+                    "📝 <b>مرحله ۱ از ۵: ساعت شروع</b>\n\n"
                     "ساعت شروع قرعه‌کشی را ارسال کنید:\n"
                     "مثال: <code>22:00</code>",
                     chat_id=call.message.chat.id,
@@ -4010,13 +3896,12 @@ def start_token_bot():
                     db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
                 except Exception:
                     pass
-                _bot.answer_callback_query(call.id, "قرعه‌کشی لغو شد", show_alert=True)
+                _bot.answer_callback_query(call.id, "✅ قرعه‌کشی لغو شد", show_alert=True)
                 # برگشت به صفحه قرعه‌کشی
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(types.InlineKeyboardButton("➕ ایجاد قرعه‌کشی جدید", callback_data="lottery_create", style="success"))
-                markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
-                _bot.edit_message_text(f"<b>مدیریت قرعه‌کشی</b>\n\n{pe('checkmark_green', '✅')} قرعه‌کشی لغو شد.",
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="danger"))
+                _bot.edit_message_text("🎰 <b>مدیریت قرعه‌کشی</b>\n\n✅ قرعه‌کشی لغو شد.",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
 
             elif data == "lottery_confirm":
@@ -4062,18 +3947,16 @@ def start_token_bot():
                 db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
                 _owner_states.pop(uid, None)
                 
-                _bot.answer_callback_query(call.id, "قرعه‌کشی ثبت شد!", show_alert=True)
+                _bot.answer_callback_query(call.id, "✅ قرعه‌کشی ثبت شد!", show_alert=True)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("مدیریت قرعه‌کشی", callback_data="admin_lottery", style="success"),
-                    icon_custom_emoji_id=get_emoji_id("game_controller"))
-                markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🎰 مدیریت قرعه‌کشی", callback_data="admin_lottery", style="success"))
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="admin_panel", style="danger"))
                 _bot.edit_message_text(
-                    "<b>قرعه‌کشی با موفقیت ثبت شد!</b>\n\n"
-                    f"شروع: <b>{lot_data['start_time']}</b>\n"
-                    f"پایان: <b>{lot_data['end_time']}</b>\n"
-                    f"تعداد برنده: <b>{lot_data['winners_count']} نفر</b>\n"
-                    "جوایز: {' | '.join(lot_data['prizes'])}\n\n"
+                    f"✅ <b>قرعه‌کشی با موفقیت ثبت شد!</b>\n\n"
+                    f"⏰ شروع: <b>{lot_data['start_time']}</b>\n"
+                    f"⏰ پایان: <b>{lot_data['end_time']}</b>\n"
+                    f"🏆 تعداد برنده: <b>{lot_data['winners_count']} نفر</b>\n"
+                    f"🎁 جوایز: {' | '.join(lot_data['prizes'])}\n\n"
                     f"ربات در ساعت {lot_data['start_time']} قرعه‌کشی را اعلام می‌کند.",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -4081,12 +3964,12 @@ def start_token_bot():
                 )
 
             else:
-                _bot.answer_callback_query(call.id, "گزینه نامعتبر")
+                _bot.answer_callback_query(call.id, "❌ گزینه نامعتبر")
         
         except Exception as e:
-            print(f"خطا در callback_admin: {e}")
+            print(f"❌ خطا در callback_admin: {e}")
             try:
-                _bot.answer_callback_query(call.id, f"خطا: {str(e)[:100]}", show_alert=True)
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
             except: 
                 pass
 
@@ -4105,7 +3988,7 @@ def start_token_bot():
             if state == "broadcast_msg":
                 _owner_states.pop(message.from_user.id, None)
                 tg_ids = db.get_all_telegram_ids()
-                _bot.reply_to(message, f"در حال ارسال به {len(tg_ids)} کاربر...")
+                _bot.reply_to(message, f"⏳ در حال ارسال به {len(tg_ids)} کاربر...")
                 sent, failed = 0, 0
                 for tid in tg_ids:
                     try:
@@ -4119,7 +4002,7 @@ def start_token_bot():
                     except Exception:
                         failed += 1
                 _bot.reply_to(message,
-                    f"ارسال تمام شد!\n\n📤 موفق: {sent}\n{pe('cross_red', '❌')} بلاک‌شده/خطا: {failed}",
+                    f"✅ ارسال تمام شد!\n\n📤 موفق: {sent}\n❌ بلاک‌شده/خطا: {failed}",
                     reply_markup=_owner_keyboard())
                 return
 
@@ -4128,31 +4011,31 @@ def start_token_bot():
                     text = "@" + text
                 if db.add_forced_channel(text):
                     cache.invalidate("membership_")
-                    _bot.reply_to(message, f"چنل <b>{text}</b> اضافه شد.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"✅ چنل <b>{text}</b> اضافه شد.", reply_markup=_owner_keyboard())
                 else:
-                    _bot.reply_to(message, "خطا یا تکراری است.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"⚠️ خطا یا تکراری است.", reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
             
             elif state == "wc_team1":
                 state_data["data"]["team1"] = text
                 state_data["state"] = "wc_team2"
-                _bot.reply_to(message, f"تیم اول: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله  از ۴:\nنام <b>تیم دوم</b> را ارسال کنید:")
+                _bot.reply_to(message, f"✅ تیم اول: <b>{text}</b>\n\n📝 مرحله  از ۴:\nنام <b>تیم دوم</b> را ارسال کنید:")
             
             elif state == "wc_team2":
                 state_data["data"]["team2"] = text
                 state_data["state"] = "wc_time"
-                _bot.reply_to(message, f"تیم دوم: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله  از ۴:\n ساعت بازی را ارسال کنید:\n\nمثال: <code>20:30</code>")
+                _bot.reply_to(message, f"✅ تیم دوم: <b>{text}</b>\n\n📝 مرحله  از ۴:\n ساعت بازی را ارسال کنید:\n\nمثال: <code>20:30</code>")
             
             elif state == "wc_time":
                 state_data["data"]["time"] = text
                 state_data["state"] = "wc_bet"
-                _bot.reply_to(message, f"ساعت: <b>{text}</b>\n\n{pe('edit_box', '📝')} مرحله ۴ از ۴:\n{pe('diamond', '💎')} مبلغ شرط (الماس) را ارسال کنید:\n\nمثال: <code>10</code>")
+                _bot.reply_to(message, f"✅ ساعت: <b>{text}</b>\n\n📝 مرحله ۴ از ۴:\n💎 مبلغ شرط (الماس) را ارسال کنید:\n\nمثال: <code>10</code>")
             
             elif state == "wc_bet":
                 try:
                     bet_amount = int(text)
                 except:
-                    return _bot.reply_to(message, "مبلغ باید عدد باشد. دوباره تلاش کنید:")
+                    return _bot.reply_to(message, "❌ مبلغ باید عدد باشد. دوباره تلاش کنید:")
                 
                 data = state_data["data"]
                 challenge_id = db.create_world_cup_challenge(data["team1"], data["team2"], data["time"], bet_amount)
@@ -4165,45 +4048,44 @@ def start_token_bot():
                 )
                 # 🔴 دکمه تیم دوم با رنگ danger (قرمز)
                 markup.add(
-                    types.InlineKeyboardButton(f"{data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}", style="danger",
-                        icon_custom_emoji_id=get_emoji_id("exclamation_red"))
+                    types.InlineKeyboardButton(f"🔴 {data['team2']}", callback_data=f"bet_wc_{challenge_id}_{data['team2']}", style="danger")
                 )
                 
                 try:
                     msg = _bot.send_message(group,
                         f"⚽️ <b>چالش جام جهانی!</b>\n\n"
                         f"🆚 <b>{data['team1']}</b> در برابر <b>{data['team2']}</b>\n"
-                        f"ساعت: <b>{data['time']}</b>\n"
-                        f"مبلغ شرط: <b>{bet_amount} الماس</b>\n\n"
+                        f"⏰ ساعت: <b>{data['time']}</b>\n"
+                        f"💎 مبلغ شرط: <b>{bet_amount} الماس</b>\n\n"
                         f"کدام تیم برنده می‌شود؟ شرط ببندید!",
                         reply_markup=markup)
                     db.update_challenge_message(challenge_id, msg.message_id, msg.chat.id)
                     _bot.reply_to(message, 
-                        "چالش با موفقیت ایجاد شد!\n\n"
+                        f"✅ چالش با موفقیت ایجاد شد!\n\n"
                         f"🆚 {data['team1']} vs {data['team2']}\n"
-                        f"{data['time']} | {pe('diamond', '💎')} {bet_amount}\n"
-                        f"ID چالش: <code>{challenge_id}</code>",
+                        f"⏰ {data['time']} | 💎 {bet_amount}\n"
+                        f"📢 ID چالش: <code>{challenge_id}</code>",
                         reply_markup=_owner_keyboard())
                 except Exception as e:
-                    _bot.reply_to(message, f"خطا در ارسال به گروه: {e}\nمطمئن شوید ربات در {group} ادمین است.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"❌ خطا در ارسال به گروه: {e}\nمطمئن شوید ربات در {group} ادمین است.", reply_markup=_owner_keyboard())
                 
                 _owner_states.pop(message.from_user.id, None)
             
             elif state == "transfer_user":
                 state_data["data"]["username"] = text.lstrip("@")
                 state_data["state"] = "transfer_amount"
-                _bot.reply_to(message, f"کاربر: <b>{text}</b>\n\n{pe('diamond', '💎')} مبلغ الماس را ارسال کنید:")
+                _bot.reply_to(message, f"📝 کاربر: <b>{text}</b>\n\n💎 مبلغ الماس را ارسال کنید:")
             
             elif state == "transfer_amount":
                 try:
                     amount = int(text)
                 except:
-                    return _bot.reply_to(message, "مبلغ باید عدد باشد:")
+                    return _bot.reply_to(message, "❌ مبلغ باید عدد باشد:")
                 
                 username = state_data["data"]["username"]
                 to_account = db.get_account_by_username(username)
                 if not to_account:
-                    _bot.reply_to(message, f"کاربر f'{username}' یافت نشد.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"❌ کاربر '{username}' یافت نشد.", reply_markup=_owner_keyboard())
                     _owner_states.pop(message.from_user.id, None)
                     return
                 
@@ -4213,30 +4095,30 @@ def start_token_bot():
                 to_tg_id = db.get_telegram_id_by_owner(to_account["id"])
                 if to_tg_id:
                     try:
-                        _bot.send_message(to_tg_id, f"<b>{amount} الماس</b> از طرف سیستم دریافت کردید!\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>")
+                        _bot.send_message(to_tg_id, f"🎁 <b>{amount} الماس</b> از طرف سیستم دریافت کردید!\n💎 موجودی جدید: <b>{new_balance}</b>")
                     except: 
                         pass
                 
                 _bot.reply_to(message, 
-                    f"<b>{amount} الماس</b> به <b>{to_account['username']}</b> داده شد.\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>",
+                    f"✅ <b>{amount} الماس</b> به <b>{to_account['username']}</b> داده شد.\n💎 موجودی جدید: <b>{new_balance}</b>",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
             
             elif state == "give_user":
                 state_data["data"]["username"] = text.lstrip("@")
                 state_data["state"] = "give_amount"
-                _bot.reply_to(message, f"کاربر: <b>{text}</b>\n\n{pe('diamond', '💎')} مبلغ الماس را ارسال کنید:")
+                _bot.reply_to(message, f"📝 کاربر: <b>{text}</b>\n\n💎 مبلغ الماس را ارسال کنید:")
             
             elif state == "give_amount":
                 try:
                     amount = int(text)
                 except:
-                    return _bot.reply_to(message, "مبلغ باید عدد باشد:")
+                    return _bot.reply_to(message, "❌ مبلغ باید عدد باشد:")
                 
                 username = state_data["data"]["username"]
                 account = db.get_account_by_username(username)
                 if not account:
-                    _bot.reply_to(message, f"کاربر f'{username}' یافت نشد.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, f"❌ کاربر '{username}' یافت نشد.", reply_markup=_owner_keyboard())
                     _owner_states.pop(message.from_user.id, None)
                     return
                 
@@ -4247,13 +4129,13 @@ def start_token_bot():
                 tg_id = db.get_telegram_id_by_owner(account["id"])
                 if tg_id:
                     try:
-                        _bot.send_message(tg_id, f"<b>{amount} الماس</b> از طرف مالک دریافت کردید!\n{pe('diamond', '💎')} موجودی جدید: <b>{new_balance}</b>")
+                        _bot.send_message(tg_id, f"🎁 <b>{amount} الماس</b> از طرف مالک دریافت کردید!\n💎 موجودی جدید: <b>{new_balance}</b>")
                     except: 
                         pass
                 
                 _bot.reply_to(message, 
-                    f"<b>{amount}</b> الماس به <b>{account['username']}</b> داده شد.\n"
-                    f"موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
+                    f"✅ <b>{amount}</b> الماس به <b>{account['username']}</b> داده شد.\n"
+                    f"💎 موجودی جدید: <b>{new_balance}</b> (معادل {new_balance * token_price} تومان)",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4262,17 +4144,16 @@ def start_token_bot():
                 try:
                     amount = int(text)
                     if amount <= 0:
-                        return _bot.reply_to(message, "تعداد الماس باید بیشتر از صفر باشد. دوباره وارد کنید:")
+                        return _bot.reply_to(message, "❌ تعداد الماس باید بیشتر از صفر باشد. دوباره وارد کنید:")
                 except ValueError:
-                    return _bot.reply_to(message, "لطفاً یک عدد معتبر وارد کنید:")
+                    return _bot.reply_to(message, "❌ لطفاً یک عدد معتبر وارد کنید:")
                 state_data["data"]["amount"] = amount
                 state_data["state"] = "gift_tg_id"
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_panel", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger"))
                 _bot.reply_to(
                     message,
-                    f"<b>هدیه الماس: {amount} الماس</b>\n\n"
+                    f"💎 <b>هدیه الماس: {amount} الماس</b>\n\n"
                     "ایدی عددی تلگرام کاربر مورد نظر را وارد کنید:",
                     reply_markup=markup
                 )
@@ -4282,13 +4163,13 @@ def start_token_bot():
                 try:
                     tg_id = int(text)
                 except ValueError:
-                    return _bot.reply_to(message, "ایدی عددی باید فقط شامل اعداد باشد. دوباره وارد کنید:")
+                    return _bot.reply_to(message, "❌ ایدی عددی باید فقط شامل اعداد باشد. دوباره وارد کنید:")
 
                 account = db.get_account_by_tg_id(tg_id)
                 if not account:
                     return _bot.reply_to(
                         message,
-                        "کاربری با این ایدی عددی در سیستم یافت نشد.\n"
+                        "❌ کاربری با این ایدی عددی در سیستم یافت نشد.\n"
                         "مطمئن شوید کاربر قبلاً در ربات ثبت‌نام کرده باشد.",
                         reply_markup=_owner_keyboard()
                     )
@@ -4303,11 +4184,11 @@ def start_token_bot():
 
                 if gift_type == "diamond":
                     amount = state_data["data"]["amount"]
-                    gift_desc = f"{amount} الماس"
+                    gift_desc = f"💎 {amount} الماس"
                 else:
                     days = state_data["data"]["days"]
                     plan_label = state_data["data"]["plan_label"]
-                    gift_desc = f"پنل {plan_label} ({days} روز)"
+                    gift_desc = f"📋 پنل {plan_label} ({days} روز)"
 
                 # ذخیره اطلاعات تایید هدیه
                 import hashlib, time
@@ -4324,31 +4205,30 @@ def start_token_bot():
                 state_data["state"] = "gift_awaiting_confirm"
 
                 confirm_text = (
-                    "<b>تایید هدیه</b>\n\n"
-                    f"<b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
+                    f"🎁 <b>تایید هدیه</b>\n\n"
+                    f"👤 <b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
                     f"🆔 <b>ایدی تلگرام:</b> @{account.get('username', '-')}\n"
                     f"🔢 <b>ایدی عددی:</b> <code>{tg_id}</code>\n"
-                    f"<b>پلن باقی‌مانده:</b> {plan_remaining}\n"
-                    f"<b>موجودی:</b> {balance} الماس\n"
-                    f"<b>{gift_desc} هدیه</b>\n\n"
+                    f"📋 <b>پلن باقی‌مانده:</b> {plan_remaining}\n"
+                    f"💰 <b>موجودی:</b> {balance} الماس\n"
+                    f"🎁 <b>{gift_desc} هدیه</b>\n\n"
                     f"آیا تایید می‌کنید؟"
                 )
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("تایید", callback_data=f"admin_gift_confirm_{gift_key}", style="success"),
-                    types.InlineKeyboardButton("لغو", callback_data="admin_gift_cancel", style="danger",
-                        icon_custom_emoji_id=get_emoji_id("cross_red"))
+                    types.InlineKeyboardButton("✅ تایید", callback_data=f"admin_gift_confirm_{gift_key}", style="success"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="admin_gift_cancel", style="danger")
                 )
                 _bot.reply_to(message, confirm_text, reply_markup=markup)
 
             elif state == "gift_awaiting_confirm":
-                _bot.reply_to(message, "لطفاً روی دکمه تایید یا لغو کلیک کنید.")
+                _bot.reply_to(message, "⏳ لطفاً روی دکمه تایید یا لغو کلیک کنید.")
 
             elif state == "set_card":
                 card = text.strip().replace("-", "").replace(" ", "")
                 db.set_global_setting("card_number", card)
                 _bot.reply_to(message,
-                    f"شماره کارت ذخیره شد:\n<code>{card}</code>",
+                    f"✅ شماره کارت ذخیره شد:\n<code>{card}</code>",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4361,24 +4241,24 @@ def start_token_bot():
                 state_data["data"]["channel"] = ch
                 state_data["state"] = "mission_reward"
                 _bot.reply_to(message,
-                    f"کانال: <b>{ch}</b>\n\n{pe('diamond', '💎')} مقدار جایزه (الماس) را ارسال کنید:",
+                    f"✅ کانال: <b>{ch}</b>\n\n💎 مقدار جایزه (الماس) را ارسال کنید:",
                     parse_mode="HTML")
 
             elif state == "mission_reward":
                 try:
                     reward = int(text.strip())
                     if reward < 1:
-                        return _bot.reply_to(message, "جایزه باید بیشتر از ۰ باشد.")
+                        return _bot.reply_to(message, "❌ جایزه باید بیشتر از ۰ باشد.")
                 except ValueError:
-                    return _bot.reply_to(message, "مقدار باید عدد باشد.")
+                    return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
                 ch = state_data.get("data", {}).get("channel")
                 if not ch:
-                    _bot.reply_to(message, "خطا: آیدی کانال یافت نشد. دوباره تلاش کنید.", reply_markup=_owner_keyboard())
+                    _bot.reply_to(message, "❌ خطا: آیدی کانال یافت نشد. دوباره تلاش کنید.", reply_markup=_owner_keyboard())
                     _owner_states.pop(message.from_user.id, None)
                     return
                 db.add_mission(ch, reward)
                 _bot.reply_to(message,
-                    f"ماموریت اضافه شد!\n{pe('arrow_blue', '🔸')} {ch} — {pe('diamond', '💎')}{reward} الماس",
+                    f"✅ ماموریت اضافه شد!\n🔸 {ch} — 💎{reward} الماس",
                     parse_mode="HTML",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
@@ -4387,7 +4267,7 @@ def start_token_bot():
                 try:
                     new_admin_id = int(text.strip())
                 except ValueError:
-                    return _bot.reply_to(message, "ایدی عددی باید فقط شامل اعداد باشد. دوباره وارد کنید:")
+                    return _bot.reply_to(message, "❌ ایدی عددی باید فقط شامل اعداد باشد. دوباره وارد کنید:")
                 # نام ادمین رو از تلگرام بگیریم اگه ممکنه
                 try:
                     chat_info = _bot.get_chat(new_admin_id)
@@ -4400,13 +4280,13 @@ def start_token_bot():
                 try:
                     _bot.send_message(
                         new_admin_id,
-                        "<b>شما به عنوان ادمین اضافه شدید!</b>\n\n"
+                        "👮 <b>شما به عنوان ادمین اضافه شدید!</b>\n\n"
                         "برای دسترسی به پنل مدیریت دستور /subadmin را ارسال کنید."
                     )
                 except Exception:
                     pass
                 _bot.reply_to(message,
-                    f"<b>{name}</b> (<code>{new_admin_id}</code>) به عنوان ادمین اضافه شد.",
+                    f"✅ <b>{name}</b> (<code>{new_admin_id}</code>) به عنوان ادمین اضافه شد.",
                     reply_markup=_owner_keyboard())
                 _owner_states.pop(message.from_user.id, None)
 
@@ -4414,7 +4294,7 @@ def start_token_bot():
                 # ذخیره متن خوش‌آمد جدید
                 new_text = message.text or ""
                 if not new_text.strip():
-                    return _bot.reply_to(message, "متن نمی‌تواند خالی باشد:")
+                    return _bot.reply_to(message, "❌ متن نمی‌تواند خالی باشد:")
                 # اعتبارسنجی متغیرها
                 try:
                     new_text.format(
@@ -4424,17 +4304,16 @@ def start_token_bot():
                     )
                 except KeyError as e:
                     return _bot.reply_to(message,
-                        f"متغیر نامعتبر: <code>{e}</code>\n\n"
+                        f"❌ متغیر نامعتبر: <code>{e}</code>\n\n"
                         "متغیرهای مجاز:\n"
-                        f"<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
-                        f"<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
-                        f"<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>")
+                        "<code>{name}</code>  <code>{name_full}</code>  <code>{mention}</code>\n"
+                        "<code>{tag}</code>  <code>{tg_id}</code>  <code>{time}</code>\n"
+                        "<code>{balance}</code>  <code>{total_earned}</code>  <code>{sub_status}</code>")
                 db.set_global_setting("welcome_text", new_text)
                 _owner_states.pop(message.from_user.id, None)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
-                _bot.reply_to(message, "متن خوش‌آمد ذخیره شد!", reply_markup=markup)
+                markup.add(types.InlineKeyboardButton("🔙 تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary"))
+                _bot.reply_to(message, "✅ متن خوش‌آمد ذخیره شد!", reply_markup=markup)
 
             elif state == "welcome_edit_photo":
                 # ذخیره عکس خوش‌آمد
@@ -4444,31 +4323,28 @@ def start_token_bot():
                 elif message.document and message.document.mime_type and message.document.mime_type.startswith("image"):
                     photo_id = message.document.file_id
                 else:
-                    return _bot.reply_to(message, "لطفاً یک عکس ارسال کنید:")
+                    return _bot.reply_to(message, "❌ لطفاً یک عکس ارسال کنید:")
                 db.set_global_setting("welcome_photo_id", photo_id)
                 _owner_states.pop(message.from_user.id, None)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
-                _bot.reply_to(message, "عکس خوش‌آمد ذخیره شد!", reply_markup=markup)
+                markup.add(types.InlineKeyboardButton("🔙 تنظیمات خوش‌آمد", callback_data="admin_welcome_settings", style="primary"))
+                _bot.reply_to(message, "✅ عکس خوش‌آمد ذخیره شد!", reply_markup=markup)
 
             elif state == "guide_name":
                 # مرحله ۱: دریافت اسم آموزش
                 guide_name = text.strip()
                 if not guide_name:
-                    return _bot.reply_to(message, "اسم آموزش نمی‌تواند خالی باشد:")
+                    return _bot.reply_to(message, "❌ اسم آموزش نمی‌تواند خالی باشد:")
                 state_data["data"]["name"] = guide_name
                 state_data["state"] = "guide_type"
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(
                     types.InlineKeyboardButton("🎥 ارسال آموزش تصویری (ویدیو/عکس)", callback_data="guide_type_media", style="primary"),
-                    types.InlineKeyboardButton("ارسال آموزش متنی", callback_data="guide_type_text", style="success",
-                        icon_custom_emoji_id=get_emoji_id("edit_box"))
+                    types.InlineKeyboardButton("📝 ارسال آموزش متنی", callback_data="guide_type_text", style="success")
                 )
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="admin_guide_manage", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_guide_manage", style="danger"))
                 _bot.reply_to(message,
-                    f"اسم آموزش: <b>{guide_name}</b>\n\n"
+                    f"✅ اسم آموزش: <b>{guide_name}</b>\n\n"
                     "نوع آموزش را انتخاب کنید:",
                     reply_markup=markup)
 
@@ -4487,7 +4363,7 @@ def start_token_bot():
                     file_id = message.document.file_id
                     media_type = "video"
                 else:
-                    return _bot.reply_to(message, "لطفاً یک ویدیو یا عکس ارسال کنید:")
+                    return _bot.reply_to(message, "❌ لطفاً یک ویدیو یا عکس ارسال کنید:")
 
                 # ذخیره به پیوی مالک به عنوان دیتابیس
                 try:
@@ -4511,7 +4387,7 @@ def start_token_bot():
                 db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
                 _owner_states.pop(message.from_user.id, None)
                 _bot.reply_to(message,
-                    f"آموزش «<b>{guide_name}</b>» ({'ویدیو' if media_type == 'video' else 'عکس'}) ذخیره شد.",
+                    f"✅ آموزش «<b>{guide_name}</b>» ({'ویدیو' if media_type == 'video' else 'عکس'}) ذخیره شد.",
                     reply_markup=_owner_keyboard())
 
             elif state == "guide_send_text":
@@ -4519,7 +4395,7 @@ def start_token_bot():
                 import json as _json
                 content = message.text or ""
                 if not content.strip():
-                    return _bot.reply_to(message, "متن آموزش نمی‌تواند خالی باشد:")
+                    return _bot.reply_to(message, "❌ متن آموزش نمی‌تواند خالی باشد:")
                 guide_name = state_data["data"]["name"]
                 raw = db.get_global_setting("guide_list", "[]")
                 try:
@@ -4535,7 +4411,7 @@ def start_token_bot():
                 db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
                 _owner_states.pop(message.from_user.id, None)
                 _bot.reply_to(message,
-                    f"آموزش متنی «<b>{guide_name}</b>» ذخیره شد.",
+                    f"✅ آموزش متنی «<b>{guide_name}</b>» ذخیره شد.",
                     reply_markup=_owner_keyboard())
 
             # ── قرعه‌کشی states ─────────────────────────────────────────────
@@ -4543,15 +4419,15 @@ def start_token_bot():
                 import re as _re
                 t = text.strip()
                 if not _re.match(r"^\d{1,2}:\d{2}$", t):
-                    return _bot.reply_to(message, "فرمت اشتباه است.\nمثال: <code>22:00</code>")
+                    return _bot.reply_to(message, "❌ فرمت اشتباه است.\nمثال: <code>22:00</code>")
                 h, m = map(int, t.split(":"))
                 if not (0 <= h <= 23 and 0 <= m <= 59):
-                    return _bot.reply_to(message, "ساعت نامعتبر است.")
+                    return _bot.reply_to(message, "❌ ساعت نامعتبر است.")
                 state_data["data"]["start_time"] = t
                 state_data["state"] = "lottery_end_time"
                 _bot.reply_to(message,
-                    f"ساعت شروع: <b>{t}</b>\n\n"
-                    "<b>مرحله ۲ از ۵: ساعت پایان</b>\n\n"
+                    f"✅ ساعت شروع: <b>{t}</b>\n\n"
+                    "📝 <b>مرحله ۲ از ۵: ساعت پایان</b>\n\n"
                     "ساعت پایان قرعه‌کشی را ارسال کنید:\n"
                     "مثال: <code>23:00</code>")
 
@@ -4559,36 +4435,36 @@ def start_token_bot():
                 import re as _re
                 t = text.strip()
                 if not _re.match(r"^\d{1,2}:\d{2}$", t):
-                    return _bot.reply_to(message, "فرمت اشتباه است.\nمثال: <code>23:00</code>")
+                    return _bot.reply_to(message, "❌ فرمت اشتباه است.\nمثال: <code>23:00</code>")
                 h, m = map(int, t.split(":"))
                 if not (0 <= h <= 23 and 0 <= m <= 59):
-                    return _bot.reply_to(message, "ساعت نامعتبر است.")
+                    return _bot.reply_to(message, "❌ ساعت نامعتبر است.")
                 state_data["data"]["end_time"] = t
                 state_data["state"] = "lottery_winners_count"
                 _bot.reply_to(message,
-                    f"ساعت پایان: <b>{t}</b>\n\n"
-                    "<b>مرحله ۳ از ۵: تعداد برنده</b>\n\n"
+                    f"✅ ساعت پایان: <b>{t}</b>\n\n"
+                    "📝 <b>مرحله ۳ از ۵: تعداد برنده</b>\n\n"
                     "تعداد برندگان را وارد کنید:\n"
                     "مثال: <code>3</code>")
 
             elif state == "lottery_winners_count":
                 if not text.isdigit() or int(text) < 1 or int(text) > 20:
-                    return _bot.reply_to(message, "عدد معتبر بین ۱ تا ۲۰ وارد کنید.")
+                    return _bot.reply_to(message, "❌ عدد معتبر بین ۱ تا ۲۰ وارد کنید.")
                 cnt = int(text)
                 state_data["data"]["winners_count"] = cnt
                 state_data["data"]["prizes"] = []
                 state_data["data"]["current_prize"] = 1
                 state_data["state"] = "lottery_prize"
                 _bot.reply_to(message,
-                    f"تعداد برنده: <b>{cnt} نفر</b>\n\n"
-                    "<b>مرحله ۴ از ۵: تعیین جوایز</b>\n\n"
+                    f"✅ تعداد برنده: <b>{cnt} نفر</b>\n\n"
+                    "📝 <b>مرحله ۴ از ۵: تعیین جوایز</b>\n\n"
                     f"جایزه نفر <b>اول</b> را وارد کنید:\n"
                     "مثال: <code>۱ میلیون تومان</code>")
 
             elif state == "lottery_prize":
                 prize = text.strip()
                 if not prize:
-                    return _bot.reply_to(message, "جایزه نمی‌تواند خالی باشد.")
+                    return _bot.reply_to(message, "❌ جایزه نمی‌تواند خالی باشد.")
                 prizes = state_data["data"]["prizes"]
                 prizes.append(prize)
                 current = state_data["data"]["current_prize"]
@@ -4599,7 +4475,7 @@ def start_token_bot():
                     ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم"]
                     next_ord = ordinals[current] if current < len(ordinals) else f"{current+1}م"
                     _bot.reply_to(message,
-                        f"جایزه نفر {ordinals[current-1]}: <b>{prize}</b>\n\n"
+                        f"✅ جایزه نفر {ordinals[current-1]}: <b>{prize}</b>\n\n"
                         f"جایزه نفر <b>{next_ord}</b> را وارد کنید:")
                 else:
                     # همه جوایز ثبت شد — نمایش تأیید
@@ -4613,21 +4489,20 @@ def start_token_bot():
                     
                     markup = types.InlineKeyboardMarkup(row_width=2)
                     markup.add(
-                        types.InlineKeyboardButton("تأیید و ثبت", callback_data="lottery_confirm", style="success"),
-                        types.InlineKeyboardButton("لغو", callback_data="admin_lottery", style="danger",
-                            icon_custom_emoji_id=get_emoji_id("cross_red"))
+                        types.InlineKeyboardButton("✅ تأیید و ثبت", callback_data="lottery_confirm", style="success"),
+                        types.InlineKeyboardButton("❌ لغو", callback_data="admin_lottery", style="danger")
                     )
                     _bot.reply_to(message,
-                        "<b>مرحله ۵ از ۵: تأیید قرعه‌کشی</b>\n\n"
-                        f"زمان: <b>{d['start_time']}</b> تا <b>{d['end_time']}</b>\n"
-                        f"تعداد برنده: <b>{d['winners_count']} نفر</b>\n"
-                        f"جوایز:{prize_text}\n\n"
+                        f"📋 <b>مرحله ۵ از ۵: تأیید قرعه‌کشی</b>\n\n"
+                        f"⏰ زمان: <b>{d['start_time']}</b> تا <b>{d['end_time']}</b>\n"
+                        f"🏆 تعداد برنده: <b>{d['winners_count']} نفر</b>\n"
+                        f"🎁 جوایز:{prize_text}\n\n"
                         "آیا تأیید می‌کنید؟",
                         reply_markup=markup)
         
         except Exception as e:
-            print(f"خطا در handle_owner_state: {e}")
-            _bot.reply_to(message, f"خطا: {e}", reply_markup=_owner_keyboard())
+            print(f"❌ خطا در handle_owner_state: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}", reply_markup=_owner_keyboard())
             _owner_states.pop(message.from_user.id, None)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -4638,8 +4513,8 @@ def start_token_bot():
         if message.from_user.id != OWNER_TG_ID:
             return
         _bot.reply_to(message, 
-            "تمام دستورات مدیریتی به پنل دکمه‌ای منتقل شدند.\n\n"
-            f"روی دکمه <b>{pe('megaphone', '📢')} مدیریت</b> کلیک کنید.",
+            "📢 تمام دستورات مدیریتی به پنل دکمه‌ای منتقل شدند.\n\n"
+            "روی دکمه <b>📢 مدیریت</b> کلیک کنید.",
             reply_markup=_owner_keyboard())
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -4649,26 +4524,21 @@ def start_token_bot():
         """کیبورد پنل ادمین فرعی با دسترسی‌های محدود"""
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("کاربران", callback_data="sa_users", style="primary"),
-            types.InlineKeyboardButton("بازی‌های امروز", callback_data="sa_today_games", style="primary",
-                icon_custom_emoji_id=get_emoji_id("calendar"))
+            types.InlineKeyboardButton("👥 کاربران", callback_data="sa_users", style="primary"),
+            types.InlineKeyboardButton("📅 بازی‌های امروز", callback_data="sa_today_games", style="primary")
         )
         markup.add(
-            types.InlineKeyboardButton("پیام عمومی", callback_data="sa_broadcast", style="primary"),
-            types.InlineKeyboardButton("ماموریت‌ها", callback_data="sa_missions", style="success",
-                icon_custom_emoji_id=get_emoji_id("trophy"))
+            types.InlineKeyboardButton("📣 پیام عمومی", callback_data="sa_broadcast", style="primary"),
+            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="sa_missions", style="success")
         )
         markup.add(
-            types.InlineKeyboardButton("شرکت‌کنندگان جام جهانی", callback_data="sa_wc_participants", style="primary",
-                icon_custom_emoji_id=get_emoji_id("group_add"))
+            types.InlineKeyboardButton("👥 شرکت‌کنندگان جام جهانی", callback_data="sa_wc_participants", style="primary")
         )
         markup.add(
-            types.InlineKeyboardButton("هدیه", callback_data="sa_gift", style="success",
-                icon_custom_emoji_id=get_emoji_id("gift"))
+            types.InlineKeyboardButton("🎁 هدیه", callback_data="sa_gift", style="success")
         )
         markup.add(
-            types.InlineKeyboardButton("مدیریت راهنما", callback_data="sa_guide_manage", style="primary",
-                icon_custom_emoji_id=get_emoji_id("book"))
+            types.InlineKeyboardButton("📚 مدیریت راهنما", callback_data="sa_guide_manage", style="primary")
         )
         return markup
 
@@ -4679,16 +4549,16 @@ def start_token_bot():
     def cmd_subadmin_panel(message):
         tg_id = message.from_user.id
         if not db.is_sub_admin(tg_id):
-            return _bot.reply_to(message, "شما دسترسی ادمین ندارید.")
+            return _bot.reply_to(message, "❌ شما دسترسی ادمین ندارید.")
         _bot.reply_to(message,
-            "<b>پنل مدیریت ادمین</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+            "👮 <b>پنل مدیریت ادمین</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
             reply_markup=_subadmin_panel_keyboard())
 
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("sa_"))
     def callback_subadmin(call):
         tg_id = call.from_user.id
         if not db.is_sub_admin(tg_id):
-            return _bot.answer_callback_query(call.id, "دسترسی ندارید", show_alert=True)
+            return _bot.answer_callback_query(call.id, "❌ دسترسی ندارید", show_alert=True)
 
         data = call.data
 
@@ -4696,15 +4566,14 @@ def start_token_bot():
             # ── کاربران ──────────────────────────────────────────────────────
             if data == "sa_users":
                 accounts = db.get_all_accounts()
-                lines = [f"<b>لیست کاربران ({len(accounts)} نفر):</b>\n"]
+                lines = [f"👥 <b>لیست کاربران ({len(accounts)} نفر):</b>\n"]
                 for a in accounts[:30]:
                     uname = a.get("username", "-")
                     lines.append(f"• @{uname}")
                 if len(accounts) > 30:
                     lines.append(f"\n... و {len(accounts)-30} نفر دیگر")
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text("\n".join(lines),
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -4714,15 +4583,14 @@ def start_token_bot():
                 today = _now_tehran().strftime("%Y-%m-%d")
                 challenges = db.get_today_challenges(today) if hasattr(db, 'get_today_challenges') else []
                 if not challenges:
-                    text = "<b>بازی‌های امروز</b>\n\nهیچ بازی‌ای برای امروز ثبت نشده."
+                    text = "📅 <b>بازی‌های امروز</b>\n\nهیچ بازی‌ای برای امروز ثبت نشده."
                 else:
-                    lines = [f"<b>بازی‌های امروز ({len(challenges)} بازی):</b>\n"]
+                    lines = [f"📅 <b>بازی‌های امروز ({len(challenges)} بازی):</b>\n"]
                     for c in challenges:
                         lines.append(f"⚽ {c.get('team1','-')} vs {c.get('team2','-')} — {c.get('time','-')}")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(text,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -4731,10 +4599,9 @@ def start_token_bot():
             elif data == "sa_broadcast":
                 _subadmin_states[tg_id] = {"state": "sa_broadcast_msg"}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(
-                    "<b>ارسال پیام عمومی</b>\n\nپیام خود را ارسال کنید:",
+                    "📣 <b>ارسال پیام عمومی</b>\n\nپیام خود را ارسال کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
@@ -4743,16 +4610,15 @@ def start_token_bot():
                 missions = db.get_active_missions()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if missions:
-                    text = "<b>ماموریت‌های فعال:</b>\n\n"
+                    text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
-                        text += f"{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
+                        text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
+                            f"❌ حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
                 else:
-                    text = "هیچ ماموریتی تعریف نشده.\n\n"
+                    text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
                 markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="sa_add_mission", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(text,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -4760,31 +4626,29 @@ def start_token_bot():
             elif data == "sa_add_mission":
                 _subadmin_states[tg_id] = {"state": "sa_mission_channel", "data": {}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_missions", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_missions", style="danger"))
                 _bot.edit_message_text(
-                    "<b>افزودن ماموریت</b>\n\nیوزرنیم کانال را ارسال کنید:\n\nمثال: <code>@mychannel</code>",
+                    "🎯 <b>افزودن ماموریت</b>\n\nیوزرنیم کانال را ارسال کنید:\n\nمثال: <code>@mychannel</code>",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
             elif data.startswith("sa_del_mission_"):
                 mission_id = int(data[len("sa_del_mission_"):])
                 db.remove_mission(mission_id)
-                _bot.answer_callback_query(call.id, "ماموریت حذف شد")
+                _bot.answer_callback_query(call.id, "✅ ماموریت حذف شد")
                 # refresh
                 missions = db.get_active_missions()
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if missions:
-                    text = "<b>ماموریت‌های فعال:</b>\n\n"
+                    text = "🎯 <b>ماموریت‌های فعال:</b>\n\n"
                     for m in missions:
-                        text += f"{m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس\n"
+                        text += f"🔸 {m['channel_username']} — 💎{m['reward']} الماس\n"
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
+                            f"❌ حذف {m['channel_username']}", callback_data=f"sa_del_mission_{m['id']}", style="danger"))
                 else:
-                    text = "هیچ ماموریتی تعریف نشده.\n\n"
+                    text = "📋 هیچ ماموریتی تعریف نشده.\n\n"
                 markup.add(types.InlineKeyboardButton("➕ افزودن ماموریت", callback_data="sa_add_mission", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(text,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
 
@@ -4797,11 +4661,10 @@ def start_token_bot():
                     lines = [f"⚽️ <b>شرکت‌کنندگان جام جهانی ({len(participants)} نفر):</b>\n"]
                     for i, p in enumerate(participants[:50], 1):
                         uname = f"@{p['username']}"
-                        lines.append(f"{i}. <b>{uname}</b> — {pe('trophy', '🎯')}{p['bet_count']} شرط | {pe('diamond', '💎')}{p['total_bet']} الماس")
+                        lines.append(f"{i}. <b>{uname}</b> — 🎯{p['bet_count']} شرط | 💎{p['total_bet']} الماس")
                     text = "\n".join(lines)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(text,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -4810,39 +4673,34 @@ def start_token_bot():
             elif data == "sa_gift":
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("الماس", callback_data="sa_gift_diamond", style="primary"),
-                    types.InlineKeyboardButton("پنل", callback_data="sa_gift_panel", style="success",
-                        icon_custom_emoji_id=get_emoji_id("edit_box"))
+                    types.InlineKeyboardButton("💎 الماس", callback_data="sa_gift_diamond", style="primary"),
+                    types.InlineKeyboardButton("📋 پنل", callback_data="sa_gift_panel", style="success")
                 )
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(
-                    "<b>هدیه به کاربر</b>\n\nنوع هدیه را انتخاب کنید:",
+                    "🎁 <b>هدیه به کاربر</b>\n\nنوع هدیه را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
             elif data == "sa_gift_diamond":
                 _subadmin_states[tg_id] = {"state": "sa_gift_diamond_amount", "data": {"gift_type": "diamond"}}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(
-                    "<b>هدیه الماس</b>\n\nتعداد الماس هدیه را وارد کنید:",
+                    "💎 <b>هدیه الماس</b>\n\nتعداد الماس هدیه را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
             elif data == "sa_gift_panel":
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(
-                    types.InlineKeyboardButton("پنل یک ماهه (30 روز)", callback_data="sa_gift_plan_30", style="primary"),
-                    types.InlineKeyboardButton("پنل یک هفته‌ای (7 روز)", callback_data="sa_gift_plan_7", style="primary"),
-                    types.InlineKeyboardButton("پنل یک روزه (1 روز)", callback_data="sa_gift_plan_1", style="primary",
-                        icon_custom_emoji_id=get_emoji_id("calendar"))
+                    types.InlineKeyboardButton("📅 پنل یک ماهه (30 روز)", callback_data="sa_gift_plan_30", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک هفته‌ای (7 روز)", callback_data="sa_gift_plan_7", style="primary"),
+                    types.InlineKeyboardButton("📅 پنل یک روزه (1 روز)", callback_data="sa_gift_plan_1", style="primary")
                 )
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(
-                    "<b>هدیه پنل</b>\n\nنوع پنل هدیه را انتخاب کنید:",
+                    "📋 <b>هدیه پنل</b>\n\nنوع پنل هدیه را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
@@ -4855,10 +4713,9 @@ def start_token_bot():
                     "data": {"gift_type": "panel", "days": days, "plan_label": plan_label}
                 }
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(
-                    f"<b>پنل {plan_label}</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:",
+                    f"📋 <b>پنل {plan_label}</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
@@ -4866,7 +4723,7 @@ def start_token_bot():
                 gift_key = data[len("sa_gift_confirm_"):]
                 gift_info = _subadmin_states.get(tg_id, {}).get("gift_pending")
                 if not gift_info or gift_info.get("key") != gift_key:
-                    _bot.answer_callback_query(call.id, "اطلاعات منقضی شده.", show_alert=True)
+                    _bot.answer_callback_query(call.id, "❌ اطلاعات منقضی شده.", show_alert=True)
                     return
                 target_tg_id = gift_info["tg_id"]
                 account = gift_info["account"]
@@ -4877,35 +4734,34 @@ def start_token_bot():
                     new_balance = db.get_token_balance(account["id"])
                     try:
                         _bot.send_message(target_tg_id,
-                            "<b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
-                            f"مشخصات هدیه:\n{pe('diamond', '💎')} <b>الماس هدیه:</b> {amount} الماس\n"
-                            f"<b>موجودی جدید:</b> {new_balance} الماس")
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n💎 <b>الماس هدیه:</b> {amount} الماس\n"
+                            f"💰 <b>موجودی جدید:</b> {new_balance} الماس")
                     except Exception:
                         pass
-                    result_text = f"<b>{amount} الماس</b> به <b>{account['username']}</b> هدیه داده شد."
+                    result_text = f"✅ <b>{amount} الماس</b> به <b>{account['username']}</b> هدیه داده شد."
                 else:
                     days = gift_info["days"]
                     plan_label = gift_info["plan_label"]
                     db.set_subscription(account["id"], "gift", days)
                     try:
                         _bot.send_message(target_tg_id,
-                            "<b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
-                            f"مشخصات هدیه:\n{pe('edit_box', '📋')} <b>پنل هدیه:</b> {plan_label} ({days} روز)")
+                            f"🎁 <b>تبریک! شما از طرف مالک هدیه گرفتید!</b>\n\n"
+                            f"🎊 مشخصات هدیه:\n📋 <b>پنل هدیه:</b> {plan_label} ({days} روز)")
                     except Exception:
                         pass
-                    result_text = f"پنل <b>{plan_label}</b> به <b>{account['username']}</b> هدیه داده شد."
+                    result_text = f"✅ پنل <b>{plan_label}</b> به <b>{account['username']}</b> هدیه داده شد."
                 _subadmin_states.pop(tg_id, None)
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("پنل مدیریت", callback_data="sa_back", style="primary"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 پنل مدیریت", callback_data="sa_back", style="primary"))
                 _bot.edit_message_text(result_text,
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id, "هدیه ارسال شد!")
+                _bot.answer_callback_query(call.id, "✅ هدیه ارسال شد!")
 
             elif data == "sa_gift_cancel":
                 _subadmin_states.pop(tg_id, None)
                 markup = _subadmin_panel_keyboard()
-                _bot.edit_message_text("عملیات هدیه لغو شد.",
+                _bot.edit_message_text("❌ عملیات هدیه لغو شد.",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
@@ -4913,7 +4769,7 @@ def start_token_bot():
             elif data == "sa_back":
                 _subadmin_states.pop(tg_id, None)
                 _bot.edit_message_text(
-                    "<b>پنل مدیریت ادمین</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
+                    "👮 <b>پنل مدیریت ادمین</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id,
                     reply_markup=_subadmin_panel_keyboard())
                 _bot.answer_callback_query(call.id)
@@ -4928,16 +4784,15 @@ def start_token_bot():
                     guides = []
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
+                            f"❌ حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
                 else:
-                    txt = "<b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
+                    txt = "📚 <b>مدیریت راهنما</b>\n\nهیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="sa_guide_add", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(txt, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
@@ -4945,10 +4800,9 @@ def start_token_bot():
             elif data == "sa_guide_add":
                 _owner_states[tg_id] = {"state": "guide_name", "data": {}, "is_subadmin": True}
                 markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("لغو", callback_data="sa_guide_manage", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("cross_red"))
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="sa_guide_manage", style="danger"))
                 _bot.edit_message_text(
-                    "<b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
+                    "📚 <b>افزودن راهنما</b>\n\nاسم آموزش را وارد کنید:",
                     chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
                 _bot.answer_callback_query(call.id)
 
@@ -4965,23 +4819,22 @@ def start_token_bot():
                     db.set_global_setting("guide_list", _json.dumps(guides, ensure_ascii=False))
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 if guides:
-                    txt = f"<b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
+                    txt = f"📚 <b>راهنماهای ثبت‌شده ({len(guides)} آموزش):</b>\n\n"
                     for i, g in enumerate(guides):
                         txt += f"{'🎥' if g['type'] == 'video' else '🖼' if g['type'] == 'photo' else '📝'} {g['name']}\n"
                         markup.add(types.InlineKeyboardButton(
-                            f"حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
+                            f"❌ حذف «{g['name']}»", callback_data=f"sa_guide_del_{i}", style="danger"))
                 else:
-                    txt = "هیچ آموزشی ثبت نشده."
+                    txt = "📚 هیچ آموزشی ثبت نشده."
                 markup.add(types.InlineKeyboardButton("➕ اضافه کردن راهنما", callback_data="sa_guide_add", style="success"))
-                markup.add(types.InlineKeyboardButton("بازگشت", callback_data="sa_back", style="danger"),
-                    icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+                markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="sa_back", style="danger"))
                 _bot.edit_message_text(txt, chat_id=call.message.chat.id,
                     message_id=call.message.message_id, reply_markup=markup)
-                _bot.answer_callback_query(call.id, "آموزش حذف شد")
+                _bot.answer_callback_query(call.id, "✅ آموزش حذف شد")
 
         except Exception as e:
-            print(f"خطا در callback_subadmin: {e}")
-            _bot.answer_callback_query(call.id, f"خطا: {e}", show_alert=True)
+            print(f"❌ خطا در callback_subadmin: {e}")
+            _bot.answer_callback_query(call.id, f"❌ خطا: {e}", show_alert=True)
 
     @_bot.message_handler(func=lambda m: m.from_user.id in _subadmin_states and m.chat.type == 'private',
                           content_types=["text", "photo", "document"])
@@ -4997,7 +4850,7 @@ def start_token_bot():
             if state == "sa_broadcast_msg":
                 _subadmin_states.pop(tg_id, None)
                 tg_ids = db.get_all_telegram_ids()
-                _bot.reply_to(message, f"در حال ارسال به {len(tg_ids)} کاربر...")
+                _bot.reply_to(message, f"⏳ در حال ارسال به {len(tg_ids)} کاربر...")
                 sent, failed = 0, 0
                 for tid in tg_ids:
                     try:
@@ -5010,7 +4863,7 @@ def start_token_bot():
                         sent += 1
                     except Exception:
                         failed += 1
-                _bot.reply_to(message, f"ارسال تمام شد!\n📤 موفق: {sent}\n{pe('cross_red', '❌')} خطا: {failed}",
+                _bot.reply_to(message, f"✅ ارسال تمام شد!\n📤 موفق: {sent}\n❌ خطا: {failed}",
                     reply_markup=_subadmin_panel_keyboard())
 
             elif state == "sa_mission_channel":
@@ -5019,52 +4872,52 @@ def start_token_bot():
                     ch = "@" + ch
                 state_data["data"]["channel"] = ch
                 state_data["state"] = "sa_mission_reward"
-                _bot.reply_to(message, f"کانال: <b>{ch}</b>\n\n{pe('diamond', '💎')} مقدار جایزه (الماس) را وارد کنید:")
+                _bot.reply_to(message, f"✅ کانال: <b>{ch}</b>\n\n💎 مقدار جایزه (الماس) را وارد کنید:")
 
             elif state == "sa_mission_reward":
                 try:
                     reward = int(text.strip())
                     if reward < 1:
-                        return _bot.reply_to(message, "جایزه باید بیشتر از ۰ باشد.")
+                        return _bot.reply_to(message, "❌ جایزه باید بیشتر از ۰ باشد.")
                 except ValueError:
-                    return _bot.reply_to(message, "مقدار باید عدد باشد.")
+                    return _bot.reply_to(message, "❌ مقدار باید عدد باشد.")
                 ch = state_data.get("data", {}).get("channel")
                 db.add_mission(ch, reward)
                 _subadmin_states.pop(tg_id, None)
-                _bot.reply_to(message, f"ماموریت اضافه شد!\n{pe('arrow_blue', '🔸')} {ch} — {pe('diamond', '💎')}{reward} الماس",
+                _bot.reply_to(message, f"✅ ماموریت اضافه شد!\n🔸 {ch} — 💎{reward} الماس",
                     reply_markup=_subadmin_panel_keyboard())
 
             elif state == "sa_gift_diamond_amount":
                 try:
                     amount = int(text)
                     if amount <= 0:
-                        return _bot.reply_to(message, "تعداد باید بیشتر از صفر باشد:")
+                        return _bot.reply_to(message, "❌ تعداد باید بیشتر از صفر باشد:")
                 except ValueError:
-                    return _bot.reply_to(message, "عدد معتبر وارد کنید:")
+                    return _bot.reply_to(message, "❌ عدد معتبر وارد کنید:")
                 state_data["data"]["amount"] = amount
                 state_data["state"] = "sa_gift_tg_id"
                 _bot.reply_to(message,
-                    f"<b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
+                    f"💎 <b>هدیه الماس: {amount} الماس</b>\n\nایدی عددی تلگرام کاربر را وارد کنید:")
 
             elif state == "sa_gift_tg_id":
                 try:
                     target_tg_id = int(text)
                 except ValueError:
-                    return _bot.reply_to(message, "ایدی عددی باید فقط شامل اعداد باشد:")
+                    return _bot.reply_to(message, "❌ ایدی عددی باید فقط شامل اعداد باشد:")
                 account = db.get_account_by_tg_id(target_tg_id)
                 if not account:
-                    return _bot.reply_to(message, "کاربری با این ایدی یافت نشد.")
+                    return _bot.reply_to(message, "❌ کاربری با این ایدی یافت نشد.")
                 gift_type = state_data["data"]["gift_type"]
                 balance = db.get_token_balance(account["id"])
                 sub = db.get_subscription(account["id"])
                 plan_remaining = sub["end_date"] if sub and sub.get("end_date") else "ندارد"
                 if gift_type == "diamond":
                     amount = state_data["data"]["amount"]
-                    gift_desc = f"{amount} الماس"
+                    gift_desc = f"💎 {amount} الماس"
                 else:
                     days = state_data["data"]["days"]
                     plan_label = state_data["data"]["plan_label"]
-                    gift_desc = f"پنل {plan_label} ({days} روز)"
+                    gift_desc = f"📋 پنل {plan_label} ({days} روز)"
                 import hashlib, time as _time
                 gift_key = hashlib.md5(f"{target_tg_id}{_time.time()}".encode()).hexdigest()[:8]
                 state_data["gift_pending"] = {
@@ -5076,40 +4929,39 @@ def start_token_bot():
                 }
                 state_data["state"] = "sa_gift_awaiting_confirm"
                 confirm_text = (
-                    "<b>تایید هدیه</b>\n\n"
-                    f"<b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
+                    f"🎁 <b>تایید هدیه</b>\n\n"
+                    f"👤 <b>کاربر:</b> {account.get('username', 'نامشخص')}\n"
                     f"🔢 <b>ایدی عددی:</b> <code>{target_tg_id}</code>\n"
-                    f"<b>پلن باقی‌مانده:</b> {plan_remaining}\n"
-                    f"<b>موجودی:</b> {balance} الماس\n"
-                    f"<b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
+                    f"📋 <b>پلن باقی‌مانده:</b> {plan_remaining}\n"
+                    f"💰 <b>موجودی:</b> {balance} الماس\n"
+                    f"🎁 <b>{gift_desc} هدیه</b>\n\nآیا تایید می‌کنید؟"
                 )
                 markup = types.InlineKeyboardMarkup(row_width=2)
                 markup.add(
-                    types.InlineKeyboardButton("تایید", callback_data=f"sa_gift_confirm_{gift_key}", style="success"),
-                    types.InlineKeyboardButton("لغو", callback_data="sa_gift_cancel", style="danger",
-                        icon_custom_emoji_id=get_emoji_id("cross_red"))
+                    types.InlineKeyboardButton("✅ تایید", callback_data=f"sa_gift_confirm_{gift_key}", style="success"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="sa_gift_cancel", style="danger")
                 )
                 _bot.reply_to(message, confirm_text, reply_markup=markup)
 
             elif state == "sa_gift_awaiting_confirm":
-                _bot.reply_to(message, "لطفاً روی دکمه تایید یا لغو کلیک کنید.")
+                _bot.reply_to(message, "⏳ لطفاً روی دکمه تایید یا لغو کلیک کنید.")
 
         except Exception as e:
-            print(f"خطا در handle_subadmin_state: {e}")
-            _bot.reply_to(message, f"خطا: {e}")
+            print(f"❌ خطا در handle_subadmin_state: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
             _subadmin_states.pop(tg_id, None)
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 سیستم ماموریت‌ها
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.text == "ماموریت‌ها", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "🎯 ماموریت‌ها", chat_types=['private'])
     def cmd_missions(message):
         try:
             if not require_membership(message):
                 return
             _do_missions(message.from_user.id, message.chat.id)
         except Exception as e:
-            print(f"خطا در cmd_missions: {e}")
+            print(f"❌ خطا در cmd_missions: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data == "menu_missions")
     def callback_menu_missions(call):
@@ -5119,7 +4971,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 📖 سیستم راهنما
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.text == "راهنما", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "📖 راهنما", chat_types=['private'])
     def cmd_guide(message):
         _show_guide_menu(message.from_user.id, message.chat.id)
 
@@ -5141,11 +4993,10 @@ def start_token_bot():
             except Exception:
                 guides = []
             if idx < 0 or idx >= len(guides):
-                return _bot.send_message(chat_id, "این آموزش یافت نشد.")
+                return _bot.send_message(chat_id, "❌ این آموزش یافت نشد.")
             g = guides[idx]
             back_markup = types.InlineKeyboardMarkup()
-            back_markup.add(types.InlineKeyboardButton("بازگشت به راهنما", callback_data="guide_menu", style="primary"),
-                icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+            back_markup.add(types.InlineKeyboardButton("🔙 بازگشت به راهنما", callback_data="guide_menu", style="primary"))
             try:
                 if g["type"] == "video":
                     _bot.send_video(chat_id, g["file_id"],
@@ -5155,10 +5006,10 @@ def start_token_bot():
                         caption=f"🖼 <b>{g['name']}</b>", reply_markup=back_markup)
                 else:
                     _bot.send_message(chat_id,
-                        f"<b>{g['name']}</b>\n\n{g.get('content', '')}",
+                        f"📝 <b>{g['name']}</b>\n\n{g.get('content', '')}",
                         reply_markup=back_markup)
             except Exception as e:
-                _bot.send_message(chat_id, f"خطا در نمایش آموزش: {e}")
+                _bot.send_message(chat_id, f"❌ خطا در نمایش آموزش: {e}")
 
     def _show_guide_menu(tg_id, chat_id):
         import json as _json
@@ -5170,26 +5021,25 @@ def start_token_bot():
         if not guides:
             account = _get_account_cached(tg_id)
             return _bot.send_message(chat_id,
-                "<b>راهنما</b>\n\nهنوز هیچ آموزشی اضافه نشده.",
+                "📚 <b>راهنما</b>\n\nهنوز هیچ آموزشی اضافه نشده.",
                 reply_markup=_main_inline_keyboard(account))
         markup = types.InlineKeyboardMarkup(row_width=1)
         for i, g in enumerate(guides):
-            icon = "🎥" if g["type"] == "video" else "🖼" if g["type"] == "photo" else ""
+            icon = "🎥" if g["type"] == "video" else "🖼" if g["type"] == "photo" else "📝"
             markup.add(types.InlineKeyboardButton(
                 f"{icon} {g['name']}", callback_data=f"guide_view_{i}", style="primary"))
         account = _get_account_cached(tg_id)
         if account:
-            markup.add(types.InlineKeyboardButton("منوی اصلی", callback_data="back_main", style="danger"),
-                icon_custom_emoji_id=get_emoji_id("arrow_blue"))
+            markup.add(types.InlineKeyboardButton("🔙 منوی اصلی", callback_data="back_main", style="danger"))
         _bot.send_message(chat_id,
-            f"<b>راهنما</b>\n\n{len(guides)} آموزش موجود است. یکی را انتخاب کنید:",
+            f"📚 <b>راهنما</b>\n\n{len(guides)} آموزش موجود است. یکی را انتخاب کنید:",
             reply_markup=markup)
 
     def _do_missions(tg_id, chat_id):
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
 
             missions = db.get_active_missions()
             if not missions:
@@ -5197,31 +5047,30 @@ def start_token_bot():
 
             completed_ids = db.get_completed_mission_ids(account["id"])
             markup = types.InlineKeyboardMarkup(row_width=1)
-            lines = ["<b>ماموریت‌ها</b>\n\nبرای دریافت جایزه، در کانال‌های زیر عضو شوید:\n"]
+            lines = ["🎯 <b>ماموریت‌ها</b>\n\nبرای دریافت جایزه، در کانال‌های زیر عضو شوید:\n"]
             for m in missions:
                 done = m["id"] in completed_ids
-                status = "" if done else f"{pe('timer_1m', '⏳')}"
+                status = "✅" if done else "⏳"
                 ch_clean = m["channel_username"].lstrip("@")
-                lines.append(f"{status} {m['channel_username']} — {pe('diamond', '💎')}{m['reward']} الماس")
+                lines.append(f"{status} {m['channel_username']} — 💎{m['reward']} الماس")
                 if not done:
                     # 🔵 دکمه عضویت با رنگ primary (آبی)
                     markup.add(types.InlineKeyboardButton(
-                        f"عضویت در {m['channel_username']}",
+                        f"🔗 عضویت در {m['channel_username']}",
                         url=f"https://t.me/{ch_clean}",
                         style="primary"
                     ))
             # 🟢 دکمه بررسی با رنگ success (سبز)
-            markup.add(types.InlineKeyboardButton("بررسی و دریافت جایزه", callback_data="check_missions", style="success"),
-                icon_custom_emoji_id=get_emoji_id("checkmark_green"))
+            markup.add(types.InlineKeyboardButton("✅ بررسی و دریافت جایزه", callback_data="check_missions", style="success"))
             _bot.send_message(chat_id, "\n".join(lines), reply_markup=markup)
         except Exception as e:
-            print(f"خطا در _do_missions: {e}")
+            print(f"❌ خطا در _do_missions: {e}")
     @_bot.callback_query_handler(func=lambda call: call.data == "check_missions")
     def callback_check_missions(call):
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
             missions = db.get_active_missions()
             completed_ids = db.get_completed_mission_ids(account["id"])
@@ -5244,19 +5093,19 @@ def start_token_bot():
             if not newly_done:
                 pending = [m["channel_username"] for m in missions if m["id"] not in completed_ids]
                 if not pending:
-                    return _bot.answer_callback_query(call.id, "همه ماموریت‌ها قبلاً انجام شده!", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "✅ همه ماموریت‌ها قبلاً انجام شده!", show_alert=True)
                 return _bot.answer_callback_query(call.id,
-                    f"ماموریت انجام نشده!\nابتدا در {len(pending)} کانال عضو شوید سپس دوباره بررسی کنید.",
+                    f"❌ ماموریت انجام نشده!\nابتدا در {len(pending)} کانال عضو شوید سپس دوباره بررسی کنید.",
                     show_alert=True)
 
             cache.invalidate(f"account_{call.from_user.id}")
             new_balance = db.get_token_balance(account["id"])
             _bot.answer_callback_query(call.id,
-                f"تبریک! {len(newly_done)} ماموریت انجام شد!\n{pe('diamond', '💎')} +{total_reward} الماس دریافت کردید!",
+                f"🎉 تبریک! {len(newly_done)} ماموریت انجام شد!\n💎 +{total_reward} الماس دریافت کردید!",
                 show_alert=True)
         except Exception as e:
-            print(f"خطا در callback_check_missions: {e}")
-            _bot.answer_callback_query(call.id, f"خطا: {str(e)[:80]}", show_alert=True)
+            print(f"❌ خطا در callback_check_missions: {e}")
+            _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:80]}", show_alert=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # ✅ پیام‌های ناشناخته
@@ -5266,12 +5115,12 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
             
             kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
-            _bot.reply_to(message, "دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
+            _bot.reply_to(message, "⚠️ دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
         except Exception as e:
-            print(f"خطا در cmd_unknown: {e}")
+            print(f"❌ خطا در cmd_unknown: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🃏 بازی حکم
@@ -5334,9 +5183,9 @@ def start_token_bot():
         names = "\n".join(f"  • {g['names'].get(uid,'?')}" for uid in players)
         return (
             f"🎮 <b>بازی حکم</b>\n"
-            f"سازنده: {g['creator_name']}\n"
-            f"شرط: <b>{g['bet']} الماس</b>\n"
-            f"بازیکنان ({len(players)}/4):\n{names}\n\n"
+            f"👤 سازنده: {g['creator_name']}\n"
+            f"💰 شرط: <b>{g['bet']} الماس</b>\n"
+            f"👥 بازیکنان ({len(players)}/4):\n{names}\n\n"
             f"{'✅ آماده شروع! تایمر شروع شد...' if len(players)>=2 else '⏳ منتظر بازیکن دیگر...'}"
         )
 
@@ -5344,7 +5193,7 @@ def start_token_bot():
         kb = types.InlineKeyboardMarkup(row_width=2)
         kb.add(
             types.InlineKeyboardButton("➕ ورود / خروج", callback_data=f"hokm_join_{game_id}"),
-            types.InlineKeyboardButton("لغو",         callback_data=f"hokm_cancel_{game_id}"),
+            types.InlineKeyboardButton("❌ لغو",         callback_data=f"hokm_cancel_{game_id}"),
         )
         return kb
 
@@ -5362,21 +5211,21 @@ def start_token_bot():
 
             bet = int(message.text.strip().split()[1])
             if bet < 1:
-                return _bot.reply_to(message, "مبلغ شرط باید بیشتر از صفر باشد.")
+                return _bot.reply_to(message, "❌ مبلغ شرط باید بیشتر از صفر باشد.")
 
             account = db.get_account_by_tg_id(user_id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
 
             # جلوگیری از ورود یک کاربر به دو بازی همزمان
             _, existing = _hokm_find_by_player(user_id)
             if existing:
-                return _bot.reply_to(message, "شما در حال حاضر در یک بازی حکم هستید!")
+                return _bot.reply_to(message, "⚠️ شما در حال حاضر در یک بازی حکم هستید!")
 
             balance = db.get_token_balance(account["id"])
             if balance < bet:
                 return _bot.reply_to(message,
-                    f"موجودی کافی ندارید!\nنیاز: {bet} الماس — موجودی: {balance} الماس")
+                    f"❌ موجودی کافی ندارید!\nنیاز: {bet} الماس — موجودی: {balance} الماس")
 
             uname = message.from_user.username
             display = f"@{uname}" if uname else message.from_user.first_name
@@ -5421,7 +5270,7 @@ def start_token_bot():
             game["msg_id"] = msg.message_id
 
         except Exception as e:
-            print(f"cmd_hokm_start: {e}")
+            print(f"❌ cmd_hokm_start: {e}")
 
     # ── ورود / خروج ─────────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_join_"))
@@ -5433,14 +5282,14 @@ def start_token_bot():
             game = _hokm_get_by_id(game_id)
 
             if not game:
-                return _bot.answer_callback_query(call.id, "بازی یافت نشد یا تمام شده.")
+                return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد یا تمام شده.")
 
             if game["state"] != "lobby":
-                return _bot.answer_callback_query(call.id, "بازی در حال اجراست.")
+                return _bot.answer_callback_query(call.id, "⏳ بازی در حال اجراست.")
 
             account = db.get_account_by_tg_id(user_id)
             if not account:
-                return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
             # خروج
             if user_id in game["players"]:
@@ -5449,21 +5298,21 @@ def start_token_bot():
                 game["players"].remove(user_id)
                 game["names"].pop(user_id, None)
                 game["accounts"].pop(user_id, None)
-                _bot.answer_callback_query(call.id, "از بازی خارج شدید.")
+                _bot.answer_callback_query(call.id, "✅ از بازی خارج شدید.")
             else:
                 # ورود
                 if len(game["players"]) >= 4:
-                    return _bot.answer_callback_query(call.id, "بازی پر است.")
+                    return _bot.answer_callback_query(call.id, "❌ بازی پر است.")
                 balance = db.get_token_balance(account["id"])
                 if balance < game["bet"]:
                     return _bot.answer_callback_query(call.id,
-                        f"موجودی کافی ندارید! نیاز: {game['bet']} الماس", show_alert=True)
+                        f"❌ موجودی کافی ندارید! نیاز: {game['bet']} الماس", show_alert=True)
                 uname = call.from_user.username
                 display = f"@{uname}" if uname else call.from_user.first_name
                 game["players"].append(user_id)
                 game["names"][user_id] = display
                 game["accounts"][user_id] = account["id"]
-                _bot.answer_callback_query(call.id, "وارد بازی شدید!")
+                _bot.answer_callback_query(call.id, "✅ وارد بازی شدید!")
 
                 # وقتی نفر دوم آمد → تایمر ۱۰ ثانیه
                 if len(game["players"]) == 2:
@@ -5495,7 +5344,7 @@ def start_token_bot():
                 pass
 
         except Exception as e:
-            print(f"callback_hokm_join: {e}")
+            print(f"❌ callback_hokm_join: {e}")
 
     # ── لغو بازی ────────────────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_cancel_"))
@@ -5506,23 +5355,23 @@ def start_token_bot():
             game = _hokm_get_by_id(game_id)
 
             if not game:
-                return _bot.answer_callback_query(call.id, "بازی یافت نشد.")
+                return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
             if call.from_user.id != game["creator_id"]:
-                return _bot.answer_callback_query(call.id, "فقط سازنده می‌تواند لغو کند.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ فقط سازنده می‌تواند لغو کند.", show_alert=True)
             if game["state"] != "lobby":
-                return _bot.answer_callback_query(call.id, "بازی شروع شده، نمی‌توان لغو کرد.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ بازی شروع شده، نمی‌توان لغو کرد.", show_alert=True)
 
             game["state"] = "finished"
             with _hokm_lock:
                 _hokm_games.pop(game_id, None)
 
             _bot.edit_message_text(
-                "بازی حکم لغو شد.",
+                "❌ بازی حکم لغو شد.",
                 chat_id, call.message.message_id
             )
-            _bot.answer_callback_query(call.id, "بازی لغو شد.")
+            _bot.answer_callback_query(call.id, "✅ بازی لغو شد.")
         except Exception as e:
-            print(f"callback_hokm_cancel: {e}")
+            print(f"❌ callback_hokm_cancel: {e}")
 
     # ── کمکی: پیام واحد هر بازیکن — فقط یک‌بار ارسال، بقیه موارد فقط ادیت می‌شود ──
     def _hokm_send_or_edit(uid, game, text, kb=None):
@@ -5540,7 +5389,7 @@ def start_token_bot():
             msg = _bot.send_message(uid, text, parse_mode="HTML", reply_markup=kb)
             game.setdefault("player_msg", {})[uid] = msg.message_id
         except Exception as e:
-            print(f"_hokm_send_or_edit {uid}: {e}")
+            print(f"⚠️ _hokm_send_or_edit {uid}: {e}")
 
     def _hokm_status_lines(game, uid):
         """خطوط وضعیت کلی بازی برای پیام شخصی هر بازیکن"""
@@ -5550,7 +5399,7 @@ def start_token_bot():
         if game.get("state") == "playing":
             t0 = game["tricks"][0]
             t1 = game["tricks"][1]
-            lines.append(f"تیم حاکم: {t0} | تیم رقیب: {t1}")
+            lines.append(f"📊 تیم حاکم: {t0} | تیم رقیب: {t1}")
             if game.get("round_cards"):
                 played = " | ".join(
                     f"{game['names'][u]}: {_hokm_card_label(c)}"
@@ -5560,7 +5409,7 @@ def start_token_bot():
             if game.get("turn_order"):
                 current = game["turn_order"][game["current_turn_idx"]]
                 who = "شما" if current == uid else game["names"].get(current, "?")
-                lines.append(f"نوبت: <b>{who}</b>")
+                lines.append(f"🎯 نوبت: <b>{who}</b>")
         return lines
 
     def _hokm_send_hand(uid, game, extra_lines=None, extra_rows=None):
@@ -5591,7 +5440,7 @@ def start_token_bot():
 
             _hokm_send_or_edit(uid, game, "\n".join(lines), kb)
         except Exception as e:
-            print(f"_hokm_send_hand {uid}: {e}")
+            print(f"⚠️ _hokm_send_hand {uid}: {e}")
 
     def _hokm_broadcast_hands(game, extra_lines=None):
         """به‌روزرسانی پیام شخصی همه بازیکنان با ادیت (بدون ارسال پیام جدید)"""
@@ -5613,8 +5462,8 @@ def start_token_bot():
             # ویرایش پیام گروه
             try:
                 _bot.edit_message_text(
-                    "<b>بازی حکم شروع شد!</b>\n\n"
-                    f"بازیکنان:\n{names_list}\n\n"
+                    f"✅ <b>بازی حکم شروع شد!</b>\n\n"
+                    f"👥 بازیکنان:\n{names_list}\n\n"
                     f"📩 برای ادامه بازی به پیوی ربات مراجعه کنید.",
                     chat_id, game["msg_id"],
                     parse_mode="HTML"
@@ -5655,14 +5504,14 @@ def start_token_bot():
                 ))
                 text = (
                     f"🎮 <b>بازی حکم شروع شد!</b>\n\n"
-                    f"کارت قرعه شما: <b>{card_label}</b>\n"
-                    f"حاکم: <b>{hakem_name}</b>{'  ← شما!' if is_hakem else ''}\n\n"
+                    f"🎲 کارت قرعه شما: <b>{card_label}</b>\n"
+                    f"👑 حاکم: <b>{hakem_name}</b>{'  ← شما!' if is_hakem else ''}\n\n"
                     f"برای ادامه دکمه زیر را بزنید:"
                 )
                 _hokm_send_or_edit(uid, game, text, kb)
 
         except Exception as e:
-            print(f"_hokm_begin: {e}")
+            print(f"❌ _hokm_begin: {e}")
 
     # ── دکمه شروع بازی در پیوی ───────────────────────────────────────────────
     _hokm_ready: dict = {}   # chat_id -> set of ready user_ids
@@ -5674,14 +5523,14 @@ def start_token_bot():
             user_id = call.from_user.id
             gid, game = _hokm_find_by_player(user_id)
             if not game:
-                return _bot.answer_callback_query(call.id, "بازی یافت نشد.")
+                return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
             game_id = gid
 
             _hokm_ready.setdefault(chat_id, set()).add(user_id)
-            _bot.answer_callback_query(call.id, "آماده‌اید!")
+            _bot.answer_callback_query(call.id, "✅ آماده‌اید!")
             try:
                 _bot.edit_message_text(
-                    "<b>آماده‌اید!</b>\nمنتظر بقیه بازیکنان بمانید...",
+                    "✅ <b>آماده‌اید!</b>\nمنتظر بقیه بازیکنان بمانید...",
                     call.message.chat.id, call.message.message_id,
                     parse_mode="HTML"
                 )
@@ -5693,7 +5542,7 @@ def start_token_bot():
                 _hokm_deal_initial(game_id)
 
         except Exception as e:
-            print(f"callback_hokm_ready: {e}")
+            print(f"❌ callback_hokm_ready: {e}")
 
     # ── پخش ۴ کارت اولیه و نمایش به هر بازیکن ───────────────────────────────
     def _hokm_deal_initial(game_id):
@@ -5728,14 +5577,14 @@ def start_token_bot():
                     ]
                     _hokm_send_hand(
                         uid, game,
-                        extra_lines=["شما حاکم هستید! حکم را انتخاب کنید:"],
+                        extra_lines=["👑 شما حاکم هستید! حکم را انتخاب کنید:"],
                         extra_rows=trump_rows
                     )
                 else:
-                    _hokm_send_hand(uid, game, extra_lines=["منتظر انتخاب حکم توسط حاکم..."])
+                    _hokm_send_hand(uid, game, extra_lines=["⏳ منتظر انتخاب حکم توسط حاکم..."])
 
         except Exception as e:
-            print(f"_hokm_deal_initial: {e}")
+            print(f"❌ _hokm_deal_initial: {e}")
 
     # ── انتخاب حکم توسط حاکم ────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_trump_"))
@@ -5747,21 +5596,21 @@ def start_token_bot():
             game_id, game = _hokm_find_by_player(user_id)
 
             if not game:
-                return _bot.answer_callback_query(call.id, "بازی یافت نشد.")
+                return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
             if user_id != game["hakem"]:
-                return _bot.answer_callback_query(call.id, "فقط حاکم می‌تواند حکم انتخاب کند.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ فقط حاکم می‌تواند حکم انتخاب کند.", show_alert=True)
             if game["state"] != "pick_trump":
-                return _bot.answer_callback_query(call.id, "زمان انتخاب حکم تمام شده.")
+                return _bot.answer_callback_query(call.id, "❌ زمان انتخاب حکم تمام شده.")
 
             game["trump"] = suit
             suit_label = _SUIT_NAMES[suit]
-            _bot.answer_callback_query(call.id, f"حکم {suit_label} انتخاب شد!")
+            _bot.answer_callback_query(call.id, f"✅ حکم {suit_label} انتخاب شد!")
 
             # پخش کامل کارت‌ها (پیام شخصی هر بازیکن همین‌جا ادیت می‌شود و حکم انتخابی را نشان می‌دهد)
             _hokm_deal_full(game_id)
 
         except Exception as e:
-            print(f"callback_hokm_trump: {e}")
+            print(f"❌ callback_hokm_trump: {e}")
 
     # ── پخش کامل کارت‌ها ─────────────────────────────────────────────────────
     def _hokm_deal_full(game_id):
@@ -5808,7 +5657,7 @@ def start_token_bot():
             _hokm_broadcast_hands(game)
 
         except Exception as e:
-            print(f"_hokm_deal_full: {e}")
+            print(f"❌ _hokm_deal_full: {e}")
 
     # ── انتخاب کارت (بازی) ───────────────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("hokm_play_"))
@@ -5820,19 +5669,19 @@ def start_token_bot():
             game_id, game = _hokm_find_by_player(user_id)
 
             if not game:
-                return _bot.answer_callback_query(call.id, "بازی یافت نشد.")
+                return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
             if game["state"] != "playing":
-                return _bot.answer_callback_query(call.id, "بازی در حال راه‌اندازی است.")
+                return _bot.answer_callback_query(call.id, "⏳ بازی در حال راه‌اندازی است.")
             if user_id not in game["players"]:
-                return _bot.answer_callback_query(call.id, "شما در این بازی نیستید.")
+                return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.")
 
             current_uid = game["turn_order"][game["current_turn_idx"]]
             if user_id != current_uid:
-                return _bot.answer_callback_query(call.id, "نوبت شما نیست!", show_alert=True)
+                return _bot.answer_callback_query(call.id, "⏳ نوبت شما نیست!", show_alert=True)
 
             hand = game["hands"].get(user_id, [])
             if card_idx >= len(hand):
-                return _bot.answer_callback_query(call.id, "کارت نامعتبر.")
+                return _bot.answer_callback_query(call.id, "❌ کارت نامعتبر.")
 
             card = hand[card_idx]
 
@@ -5841,7 +5690,7 @@ def start_token_bot():
                 if has_lead:
                     return _bot.answer_callback_query(
                         call.id,
-                        f"باید از خال {_SUIT_EMOJI.get(game['lead_suit'],'')} پیروی کنید!",
+                        f"❌ باید از خال {_SUIT_EMOJI.get(game['lead_suit'],'')} پیروی کنید!",
                         show_alert=True
                     )
 
@@ -5850,7 +5699,7 @@ def start_token_bot():
             if not game["lead_suit"]:
                 game["lead_suit"] = card["suit"]
 
-            _bot.answer_callback_query(call.id, f"{_hokm_card_label(card)} بازی شد.")
+            _bot.answer_callback_query(call.id, f"✅ {_hokm_card_label(card)} بازی شد.")
 
             n = len(game["players"])
             game["current_turn_idx"] = (game["current_turn_idx"] + 1) % n
@@ -5863,7 +5712,7 @@ def start_token_bot():
                 _hokm_broadcast_hands(game)
 
         except Exception as e:
-            print(f"callback_hokm_play: {e}")
+            print(f"❌ callback_hokm_play: {e}")
 
     # ── تعیین برنده هر دست ───────────────────────────────────────────────────
     def _hokm_resolve_round(game_id):
@@ -5892,7 +5741,7 @@ def start_token_bot():
             round_summary = [
                 "🏁 <b>دست تمام شد!</b>",
                 f"کارت‌ها: {cards_played}",
-                f"برنده: <b>{winner_name}</b>",
+                f"🏆 برنده: <b>{winner_name}</b>",
             ]
 
             # ریست دست
@@ -5913,7 +5762,7 @@ def start_token_bot():
                 _hokm_broadcast_hands(game, extra_lines=round_summary)
 
         except Exception as e:
-            print(f"_hokm_resolve_round: {e}")
+            print(f"❌ _hokm_resolve_round: {e}")
 
     def _hokm_card_value(card, trump, lead):
         if card["suit"] == trump:
@@ -5955,18 +5804,18 @@ def start_token_bot():
                 result_lines.extend(round_summary)
                 result_lines.append("")
             result_lines.extend([
-                "<b>بازی حکم تمام شد!</b>",
+                "🏆 <b>بازی حکم تمام شد!</b>",
                 "",
                 f"{'🥇 تیم حاکم' if team0_won else '🥇 تیم رقیب'} برنده شد!",
                 "",
-                f"برندگان: <b>{win_names}</b>",
-                f"بازندگان: {lose_names}",
+                f"✅ برندگان: <b>{win_names}</b>",
+                f"❌ بازندگان: {lose_names}",
                 "",
-                f"مجموع شرط: {total} الماس",
+                f"💰 مجموع شرط: {total} الماس",
                 f"🏛 مالیات ۱۰٪: {tax} الماس",
-                f"هر برنده: <b>{payout_each} الماس</b>",
+                f"💎 هر برنده: <b>{payout_each} الماس</b>",
                 "",
-                f"نتیجه: تیم حاکم {game['tricks'][0]} — تیم رقیب {game['tricks'][1]}",
+                f"📊 نتیجه: تیم حاکم {game['tricks'][0]} — تیم رقیب {game['tricks'][1]}",
             ])
             result_text = "\n".join(result_lines)
 
@@ -5984,7 +5833,7 @@ def start_token_bot():
                 _hokm_games.pop(game_id, None)
 
         except Exception as e:
-            print(f"_hokm_finish: {e}")
+            print(f"❌ _hokm_finish: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🪨📄✂️ بازی سنگ کاغذ قیچی گروهی — ۵ راند — فقط یک پیام (همیشه ادیت می‌شود)
@@ -6045,10 +5894,10 @@ def start_token_bot():
         if state == "waiting":
             return (
                 "🎮 <b>بازی سنگ کاغذ قیچی — ۵ راند!</b>\n\n"
-                f"نفر اول: <b>{p1}</b>\n"
-                "نفر دوم: در انتظار...\n\n"
-                f"شرط هر نفر: <b>{bet} {pe('diamond', '💎')} الماس</b>\n"
-                f"جایزه برنده: <b>{payout} {pe('diamond', '💎')} الماس</b> (مالیات ۱۰٪)\n\n"
+                f"👤 نفر اول: <b>{p1}</b>\n"
+                f"👤 نفر دوم: در انتظار...\n\n"
+                f"💰 شرط هر نفر: <b>{bet} 💎 الماس</b>\n"
+                f"🏆 جایزه برنده: <b>{payout} 💎 الماس</b> (مالیات ۱۰٪)\n\n"
                 "⬇️ برای ورود به بازی دکمه زیر را بزنید"
             )
 
@@ -6062,23 +5911,23 @@ def start_token_bot():
         if state == "finished":
             lines.append("🏁 <b>نتیجه نهایی — سنگ کاغذ قیچی</b>")
         else:
-            c1_done = "" if game.get("choice1") else f"{pe('timer_1m', '⏳')}"
-            c2_done = "" if game.get("choice2") else f"{pe('timer_1m', '⏳')}"
+            c1_done = "✅" if game.get("choice1") else "⏳"
+            c2_done = "✅" if game.get("choice2") else "⏳"
             lines.append(f"🎮 <b>سنگ کاغذ قیچی — راند {rnd} از {_RPS_ROUNDS}</b>")
-            lines.append(f"{p1}  {c1_done}")
-            lines.append(f"{p2}  {c2_done}")
+            lines.append(f"👤 {p1}  {c1_done}")
+            lines.append(f"👤 {p2}  {c2_done}")
 
         if last_line:
             lines.append("")
             lines.append(last_line)
 
         lines.append("")
-        lines.append(f"امتیاز: {p1} <b>{s1}</b> — <b>{s2}</b> {p2}")
+        lines.append(f"📊 امتیاز: {p1} <b>{s1}</b> — <b>{s2}</b> {p2}")
         lines.append(bar)
 
         if state == "playing":
             lines.append("")
-            lines.append(f"شرط: <b>{bet} {pe('diamond', '💎')}</b> هر نفر")
+            lines.append(f"💰 شرط: <b>{bet} 💎</b> هر نفر")
             lines.append("⬇️ انتخاب خود را بزنید:")
 
         return "\n".join(lines)
@@ -6095,7 +5944,7 @@ def start_token_bot():
     def _rps_join_markup(game_id, bet):
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton(
-            f"⚔️ ورود به بازی — {bet} {pe('diamond', '💎')} الماس",
+            f"⚔️ ورود به بازی — {bet} 💎 الماس",
             callback_data=f"rps_join_{game_id}",
             style="success"  # 🟢 سبز
         ))
@@ -6121,7 +5970,7 @@ def start_token_bot():
                 reply_markup=markup
             )
         except Exception as e:
-            print(f"_rps_render: {e}")
+            print(f"❌ _rps_render: {e}")
 
     # ── دستور شروع بازی: "بازی 100" ──────────────────────────────────────────
     @_bot.message_handler(func=lambda m: (
@@ -6139,27 +5988,27 @@ def start_token_bot():
             bet = int(match.group(1))
 
             if bet <= 0:
-                return _bot.reply_to(message, "مقدار شرط باید بیشتر از صفر باشد.")
+                return _bot.reply_to(message, "❌ مقدار شرط باید بیشتر از صفر باشد.")
 
             account = _get_account_cached(user.id)
             if not account:
-                return _bot.reply_to(message, "ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
 
             balance = db.get_token_balance(account["id"])
             if balance < bet:
                 return _bot.reply_to(
                     message,
-                    f"موجودی کافی نیست!\n{pe('diamond', '💎')} موجودی شما: {balance} الماس\n{pe('diamond', '💰')} شرط: {bet} الماس"
+                    f"❌ موجودی کافی نیست!\n💎 موجودی شما: {balance} الماس\n💰 شرط: {bet} الماس"
                 )
 
             with _rps_lock:
                 for g in _rps_games.values():
                     if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
-                        return _bot.reply_to(message, "شما هم‌اکنون در یک بازی فعال هستید.")
+                        return _bot.reply_to(message, "❌ شما هم‌اکنون در یک بازی فعال هستید.")
 
             # کسر الماس از نفر اول
             if not db.deduct_tokens(account["id"], bet):
-                return _bot.reply_to(message, "خطا در کسر موجودی. دوباره امتحان کنید.")
+                return _bot.reply_to(message, "❌ خطا در کسر موجودی. دوباره امتحان کنید.")
             cache.invalidate(f"account_{user.id}")
 
             display = f"@{user.username}" if user.username else user.first_name
@@ -6206,8 +6055,8 @@ def start_token_bot():
                 cache.invalidate(f"account_{g['player1']}")
                 try:
                     _bot.edit_message_text(
-                        f"<b>بازی لغو شد!</b>\n\n{g['player1_name']} منتظر حریف ماند ولی کسی نیامد.\n"
-                        f"{g['bet']} الماس به حساب برگشت.",
+                        f"⏰ <b>بازی لغو شد!</b>\n\n{g['player1_name']} منتظر حریف ماند ولی کسی نیامد.\n"
+                        f"💎 {g['bet']} الماس به حساب برگشت.",
                         g["chat_id"], g["msg_id"],
                         parse_mode="HTML",
                         reply_markup=types.InlineKeyboardMarkup()
@@ -6217,7 +6066,7 @@ def start_token_bot():
             threading.Timer(300, _rps_timeout, args=[game_id]).start()
 
         except Exception as e:
-            print(f"cmd_rps_start: {e}")
+            print(f"❌ cmd_rps_start: {e}")
 
     # ── ورود نفر دوم (روی همان پیام) ─────────────────────────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_join_"))
@@ -6229,22 +6078,22 @@ def start_token_bot():
             with _rps_lock:
                 game = _rps_games.get(game_id)
                 if not game:
-                    return _bot.answer_callback_query(call.id, "بازی یافت نشد.")
+                    return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
                 if game["state"] != "waiting":
-                    return _bot.answer_callback_query(call.id, "بازی قبلاً شروع شده.", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ بازی قبلاً شروع شده.", show_alert=True)
                 if user.id == game["player1"]:
-                    return _bot.answer_callback_query(call.id, "شما سازنده این بازی هستید!", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ شما سازنده این بازی هستید!", show_alert=True)
 
                 account = _get_account_cached(user.id)
                 if not account:
-                    return _bot.answer_callback_query(call.id, "ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
 
                 bet = game["bet"]
                 balance = db.get_token_balance(account["id"])
                 if balance < bet:
                     return _bot.answer_callback_query(
                         call.id,
-                        f"موجودی کافی نیست!\n{pe('diamond', '💎')} موجودی: {balance}\n{pe('diamond', '💰')} شرط: {bet}",
+                        f"❌ موجودی کافی نیست!\n💎 موجودی: {balance}\n💰 شرط: {bet}",
                         show_alert=True
                     )
 
@@ -6252,11 +6101,11 @@ def start_token_bot():
                     if gid == game_id:
                         continue
                     if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
-                        return _bot.answer_callback_query(call.id, "شما در یک بازی دیگر هستید.", show_alert=True)
+                        return _bot.answer_callback_query(call.id, "❌ شما در یک بازی دیگر هستید.", show_alert=True)
 
                 # کسر الماس از نفر دوم
                 if not db.deduct_tokens(account["id"], bet):
-                    return _bot.answer_callback_query(call.id, "خطا در کسر موجودی.", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ خطا در کسر موجودی.", show_alert=True)
                 cache.invalidate(f"account_{user.id}")
 
                 display = f"@{user.username}" if user.username else user.first_name
@@ -6269,11 +6118,11 @@ def start_token_bot():
                 game["choice2"] = None
                 game["last_round_line"] = ""
 
-            _bot.answer_callback_query(call.id, f"وارد بازی شدید! {bet} الماس کسر شد.")
+            _bot.answer_callback_query(call.id, f"✅ وارد بازی شدید! {bet} الماس کسر شد.")
             _rps_render(game_id)
 
         except Exception as e:
-            print(f"callback_rps_join: {e}")
+            print(f"❌ callback_rps_join: {e}")
 
     # ── انتخاب سنگ/کاغذ/قیچی (روی همان پیام واحد گروه) ───────────────────────
     @_bot.callback_query_handler(func=lambda c: c.data.startswith("rps_pick_"))
@@ -6288,22 +6137,22 @@ def start_token_bot():
             with _rps_lock:
                 game = _rps_games.get(game_id)
                 if not game:
-                    return _bot.answer_callback_query(call.id, "بازی یافت نشد.")
+                    return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
                 if game["state"] != "playing":
-                    return _bot.answer_callback_query(call.id, "بازی در جریان نیست.")
+                    return _bot.answer_callback_query(call.id, "❌ بازی در جریان نیست.")
 
                 if user.id == game["player1"]:
                     if game["choice1"]:
-                        return _bot.answer_callback_query(call.id, "شما قبلاً انتخاب کردید.", show_alert=True)
+                        return _bot.answer_callback_query(call.id, "⚠️ شما قبلاً انتخاب کردید.", show_alert=True)
                     game["choice1"] = choice
                 elif user.id == game["player2"]:
                     if game["choice2"]:
-                        return _bot.answer_callback_query(call.id, "شما قبلاً انتخاب کردید.", show_alert=True)
+                        return _bot.answer_callback_query(call.id, "⚠️ شما قبلاً انتخاب کردید.", show_alert=True)
                     game["choice2"] = choice
                 else:
-                    return _bot.answer_callback_query(call.id, "شما در این بازی نیستید.", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.", show_alert=True)
 
-                _bot.answer_callback_query(call.id, f"{_RPS_CHOICES.get(choice, choice)} انتخاب شد! منتظر رقیب...")
+                _bot.answer_callback_query(call.id, f"✅ {_RPS_CHOICES.get(choice, choice)} انتخاب شد! منتظر رقیب...")
                 both_chosen = bool(game["choice1"] and game["choice2"])
 
             if both_chosen:
@@ -6313,7 +6162,7 @@ def start_token_bot():
                 _rps_render(game_id)
 
         except Exception as e:
-            print(f"callback_rps_pick: {e}")
+            print(f"❌ callback_rps_pick: {e}")
 
     def _rps_resolve_round(game_id):
         """پردازش نتیجه یک راند و آپدیت همان پیام واحد بازی"""
@@ -6340,14 +6189,14 @@ def start_token_bot():
                 p2 = game["player2_name"]
 
                 if result == "win1":
-                    round_result_line = f"{p1} این راند را برد!"
+                    round_result_line = f"🏅 {p1} این راند را برد!"
                 elif result == "win2":
-                    round_result_line = f"{p2} این راند را برد!"
+                    round_result_line = f"🏅 {p2} این راند را برد!"
                 else:
-                    round_result_line = "این راند مساوی شد!"
+                    round_result_line = "🤝 این راند مساوی شد!"
 
                 game["last_round_line"] = (
-                    f"راند {rnd}: {p1}={label1} | {p2}={label2}\n{round_result_line}"
+                    f"📋 راند {rnd}: {p1}={label1} | {p2}={label2}\n{round_result_line}"
                 )
 
                 is_last = (rnd >= _RPS_ROUNDS)
@@ -6364,7 +6213,7 @@ def start_token_bot():
                 _rps_render(game_id)
 
         except Exception as e:
-            print(f"_rps_resolve_round: {e}")
+            print(f"❌ _rps_resolve_round: {e}")
 
     def _rps_finish(game_id):
         """پایان بازی — تعیین برنده نهایی، واریز جایزه و ادیت همان پیام واحد"""
@@ -6389,21 +6238,21 @@ def start_token_bot():
                 db.add_tokens(game["account1"], payout)
                 cache.invalidate(f"account_{game['player1']}")
                 winner_name = p1_name
-                result_line = f"<b>{winner_name}</b> برنده شد! ({s1} — {s2})"
+                result_line = f"🏆 <b>{winner_name}</b> برنده شد! ({s1} — {s2})"
                 payout_line = (
-                    f"مجموع شرط: {total} {pe('diamond', '💎')}\n"
-                    f"🏛 مالیات ۱۰٪: {tax} {pe('diamond', '💎')}\n"
-                    f"جایزه: <b>{payout} الماس</b> به {winner_name}"
+                    f"💰 مجموع شرط: {total} 💎\n"
+                    f"🏛 مالیات ۱۰٪: {tax} 💎\n"
+                    f"💎 جایزه: <b>{payout} الماس</b> به {winner_name}"
                 )
             elif s2 > s1:
                 db.add_tokens(game["account2"], payout)
                 cache.invalidate(f"account_{game['player2']}")
                 winner_name = p2_name
-                result_line = f"<b>{winner_name}</b> برنده شد! ({s2} — {s1})"
+                result_line = f"🏆 <b>{winner_name}</b> برنده شد! ({s2} — {s1})"
                 payout_line = (
-                    f"مجموع شرط: {total} {pe('diamond', '💎')}\n"
-                    f"🏛 مالیات ۱۰٪: {tax} {pe('diamond', '💎')}\n"
-                    f"جایزه: <b>{payout} الماس</b> به {winner_name}"
+                    f"💰 مجموع شرط: {total} 💎\n"
+                    f"🏛 مالیات ۱۰٪: {tax} 💎\n"
+                    f"💎 جایزه: <b>{payout} الماس</b> به {winner_name}"
                 )
             else:
                 # مساوی: برگشت شرط بدون مالیات
@@ -6411,14 +6260,14 @@ def start_token_bot():
                 db.add_tokens(game["account2"], bet)
                 cache.invalidate(f"account_{game['player1']}")
                 cache.invalidate(f"account_{game['player2']}")
-                result_line = f"<b>مساوی!</b> ({s1} — {s2})"
-                payout_line = f"↩️ هر نفر {bet} {pe('diamond', '💎')} الماس دریافت کرد."
+                result_line = f"🤝 <b>مساوی!</b> ({s1} — {s2})"
+                payout_line = f"↩️ هر نفر {bet} 💎 الماس دریافت کرد."
 
             bar = _rps_score_bar(s1, s2)
             final_text = (
                 "🏁 <b>نتیجه نهایی — سنگ کاغذ قیچی</b>\n\n"
-                f"{p1_name}:  <b>{s1}</b> امتیاز\n"
-                f"{p2_name}:  <b>{s2}</b> امتیاز\n"
+                f"👤 {p1_name}:  <b>{s1}</b> امتیاز\n"
+                f"👤 {p2_name}:  <b>{s2}</b> امتیاز\n"
                 f"{bar}\n\n"
                 f"{result_line}\n\n"
                 f"{payout_line}"
@@ -6438,7 +6287,7 @@ def start_token_bot():
                     pass
 
         except Exception as e:
-            print(f"_rps_finish: {e}")
+            print(f"❌ _rps_finish: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # 🎰 قرعه‌کشی — Scheduler
@@ -6496,20 +6345,20 @@ def start_token_bot():
                             prize_lines = ""
                             for i, p in enumerate(prizes):
                                 ord_name = ordinals[i] if i < len(ordinals) else f"{i+1}م"
-                                medals = ["🥇","🥈","🥉","",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}"]
-                                medal = medals[i] if i < len(medals) else ""
+                                medals = ["🥇","🥈","🥉","🏅","🏅","🏅","🏅","🏅","🏅","🏅"]
+                                medal = medals[i] if i < len(medals) else "🎁"
                                 prize_lines += f"\n{medal} نفر {ord_name}: <b>{p}</b>"
 
                             msg_text = (
-                                "<b>قرعه‌کشی شروع شد!</b>\n\n"
-                                f"مهلت شرکت: تا ساعت <b>{lot['end_time']}</b>\n"
-                                f"تعداد برنده: <b>{lot['winners_count']} نفر</b>\n"
-                                f"جوایز:{prize_lines}\n\n"
+                                "🎰 <b>قرعه‌کشی شروع شد!</b>\n\n"
+                                f"⏰ مهلت شرکت: تا ساعت <b>{lot['end_time']}</b>\n"
+                                f"🏆 تعداد برنده: <b>{lot['winners_count']} نفر</b>\n"
+                                f"🎁 جوایز:{prize_lines}\n\n"
                                 "👇 برای شرکت روی دکمه کلیک کنید:"
                             )
                             markup = types.InlineKeyboardMarkup()
                             markup.add(types.InlineKeyboardButton(
-                                "شرکت در قرعه‌کشی",
+                                "🎰 شرکت در قرعه‌کشی",
                                 callback_data=f"join_lottery_{lot['id']}"
                             ))
                             sent_msg = _bot.send_message(channel, msg_text,
@@ -6518,9 +6367,9 @@ def start_token_bot():
                             lot["announce_msg_id"] = sent_msg.message_id
                             lot["announce_chat_id"] = sent_msg.chat.id
                             changed = True
-                            print(f"قرعه‌کشی {lot['id']} اعلام شد")
+                            print(f"✅ قرعه‌کشی {lot['id']} اعلام شد")
                         except Exception as e:
-                            print(f"خطا در اعلام قرعه‌کشی: {e}")
+                            print(f"❌ خطا در اعلام قرعه‌کشی: {e}")
 
                     # ── پایان قرعه‌کشی و انتخاب برندگان ─────────────────
                     if lot.get("announced") and not lot.get("finished") and now_teh >= end_dt:
@@ -6531,7 +6380,7 @@ def start_token_bot():
 
                             if not participants:
                                 result_text = (
-                                    "<b>نتیجه قرعه‌کشی</b>\n\n"
+                                    "🎰 <b>نتیجه قرعه‌کشی</b>\n\n"
                                     "😔 متأسفانه هیچ‌کس در قرعه‌کشی شرکت نکرد."
                                 )
                             else:
@@ -6544,12 +6393,12 @@ def start_token_bot():
 
                                 ordinals = ["اول", "دوم", "سوم", "چهارم", "پنجم",
                                             "ششم", "هفتم", "هشتم", "نهم", "دهم"]
-                                medals = ["🥇","🥈","🥉","",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}",f"{pe('trophy', '🏅')}"]
+                                medals = ["🥇","🥈","🥉","🏅","🏅","🏅","🏅","🏅","🏅","🏅"]
 
                                 winner_lines = ""
                                 for i, winner in enumerate(selected):
                                     ord_name = ordinals[i] if i < len(ordinals) else f"{i+1}م"
-                                    medal = medals[i] if i < len(medals) else ""
+                                    medal = medals[i] if i < len(medals) else "🎁"
                                     prize = prizes[i] if i < len(prizes) else "—"
                                     name = winner.get("name", "کاربر")
                                     username = winner.get("username")
@@ -6557,24 +6406,24 @@ def start_token_bot():
                                     winner_lines += f"\n{medal} نفر {ord_name}: {mention} — <b>{prize}</b>"
 
                                 result_text = (
-                                    "<b>نتایج قرعه‌کشی اعلام شد!</b>\n\n"
-                                    f"برندگان ({len(selected)} نفر):{winner_lines}\n\n"
-                                    "تبریک به برندگان عزیز!"
+                                    "🎉 <b>نتایج قرعه‌کشی اعلام شد!</b>\n\n"
+                                    f"🏆 برندگان ({len(selected)} نفر):{winner_lines}\n\n"
+                                    "🎊 تبریک به برندگان عزیز!"
                                 )
 
                             _bot.send_message(channel, result_text, parse_mode="HTML")
                             lot["finished"] = True
                             lot["status"] = "done"
                             changed = True
-                            print(f"قرعه‌کشی {lot['id']} پایان یافت")
+                            print(f"✅ قرعه‌کشی {lot['id']} پایان یافت")
                         except Exception as e:
-                            print(f"خطا در پایان قرعه‌کشی: {e}")
+                            print(f"❌ خطا در پایان قرعه‌کشی: {e}")
 
                 if changed:
                     db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
 
             except Exception as e:
-                print(f"خطا در lottery_scheduler: {e}")
+                print(f"❌ خطا در lottery_scheduler: {e}")
 
     # ── handler شرکت در قرعه‌کشی (از کانال) ─────────────────────────────────
     @_bot.callback_query_handler(func=lambda call: call.data.startswith("join_lottery_"))
@@ -6596,7 +6445,7 @@ def start_token_bot():
                 # بررسی تکراری نبودن
                 already = any(p.get("user_id") == uid for p in participants)
                 if already:
-                    return _bot.answer_callback_query(call.id, "شما قبلاً ثبت‌نام کرده‌اید!", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "✅ شما قبلاً ثبت‌نام کرده‌اید!", show_alert=True)
 
                 # بررسی وقت
                 now_teh = _now_tehran()
@@ -6605,7 +6454,7 @@ def start_token_bot():
                     if end_dt.tzinfo is None:
                         end_dt = end_dt.replace(tzinfo=_TEHRAN_OFFSET)
                     if now_teh > end_dt:
-                        return _bot.answer_callback_query(call.id, "مهلت شرکت تمام شده است.", show_alert=True)
+                        return _bot.answer_callback_query(call.id, "⏰ مهلت شرکت تمام شده است.", show_alert=True)
                 except Exception:
                     pass
 
@@ -6617,10 +6466,10 @@ def start_token_bot():
                 lot["participants"] = participants
                 db.set_global_setting("lotteries", _json.dumps(lotteries, ensure_ascii=False))
                 return _bot.answer_callback_query(call.id,
-                    f"ثبت‌نام شما انجام شد! ({len(participants)} نفر شرکت کرده‌اند)",
+                    f"✅ ثبت‌نام شما انجام شد! ({len(participants)} نفر شرکت کرده‌اند)",
                     show_alert=True)
 
-        _bot.answer_callback_query(call.id, "قرعه‌کشی یافت نشد یا پایان یافته.", show_alert=True)
+        _bot.answer_callback_query(call.id, "❌ قرعه‌کشی یافت نشد یا پایان یافته.", show_alert=True)
 
     # اجرای thread قرعه‌کشی
     t_lottery = threading.Thread(target=_lottery_scheduler, daemon=True)
@@ -6647,9 +6496,9 @@ def start_token_bot():
                     except:
                         pass
                 else:
-                    print(f"خطای polling: {e}")
+                    print(f"⚠️ خطای polling: {e}")
                     time.sleep(3)
 
     t = threading.Thread(target=_polling_loop, daemon=True)
     t.start()
-    print(f"ربات الماس @{BOT_USERNAME} استارت شد")
+    print(f"✅ ربات الماس @{BOT_USERNAME} استارت شد")
