@@ -307,18 +307,18 @@ def start_token_bot():
         # ✅ دکمه‌های اصلی کاربر به‌صورت InlineKeyboardButton
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton("💎 موجودی", callback_data="menu_balance", style="primary", icon_custom_emoji_id=str(EM.ID_BALANCE)),
-            types.InlineKeyboardButton("🎁 هدیه روزانه", callback_data="menu_daily", style="success", icon_custom_emoji_id=str(EM.ID_DAILY_GIFT))
+            types.InlineKeyboardButton(" موجودی", callback_data="menu_balance", style="primary", icon_custom_emoji_id=str(EM.ID_BALANCE)),
+            types.InlineKeyboardButton(" هدیه روزانه", callback_data="menu_daily", style="success", icon_custom_emoji_id=str(EM.ID_DAILY_GIFT))
         )
         markup.add(
-            types.InlineKeyboardButton("🔗 رفرال", callback_data="menu_referral", style="primary", icon_custom_emoji_id=str(EM.ID_REFERRAL)),
-            types.InlineKeyboardButton("🛒 خرید الماس", callback_data="menu_buy", style="success", icon_custom_emoji_id=str(EM.ID_BUY_DIAMOND))
+            types.InlineKeyboardButton(" رفرال", callback_data="menu_referral", style="primary", icon_custom_emoji_id=str(EM.ID_REFERRAL)),
+            types.InlineKeyboardButton(" خرید ", callback_data="menu_buy", style="success", icon_custom_emoji_id=str(EM.ID_BUY_DIAMOND))
         )
         markup.add(
-            types.InlineKeyboardButton("🎯 ماموریت‌ها", callback_data="menu_missions", style="primary", icon_custom_emoji_id=str(EM.ID_MISSION))
+            types.InlineKeyboardButton(" ماموریت‌ها", callback_data="menu_missions", style="primary", icon_custom_emoji_id=str(EM.ID_MISSION))
         )
         markup.add(
-            types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="success", icon_custom_emoji_id=str(EM.ID_GUIDE))
+            types.InlineKeyboardButton(" راهنما", callback_data="guide_menu", style="success", icon_custom_emoji_id=str(EM.ID_GUIDE))
         )
         if account is not None:
             try:
