@@ -164,9 +164,14 @@ def _run_tg(coro):
 def _kp_markup(digits, mode="code"):
     prefix = f"reg_kp_{mode}_"
     markup = types.InlineKeyboardMarkup(row_width=3)
+   
+   emojis = {
+    "1": "5830326445422940546"
+   }
+   
     # ✅ دکمه‌های اعداد با رنگ primary (آبی)
     markup.add(
-        types.InlineKeyboardButton("1", callback_data=f"{prefix}1", style="primary"),
+        types.InlineKeyboardButton("1", callback_data=f"{prefix}1", style="primary", icon_custom_emoji_id=EMOJIS["1"]),
         types.InlineKeyboardButton("2", callback_data=f"{prefix}2", style="primary"),
         types.InlineKeyboardButton("3", callback_data=f"{prefix}3", style="primary"),
     )
