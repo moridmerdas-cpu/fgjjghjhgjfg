@@ -291,7 +291,7 @@ def start_token_bot():
     def _user_keyboard(show_remove_self=True):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         markup.add(
-            types.KeyboardButton(" مدیریت سلف", style="primary"),  # 🔵 آبی
+            types.KeyboardButton("مدیریت سلف", style="primary"),  # 🔵 آبی
         )
         return markup
 
@@ -1914,7 +1914,7 @@ def start_token_bot():
             f"از دکمه‌های زیر استفاده کنید:"
         )
 
-    @_bot.message_handler(func=lambda m: m.text == " مدیریت سلف", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "مدیریت سلف", chat_types=['private'])
     def cmd_self_management(message):
         try:
             account = _get_account_cached(message.from_user.id)
@@ -2795,7 +2795,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 📢 پنل مدیریت مالک
     # ══════════════════════════════════════════════════════════════════════════
-    @_bot.message_handler(func=lambda m: m.text == " مدیریت", chat_types=['private'])
+    @_bot.message_handler(func=lambda m: m.text == "مدیریت", chat_types=['private'])
     def cmd_admin_panel(message):
         if message.from_user.id != OWNER_TG_ID:
             return
