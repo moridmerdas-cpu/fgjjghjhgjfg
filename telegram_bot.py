@@ -335,7 +335,7 @@ def start_token_bot():
         # ✅ دکمه‌های شیشه‌ای پنل مدیریت
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
-            types.InlineKeyboardButton(" چنل‌های اجباری", callback_data="admin_channels", style="primary"icon_custom_emoji_id=str(EM.ID_FORCED_JOIN)),   # 🔵 آبی
+            types.InlineKeyboardButton(" چنل‌های اجباری", callback_data="admin_channels", style="primary", icon_custom_emoji_id=str(EM.ID_FORCED_JOIN)),   # 🔵 آبی
             types.InlineKeyboardButton("👥 کاربران", callback_data="admin_users", style="primary")              # 🔵 آبی
         )
         markup.add(
