@@ -8,6 +8,9 @@ import datetime
 import random
 import re
 
+# ─── سیستم ایموجی‌های پرمیوم ──────────────────────────────────────────────────
+from emoji_system import e, tg_emoji, build_message, bullet_line, emoji_list, EMOJIS
+
 # ─── وقت تهران ───────────────────────────────────────────────────────────────
 _TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 
