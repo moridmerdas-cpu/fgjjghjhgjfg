@@ -8,6 +8,8 @@ load_dotenv()
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+HELPER_BOT_TOKEN = os.environ.get("HELPER_BOT_TOKEN", "")
+HELPER_BOT_USERNAME = os.environ.get("HELPER_BOT_USERNAME", "selfnexo_helper_bot")
 
 # ─── سرور ──────────────────────────────────────────────────────────────────
 SECRET_KEY = os.environ.get("SECRET_KEY", "nexoself_secret_key_change_me")
