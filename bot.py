@@ -32,12 +32,12 @@ FONTS = {
     "11": lambda t: f"<u>{t}</u>",     # زیرخط (فقط HTML — Markdown زیرخط نداره)
     "12": lambda t: f"~~{t}~~",        # خط‌خورده (Markdown)
     "13": lambda t: f"`{t}`",          # مونو/کد (Markdown)
-    "14": lambda t: "\n".join(f"> {line}" for line in t.split("\n")),  # نقل قول (Markdown، هر خط)
+    "14": lambda t: f"<blockquote>{t}</blockquote>",  # نقل قول واقعی (HTML)
     "15": lambda t: f"||{t}||",        # اسپویلر (Markdown تلگرام)
 }
 # فونت‌هایی که باید با parse_mode مناسب ارسال/ادیت بشن (چون از سینتکس فرمت‌بندی استفاده می‌کنن، نه یونیکد استایل‌شده)
-_MARKDOWN_FONTS = {"9", "10", "12", "13", "14", "15"}
-_HTML_FONTS = {"11"}
+_MARKDOWN_FONTS = {"9", "10", "12", "13", "15"}
+_HTML_FONTS = {"11", "14"}
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 # ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
