@@ -92,80 +92,6 @@ _bot = None
 BOT_USERNAME = None
 OWNER_TG_ID = 8296865861
 
-# ─── پردازش ایموجی‌های پرمیوم در پیام «ارسال به کانال» ────────────────────────
-# الگو: متن[ایدی_عددی_ایموجی_پرمیوم]  → ایموجی پرمیوم جلوی متن قرار می‌گیرد
-_PREMIUM_EMOJI_RE = re.compile(r'\[(\d{6,25})\]')
-_PREMIUM_EMOJI_PLACEHOLDER = "🔸"
-
-def _parse_premium_emojis(text, source_entities=None):
-    """
-    در متن دنبال الگوهای [ایدی_عددی] می‌گردد و آن‌ها را به ایموجی پرمیوم
-    (custom_emoji entity) که جلوی همان نقطه از متن قرار می‌گیرد تبدیل می‌کند.
-    فرمت‌های قبلی پیام (بولد، ایتالیک، نقل‌قول، کد، لینک و ...) که از طریق
-    تلگرام روی پیام اعمال شده‌اند (source_entities) هم حفظ و با آفست جدید
-    بازسازی می‌شوند.
-    برمی‌گرداند: (new_text, list_of_MessageEntity)
-    """
-    text = text or ""
-    matches = list(_PREMIUM_EMOJI_RE.finditer(text))
-
-    if not matches:
-        new_entities = []
-        for ent in (source_entities or []):
-            new_entities.append(types.MessageEntity(
-                type=ent.type, offset=ent.offset, length=ent.length,
-                url=getattr(ent, "url", None), user=getattr(ent, "user", None),
-                language=getattr(ent, "language", None),
-                custom_emoji_id=getattr(ent, "custom_emoji_id", None)
-            ))
-        return text, new_entities
-
-    # بازه‌های جایگزین‌شونده در متن قدیمی: (start, end, emoji_id)
-    repls = [(m.start(), m.end(), m.group(1)) for m in matches]
-    ph_len = len(_PREMIUM_EMOJI_PLACEHOLDER)
-
-    def map_pos(old_pos):
-        """نگاشت یک آفست از متن قدیمی به متن جدید"""
-        delta = 0
-        for (s, e, _eid) in repls:
-            if old_pos <= s:
-                break
-            if old_pos >= e:
-                delta += ph_len - (e - s)
-            else:
-                # داخل بازه‌ی جایگزین‌شده افتاده -> به ابتدای آن می‌چسبانیم
-                return s + delta
-        return old_pos + delta
-
-    # ساخت متن جدید + entityهای ایموجی پرمیوم
-    new_text = ""
-    last = 0
-    custom_entities = []
-    for (s, e, eid) in repls:
-        new_text += text[last:s]
-        emoji_offset = len(new_text)
-        new_text += _PREMIUM_EMOJI_PLACEHOLDER
-        custom_entities.append(types.MessageEntity(
-            type="custom_emoji", offset=emoji_offset, length=ph_len, custom_emoji_id=eid
-        ))
-        last = e
-    new_text += text[last:]
-
-    # بازسازی entityهای قبلی (بولد/ایتالیک/نقل‌قول/کد/...) با آفست جدید
-    new_entities = list(custom_entities)
-    for ent in (source_entities or []):
-        ns = map_pos(ent.offset)
-        ne = map_pos(ent.offset + ent.length)
-        if ne > ns:
-            new_entities.append(types.MessageEntity(
-                type=ent.type, offset=ns, length=ne - ns,
-                url=getattr(ent, "url", None), user=getattr(ent, "user", None),
-                language=getattr(ent, "language", None),
-                custom_emoji_id=getattr(ent, "custom_emoji_id", None)
-            ))
-
-    return new_text, new_entities
-
 # ─── کش ──────────────────────────────────────────────────────────────────────
 class SmartCache:
     def __init__(self):
@@ -427,9 +353,6 @@ def start_token_bot():
         markup.add(
             types.InlineKeyboardButton(" پیام عمومی", callback_data="admin_broadcast", style="primary", icon_custom_emoji_id=str(EM.ID_MESSAGE_ALL)),      # 🔵 آبی
             types.InlineKeyboardButton(" ماموریت‌ها", callback_data="admin_missions", style="success", icon_custom_emoji_id=str(EM.ID_MISSION))       # 🟢 سبز
-        )
-        markup.add(
-            types.InlineKeyboardButton(" پیام به کانال", callback_data="admin_channel_msg", style="primary", icon_custom_emoji_id=str(EM.ID_MESSAGE_ALL))  # 🔵 آبی
         )
         markup.add(
             types.InlineKeyboardButton(" شرکت‌کنندگان جام جهانی", callback_data="admin_wc_participants", style="primary", icon_custom_emoji_id=str(EM.ID_UESRS_WC)) # 🔵 آبی
@@ -788,16 +711,6 @@ def start_token_bot():
                         except Exception:
                             pass
 
-                    sender_name = message.from_user.username or "کاربر"
-                    receiver_name = target_user.username or "کاربر"
-                    formatted_msg = (
-                        f"{EM.EMOJI_TRANSFER_SUCCESS} <b>{amount} الماس با موفقیت انتقال یافت</b> {EM.EMOJI_CHECK_PREMIUM}\n\n"
-                        f"{EM.EMOJI_SENDER} <b>فرستنده:</b> @{sender_name}\n\n"
-                        f"{EM.EMOJI_RECEIVER} <b>گیرنده:</b> @{receiver_name}\n"
-                        f"{EM.EMOJI_TAX_TRANSFER} {msg}"
-                    )
-                    return _bot.reply_to(message, formatted_msg)
-
                 return _bot.reply_to(message, msg)
 
             # ── حالت معمول: «انتقال [یوزرنیم] [عدد]» ─────────────────────────
@@ -836,16 +749,7 @@ def start_token_bot():
                         )
                     except:
                         pass
-
-                sender_name = message.from_user.username or "کاربر"
-                formatted_msg = (
-                    f"{EM.EMOJI_TRANSFER_SUCCESS} <b>{amount} الماس با موفقیت انتقال یافت</b> {EM.EMOJI_CHECK_PREMIUM}\n\n"
-                    f"{EM.EMOJI_SENDER} <b>فرستنده:</b> @{sender_name}\n\n"
-                    f"{EM.EMOJI_RECEIVER} <b>گیرنده:</b> @{username}\n"
-                    f"{EM.EMOJI_TAX_TRANSFER} {msg}"
-                )
-                return _bot.reply_to(message, formatted_msg)
-
+            
             _bot.reply_to(message, msg)
             
         except Exception as e:
@@ -2915,7 +2819,6 @@ def start_token_bot():
             ("admin_set_card", "set_card"),
             ("admin_payments", "payments"),
             ("admin_broadcast", "broadcast"),
-            ("admin_channel_msg", "channel_msg"),
             ("admin_missions", "missions"), ("add_mission_prompt", "missions"), ("del_mission_", "missions"),
             ("admin_gift", "gift"),
             ("admin_guide_manage", "guide_manage"), ("admin_guide_add", "guide_manage"),
@@ -3367,25 +3270,6 @@ def start_token_bot():
                     "📣 <b>ارسال پیام عمومی</b>\n\n"
                     "پیام خود را ارسال کنید (متن، عکس یا لینک):\n"
                     "به تمام کاربران ثبت‌شده ارسال می‌شود.",
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=markup
-                )
-                _bot.answer_callback_query(call.id)
-                return
-
-            elif data == "admin_channel_msg":
-                _owner_states[call.from_user.id] = {"state": "channel_msg_text"}
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
-                _bot.edit_message_text(
-                    "📢 <b>ارسال پیام به کانال</b>\n\n"
-                    "پیام خود را ارسال کنید. فرمت‌هایی مثل <b>بولد</b>، <i>ایتالیک</i>، "
-                    "نقل‌قول و... که با کیبورد تلگرام روی متن اعمال کنید حفظ می‌شود.\n\n"
-                    "برای قرار دادن ایموجی پرمیوم جلوی متن، ایدی عددی آن را داخل کروشه "
-                    "درست قبل از همان قسمت از متن بنویسید:\n"
-                    "<code>با سلام و خسته نباشید[5436203513149404753]</code>\n\n"
-                    "پیام نهایی به کانال ارسال خواهد شد.",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -4105,47 +3989,6 @@ def start_token_bot():
             state_data = _owner_states[message.from_user.id]
             state = state_data["state"]
             text = (message.text or "").strip()
-
-            # ── پیام به کانال (با پشتیبانی از ایموجی پرمیوم و فرمت‌بندی) ───────
-            if state == "channel_msg_text":
-                _owner_states.pop(message.from_user.id, None)
-                target = (
-                    getattr(config, 'PUBLISH_CHANNEL_ID', None)
-                    or getattr(config, 'WC_CHANNEL_ID', None)
-                    or getattr(config, 'WORLD_CUP_GROUP', None)
-                )
-                if not target:
-                    _bot.reply_to(
-                        message,
-                        "❌ مقصد ارسال تنظیم نشده.\n"
-                        "متغیر <code>PUBLISH_CHANNEL_ID</code> را در config.py تنظیم کنید "
-                        "(مثل <code>@channel</code> یا <code>-100xxxxxxxxxx</code>).",
-                        reply_markup=_owner_keyboard()
-                    )
-                    return
-                try:
-                    if message.content_type == "text":
-                        raw_text = message.text or ""
-                        raw_entities = message.entities or []
-                        new_text, new_entities = _parse_premium_emojis(raw_text, raw_entities)
-                        _bot.send_message(target, new_text, entities=new_entities)
-                    else:
-                        raw_caption = message.caption or ""
-                        raw_entities = message.caption_entities or []
-                        new_caption, new_entities = _parse_premium_emojis(raw_caption, raw_entities)
-                        if message.photo:
-                            _bot.send_photo(target, message.photo[-1].file_id, caption=new_caption, caption_entities=new_entities)
-                        elif message.video:
-                            _bot.send_video(target, message.video.file_id, caption=new_caption, caption_entities=new_entities)
-                        elif message.document:
-                            _bot.send_document(target, message.document.file_id, caption=new_caption, caption_entities=new_entities)
-                        else:
-                            _bot.reply_to(message, "❌ نوع پیام پشتیبانی نمی‌شود.", reply_markup=_owner_keyboard())
-                            return
-                    _bot.reply_to(message, "✅ پیام با موفقیت به کانال ارسال شد.", reply_markup=_owner_keyboard())
-                except Exception as e:
-                    _bot.reply_to(message, f"❌ خطا در ارسال به کانال: {e}\nمطمئن شوید ربات در مقصد ادمین است.", reply_markup=_owner_keyboard())
-                return
 
             # ── پیام عمومی ─────────────────────────────────────────────────────
             if state == "broadcast_msg":
