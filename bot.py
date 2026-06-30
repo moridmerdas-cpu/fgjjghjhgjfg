@@ -635,7 +635,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تبچی ", "تبچی خاموش",
+            "تبچی لینک ", "تبچی خاموش",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -1194,36 +1194,41 @@ async def _handle_command(cl, event, text, owner_id, entry):
         await edit(_help_text())
 
     # ─── تبچی (با لینک) ─────────────────────────────────────────────────────
-    elif text.startswith("تبچی ") and text != "تبچی خاموش":
-        link = text[len("تبچی "):].strip()
-        replied = await event.get_reply_message()
-        if not replied:
-            await edit("❗ باید روی پیام بنرت (عکس) ریپلای بزنی و بنویسی: تبچی [لینک مقصد]")
-        elif not link:
-            await edit("❗ فرمت: تبچی [لینک یا یوزرنیم مقصد]\nمثال: تبچی @mygroup")
+    # فرمت دقیق: تبچی لینک [مقصد] [ساعت اختیاری]
+    elif re.match(r"^تبچی\s+لینک\s+\S+", text):
+        m = re.match(r"^تبچی\s+لینک\s+(\S+)(?:\s+(\d+(?:\.\d+)?))?\s*$", text)
+        if not m:
+            await edit("❗ فرمت: تبچی لینک [مقصد] [ساعت اختیاری]\nمثال: تبچی لینک @mygroup 2")
         else:
-            try:
-                dest = await cl.get_entity(link)
-            except Exception as e:
-                await edit(f"❌ مقصد پیدا نشد: {e}")
+            link = m.group(1)
+            hours = float(m.group(2)) if m.group(2) else 1.0
+            replied = await event.get_reply_message()
+            if not replied:
+                await edit("❗ باید روی پیام بنرت (عکس) ریپلای بزنی و بنویسی: تبچی لینک [مقصد]")
             else:
-                _tabchi_stop(owner_id)
-                _tabchi_sessions[owner_id] = {
-                    "banner_chat_id": replied.chat_id,
-                    "banner_msg_id": replied.id,
-                    "dest_entity": dest,
-                    "mode": "link",
-                    "task": None,
-                }
-                _tabchi_sessions[owner_id]["task"] = asyncio.ensure_future(
-                    _tabchi_loop_link(cl, owner_id)
-                )
-                dest_name = getattr(dest, "title", None) or getattr(dest, "username", link)
-                await edit(
-                    f"✅ تبچی فعال شد.\n"
-                    f"این پیام هر ۱ ساعت به «{dest_name}» فوروارد می‌شود.\n"
-                    f"برای توقف: تبچی خاموش"
-                )
+                try:
+                    dest = await cl.get_entity(link)
+                except Exception as e:
+                    await edit(f"❌ مقصد پیدا نشد: {e}")
+                else:
+                    _tabchi_stop(owner_id)
+                    _tabchi_sessions[owner_id] = {
+                        "banner_chat_id": replied.chat_id,
+                        "banner_msg_id": replied.id,
+                        "dest_entity": dest,
+                        "mode": "link",
+                        "interval": max(hours, 0.05) * 3600,
+                        "task": None,
+                    }
+                    _tabchi_sessions[owner_id]["task"] = asyncio.ensure_future(
+                        _tabchi_loop_link(cl, owner_id)
+                    )
+                    dest_name = getattr(dest, "title", None) or getattr(dest, "username", link)
+                    await edit(
+                        f"✅ تبچی فعال شد.\n"
+                        f"این پیام هر {hours:g} ساعت به «{dest_name}» فوروارد می‌شود.\n"
+                        f"برای توقف: تبچی خاموش"
+                    )
 
     elif text == "تبچی خاموش":
         if _tabchi_stop(owner_id):
@@ -1652,8 +1657,9 @@ def _help_text():
             "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
         ]),
         ("🔹 تبچی", [
-            "تبچی [لینک یا یوزرنیم مقصد]  ← ریپلای روی پیام بنر",
+            "تبچی لینک [مقصد] [ساعت اختیاری]  ← ریپلای روی پیام بنر",
             "تبچی خاموش",
+            "💡 پیام ریپلای‌شده طبق بازه تعیین‌شده (پیش‌فرض ۱ ساعت) به مقصد فوروارد می‌شود",
             "💡 پیام ریپلای‌شده هر ۱ ساعت به مقصد فوروارد می‌شود",
         ]),
         ("🔹 اتوماسیون", [
