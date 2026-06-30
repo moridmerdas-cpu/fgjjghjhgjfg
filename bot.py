@@ -29,16 +29,6 @@ FONTS = {
 }
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-# ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
-# tabchi_sessions[owner_id] = {
-#   "banner_msg": Message,      # خود پیام بنر (که forward می‌شه)
-#   "dest_entity": entity یا None,  # برای روش "لینک"
-#   "mode": "link" یا "full" یا None,
-#   "task": asyncio.Task,
-# }
-_tabchi_sessions = {}
-_TABCHI_INTERVAL = 3600  # هر ۱ ساعت
-
 LINK_PATTERN = re.compile(
     r"(https?://\S+|t\.me/\S+|telegram\.me/\S+|www\.\S+)", re.IGNORECASE
 )
@@ -322,24 +312,11 @@ class BotManager:
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
 
-                # ✅ اگه تبچی قبلاً فعال بوده، دوباره راه‌اندازی کن
-                _sess = _tabchi_sessions.get(owner_id)
-                if _sess and _sess.get("mode") == "link":
-                    _t = _sess.get("task")
-                    if not _t or _t.done():
-                        _sess["task"] = asyncio.ensure_future(_tabchi_loop_link(cl, owner_id))
-
                 retry_delay = 5
                 await cl.run_until_disconnected()
 
                 clock_task.cancel()
                 sched_task.cancel()
-                _tsess = _tabchi_sessions.get(owner_id)
-                if _tsess:
-                    _tt = _tsess.get("task")
-                    if _tt and not _tt.done():
-                        _tt.cancel()
-                    _tsess["task"] = None
 
                 if entry["stop"]:
                     break
@@ -635,7 +612,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تبچی لینک ", "تبچی خاموش",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -1193,49 +1169,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text in ("راهنما", "help"):
         await edit(_help_text())
 
-    # ─── تبچی (با لینک) ─────────────────────────────────────────────────────
-    # فرمت دقیق: تبچی لینک [مقصد] [ساعت اختیاری]
-    elif re.match(r"^تبچی\s+لینک\s+\S+", text):
-        m = re.match(r"^تبچی\s+لینک\s+(\S+)(?:\s+(\d+(?:\.\d+)?))?\s*$", text)
-        if not m:
-            await edit("❗ فرمت: تبچی لینک [مقصد] [ساعت اختیاری]\nمثال: تبچی لینک @mygroup 2")
-        else:
-            link = m.group(1)
-            hours = float(m.group(2)) if m.group(2) else 1.0
-            replied = await event.get_reply_message()
-            if not replied:
-                await edit("❗ باید روی پیام بنرت (عکس) ریپلای بزنی و بنویسی: تبچی لینک [مقصد]")
-            else:
-                try:
-                    dest = await cl.get_entity(link)
-                except Exception as e:
-                    await edit(f"❌ مقصد پیدا نشد: {e}")
-                else:
-                    _tabchi_stop(owner_id)
-                    _tabchi_sessions[owner_id] = {
-                        "banner_chat_id": replied.chat_id,
-                        "banner_msg_id": replied.id,
-                        "dest_entity": dest,
-                        "mode": "link",
-                        "interval": max(hours, 0.05) * 3600,
-                        "task": None,
-                    }
-                    _tabchi_sessions[owner_id]["task"] = asyncio.ensure_future(
-                        _tabchi_loop_link(cl, owner_id)
-                    )
-                    dest_name = getattr(dest, "title", None) or getattr(dest, "username", link)
-                    await edit(
-                        f"✅ تبچی فعال شد.\n"
-                        f"این پیام هر {hours:g} ساعت به «{dest_name}» فوروارد می‌شود.\n"
-                        f"برای توقف: تبچی خاموش"
-                    )
-
-    elif text == "تبچی خاموش":
-        if _tabchi_stop(owner_id):
-            await edit("⛔ تبچی متوقف شد.")
-        else:
-            await edit("❗ تبچی فعالی پیدا نشد.")
-
     # ─── ارسال زمان‌بندی شده ─────────────────────────────────────────────────
     elif text.startswith("ارسال زمان‌بندی "):
         m = re.match(r"^ارسال زمان‌بندی (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (.+)$", text, re.DOTALL)
@@ -1656,12 +1589,6 @@ def _help_text():
             "حذف کانال اجباری",
             "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
         ]),
-        ("🔹 تبچی", [
-            "تبچی لینک [مقصد] [ساعت اختیاری]  ← ریپلای روی پیام بنر",
-            "تبچی خاموش",
-            "💡 پیام ریپلای‌شده طبق بازه تعیین‌شده (پیش‌فرض ۱ ساعت) به مقصد فوروارد می‌شود",
-            "💡 پیام ریپلای‌شده هر ۱ ساعت به مقصد فوروارد می‌شود",
-        ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
             "سین خودکار خاموش",
@@ -1778,42 +1705,6 @@ async def _clock_loop(cl, owner_id):
         except Exception as e:
             print(f"❌ خطا در _clock_loop: {e}")
             await asyncio.sleep(10)
-
-
-def _tabchi_stop(owner_id: int) -> bool:
-    """تسک تبچی رو کنسل و session رو پاک می‌کنه."""
-    sess = _tabchi_sessions.pop(owner_id, None)
-    if sess:
-        task = sess.get("task")
-        if task and not task.done():
-            task.cancel()
-        return True
-    return False
-
-
-async def _tabchi_loop_link(cl, owner_id: int):
-    """
-    هر ۱ ساعت پیام بنر اصلی رو (با عکس و متنش) به یک مقصد تأییدشده فوروارد می‌کنه.
-    """
-    while True:
-        sess = _tabchi_sessions.get(owner_id)
-        if not sess:
-            break
-        try:
-            await cl.forward_messages(
-                sess["dest_entity"],
-                sess["banner_msg_id"],
-                sess["banner_chat_id"],
-            )
-            print(f"[Tabchi] [{owner_id}] فوروارد شد به {sess['dest_entity']}")
-        except FloodWaitError as e:
-            print(f"[Tabchi] FloodWait {e.seconds}s")
-            await asyncio.sleep(e.seconds + 5)
-            continue
-        except Exception as e:
-            print(f"[Tabchi] [{owner_id}] خطا: {e}")
-
-        await asyncio.sleep(_TABCHI_INTERVAL)
 
 
 async def _scheduler_loop(cl, owner_id):
