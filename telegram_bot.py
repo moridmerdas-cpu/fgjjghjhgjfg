@@ -95,7 +95,15 @@ OWNER_TG_ID = 8296865861
 # ─── پردازش ایموجی‌های پرمیوم در پیام «ارسال به کانال» ────────────────────────
 # الگو: متن[ایدی_عددی_ایموجی_پرمیوم]  → ایموجی پرمیوم جلوی متن قرار می‌گیرد
 _PREMIUM_EMOJI_RE = re.compile(r'\[(\d{6,25})\]')
-_PREMIUM_EMOJI_PLACEHOLDER = "🔸"
+# نکته مهم: تلگرام آفست/طول entityها را بر اساس واحدهای UTF-16 محاسبه می‌کند،
+# نه تعداد کاراکتر پایتون. ایموجی‌های خارج از BMP (مثل 🔸) دو واحد UTF-16
+# هستند، پس به‌جای آن از یک نماد داخل BMP (یک واحدی) استفاده می‌کنیم تا
+# آفست‌ها همیشه درست باشند و ایموجی پرمیوم واقعاً اعمال شود.
+_PREMIUM_EMOJI_PLACEHOLDER = "★"
+
+def _utf16len(s):
+    """طول رشته بر حسب واحدهای UTF-16 (همان واحدی که تلگرام برای offset/length استفاده می‌کند)"""
+    return len(s.encode('utf-16-le')) // 2
 
 def _parse_premium_emojis(text, source_entities=None):
     """
@@ -103,7 +111,7 @@ def _parse_premium_emojis(text, source_entities=None):
     (custom_emoji entity) که جلوی همان نقطه از متن قرار می‌گیرد تبدیل می‌کند.
     فرمت‌های قبلی پیام (بولد، ایتالیک، نقل‌قول، کد، لینک و ...) که از طریق
     تلگرام روی پیام اعمال شده‌اند (source_entities) هم حفظ و با آفست جدید
-    بازسازی می‌شوند.
+    (بر حسب UTF-16) بازسازی می‌شوند.
     برمی‌گرداند: (new_text, list_of_MessageEntity)
     """
     text = text or ""
@@ -120,35 +128,43 @@ def _parse_premium_emojis(text, source_entities=None):
             ))
         return text, new_entities
 
-    # بازه‌های جایگزین‌شونده در متن قدیمی: (start, end, emoji_id)
-    repls = [(m.start(), m.end(), m.group(1)) for m in matches]
-    ph_len = len(_PREMIUM_EMOJI_PLACEHOLDER)
+    ph_len = _utf16len(_PREMIUM_EMOJI_PLACEHOLDER)
 
-    def map_pos(old_pos):
-        """نگاشت یک آفست از متن قدیمی به متن جدید"""
+    # بازه‌های جایگزین‌شونده، بر حسب آفست UTF-16 در متن قدیمی: (start, end, emoji_id)
+    repls = []
+    for m in matches:
+        s_utf16 = _utf16len(text[:m.start()])
+        e_utf16 = s_utf16 + _utf16len(m.group(0))
+        repls.append((s_utf16, e_utf16, m.group(1)))
+
+    def map_pos(old_pos_utf16):
+        """نگاشت یک آفست UTF-16 از متن قدیمی به متن جدید"""
         delta = 0
         for (s, e, _eid) in repls:
-            if old_pos <= s:
+            if old_pos_utf16 <= s:
                 break
-            if old_pos >= e:
+            if old_pos_utf16 >= e:
                 delta += ph_len - (e - s)
             else:
                 # داخل بازه‌ی جایگزین‌شده افتاده -> به ابتدای آن می‌چسبانیم
                 return s + delta
-        return old_pos + delta
+        return old_pos_utf16 + delta
 
-    # ساخت متن جدید + entityهای ایموجی پرمیوم
+    # ساخت متن جدید + entityهای ایموجی پرمیوم (آفست‌ها بر حسب UTF-16)
     new_text = ""
     last = 0
     custom_entities = []
-    for (s, e, eid) in repls:
-        new_text += text[last:s]
-        emoji_offset = len(new_text)
-        new_text += _PREMIUM_EMOJI_PLACEHOLDER
+    new_utf16_pos = 0
+    for m in matches:
+        seg = text[last:m.start()]
+        new_text += seg
+        new_utf16_pos += _utf16len(seg)
         custom_entities.append(types.MessageEntity(
-            type="custom_emoji", offset=emoji_offset, length=ph_len, custom_emoji_id=eid
+            type="custom_emoji", offset=new_utf16_pos, length=ph_len, custom_emoji_id=m.group(1)
         ))
-        last = e
+        new_text += _PREMIUM_EMOJI_PLACEHOLDER
+        new_utf16_pos += ph_len
+        last = m.end()
     new_text += text[last:]
 
     # بازسازی entityهای قبلی (بولد/ایتالیک/نقل‌قول/کد/...) با آفست جدید
@@ -309,6 +325,31 @@ def _get_account_cached(tg_id):
     return account
 
 
+def _is_user_banned(account_id):
+    try:
+        return db.get_setting(account_id, "self_banned", "0") == "1"
+    except Exception:
+        return False
+
+
+def _get_account_by_id(account_id):
+    """دریافت اکانت بر اساس آیدی عددی پنل؛ اگر db تابع مستقیم نداشت، از لیست کامل پیدا می‌کند"""
+    try:
+        if hasattr(db, "get_account_by_id"):
+            acc = db.get_account_by_id(account_id)
+            if acc:
+                return acc
+    except Exception:
+        pass
+    try:
+        for a in db.get_all_accounts():
+            if a.get("id") == account_id:
+                return a
+    except Exception:
+        pass
+    return None
+
+
 def start_token_bot():
     global _bot, BOT_USERNAME
 
@@ -413,6 +454,9 @@ def start_token_bot():
             types.InlineKeyboardButton(" کاربران", callback_data="admin_users", style="primary", icon_custom_emoji_id=str(EM.ID_USERS))              # 🔵 آبی
         )
         markup.add(
+            types.InlineKeyboardButton(" مدیریت کاربران", callback_data="admin_manage_users", style="danger", icon_custom_emoji_id=str(EM.ID_USERS))   # 🔴 قرمز
+        )
+        markup.add(
             types.InlineKeyboardButton(" جام جهانی", callback_data="admin_wc", style="success", icon_custom_emoji_id=str(EM.ID_World_Cup)),              # 🟢 سبز
             types.InlineKeyboardButton(" بازی‌های امروز", callback_data="admin_today_games", style="primary", icon_custom_emoji_id=str(EM.ID_DAY_GAME)) # 🔵 آبی
         )
@@ -454,6 +498,48 @@ def start_token_bot():
         )
         return markup
 
+    def _manage_user_card(account):
+        """ساخت متن و کیبورد پنل مدیریت یک کاربر خاص"""
+        acc_id = account["id"]
+        bal = db.get_token_balance(acc_id)
+        banned = _is_user_banned(acc_id)
+        try:
+            tg_id = db.get_telegram_id_by_owner(acc_id)
+        except Exception:
+            tg_id = None
+        try:
+            from bot import bot_manager
+            self_running = bot_manager.is_running(acc_id)
+        except Exception:
+            self_running = False
+
+        ban_text = "🚫 بن شده" if banned else "✅ بن نیست"
+        self_text = "🟢 روشن" if self_running else "🔴 خاموش"
+        text = (
+            f"👤 <b>مدیریت کاربر</b>\n\n"
+            f"🆔 یوزرنیم: <b>{account.get('username', '-')}</b>\n"
+            f"🔢 آیدی پنل: <code>{acc_id}</code>\n"
+            f"📱 آیدی تلگرام: <code>{tg_id or '-'}</code>\n"
+            f"💎 موجودی: <b>{bal} الماس</b>\n"
+            f"🚦 وضعیت بن: {ban_text}\n"
+            f"🤖 وضعیت سلف: {self_text}"
+        )
+
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        if banned:
+            markup.add(types.InlineKeyboardButton("✅ رفع بن", callback_data=f"mu_unban_{acc_id}", style="success"))
+        else:
+            markup.add(types.InlineKeyboardButton("🚫 بن از سلف", callback_data=f"mu_ban_{acc_id}", style="danger"))
+        markup.add(
+            types.InlineKeyboardButton("➕ دادن الماس", callback_data=f"mu_give_{acc_id}", style="success"),
+            types.InlineKeyboardButton("➖ کسر الماس", callback_data=f"mu_deduct_{acc_id}", style="danger")
+        )
+        if self_running:
+            markup.add(types.InlineKeyboardButton("🔴 خاموش کردن سلف", callback_data=f"mu_stopself_{acc_id}", style="danger"))
+        markup.add(types.InlineKeyboardButton("🔄 بروزرسانی", callback_data=f"mu_view_{acc_id}", style="primary"))
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel", style="danger"))
+        return text, markup
+
     # ══════════════════════════════════════════════════════════════════════════
     # 🎯 دستور شرط بندی — فقط در گروه سلف
     # ══════════════════════════════════════════════════════════════════════════
@@ -492,6 +578,9 @@ def start_token_bot():
             account = _get_account_cached(message.from_user.id)
             if not account:
                 return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
+
+            if _is_user_banned(account["id"]):
+                return _bot.reply_to(message, "🚫 شما توسط مالک از سلف بن شده‌اید و امکان شرط‌بندی ندارید.")
 
             balance = db.get_token_balance(account["id"])
             if balance < amount:
@@ -2017,6 +2106,12 @@ def start_token_bot():
             if not account:
                 return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.",
                                      reply_markup=_main_inline_keyboard())
+            if _is_user_banned(account["id"]):
+                return _bot.reply_to(
+                    message,
+                    "🚫 <b>شما توسط مالک از سلف بن شده‌اید.</b>\nامکان مدیریت سلف برای شما غیرفعال است.",
+                    reply_markup=_main_inline_keyboard()
+                )
             _bot.send_message(
                 message.chat.id,
                 _self_management_text(account["id"]),
@@ -2065,6 +2160,9 @@ def start_token_bot():
                 from bot import bot_manager
                 from app import get_loop
                 import time as _time
+                if _is_user_banned(acc_id):
+                    return _bot.answer_callback_query(
+                        call.id, "🚫 شما توسط مالک از سلف بن شده‌اید.", show_alert=True)
                 if not db.get_setting(acc_id, "logged_in", "0") == "1":
                     return _bot.answer_callback_query(
                         call.id, "❌ سلف وصل نیست. ابتدا از «وصل کردن سلف» استفاده کنید.", show_alert=True)
@@ -2907,6 +3005,7 @@ def start_token_bot():
         _perm_prefixes = [
             ("admin_channels", "channels"), ("rmch_", "channels"), ("addch_prompt", "channels"),
             ("admin_users", "users"),
+            ("admin_manage_users", "manage_users"),
             ("admin_wc_participants", "wc_participants"),
             ("admin_wc", "wc"), ("wcwin_", "wc"), ("wc_", "wc"),
             ("admin_today_games", "today_games"),
@@ -3386,6 +3485,20 @@ def start_token_bot():
                     "درست قبل از همان قسمت از متن بنویسید:\n"
                     "<code>با سلام و خسته نباشید[5436203513149404753]</code>\n\n"
                     "پیام نهایی به کانال ارسال خواهد شد.",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif data == "admin_manage_users":
+                _owner_states[call.from_user.id] = {"state": "manage_user_lookup"}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data="admin_panel", style="danger", icon_custom_emoji_id="5832353674281620438"))
+                _bot.edit_message_text(
+                    "👮 <b>مدیریت کاربران</b>\n\n"
+                    "یوزرنیم پنل یا آیدی عددی تلگرام کاربر مورد نظر را ارسال کنید:",
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     reply_markup=markup
@@ -4096,6 +4209,94 @@ def start_token_bot():
                 pass
 
     # ══════════════════════════════════════════════════════════════════════════
+    # 👮 مدیریت تک‌تک کاربران (بن/رفع بن، دادن/کسر الماس، خاموش کردن سلف)
+    # ══════════════════════════════════════════════════════════════════════════
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("mu_"))
+    def callback_manage_user(call):
+        if call.from_user.id != OWNER_TG_ID and not db.is_sub_admin(call.from_user.id):
+            return _bot.answer_callback_query(call.id, "❌ دسترسی ندارید", show_alert=True)
+        try:
+            parts = call.data.split("_", 2)
+            action = parts[1]
+            acc_id = int(parts[2])
+            account = _get_account_by_id(acc_id)
+            if not account:
+                return _bot.answer_callback_query(call.id, "❌ کاربر یافت نشد.", show_alert=True)
+
+            if action == "ban":
+                db.set_setting(acc_id, "self_banned", "1")
+                tg_id = db.get_telegram_id_by_owner(acc_id)
+                if tg_id:
+                    try:
+                        _bot.send_message(tg_id, "🚫 <b>شما توسط مالک از سلف بن شدید.</b>\nامکان مدیریت/شرط‌بندی سلف برای شما غیرفعال شد.")
+                    except Exception:
+                        pass
+                _bot.answer_callback_query(call.id, "🚫 کاربر بن شد.")
+
+            elif action == "unban":
+                db.set_setting(acc_id, "self_banned", "0")
+                tg_id = db.get_telegram_id_by_owner(acc_id)
+                if tg_id:
+                    try:
+                        _bot.send_message(tg_id, "✅ <b>بن شما توسط مالک برداشته شد.</b>\nمی‌توانید دوباره از سلف استفاده کنید.")
+                    except Exception:
+                        pass
+                _bot.answer_callback_query(call.id, "✅ بن کاربر برداشته شد.")
+
+            elif action == "stopself":
+                try:
+                    from bot import bot_manager
+                    bot_manager.stop(acc_id)
+                    _bot.answer_callback_query(call.id, "🔴 سلف کاربر خاموش شد.")
+                except Exception as e:
+                    _bot.answer_callback_query(call.id, f"❌ خطا در خاموش کردن سلف: {str(e)[:80]}", show_alert=True)
+
+            elif action == "give":
+                _owner_states[call.from_user.id] = {"state": "manage_give_amount", "data": {"account_id": acc_id}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"mu_view_{acc_id}", style="danger"))
+                _bot.edit_message_text(
+                    f"➕ <b>دادن الماس به {account.get('username','-')}</b>\n\nتعداد الماس را وارد کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif action == "deduct":
+                _owner_states[call.from_user.id] = {"state": "manage_deduct_amount", "data": {"account_id": acc_id}}
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("❌ لغو", callback_data=f"mu_view_{acc_id}", style="danger"))
+                _bot.edit_message_text(
+                    f"➖ <b>کسر الماس از {account.get('username','-')}</b>\n\nتعداد الماس را وارد کنید:",
+                    chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup
+                )
+                _bot.answer_callback_query(call.id)
+                return
+
+            elif action == "view":
+                _bot.answer_callback_query(call.id)
+
+            else:
+                return _bot.answer_callback_query(call.id, "❌ عملیات نامعتبر", show_alert=True)
+
+            # نمایش مجدد کارت کاربر با وضعیت بروزشده
+            account = _get_account_by_id(acc_id) or account
+            card_text, card_markup = _manage_user_card(account)
+            try:
+                _bot.edit_message_text(
+                    card_text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=card_markup
+                )
+            except Exception:
+                _bot.send_message(call.message.chat.id, card_text, reply_markup=card_markup)
+
+        except Exception as e:
+            print(f"❌ خطا در callback_manage_user: {e}")
+            try:
+                _bot.answer_callback_query(call.id, f"❌ خطا: {str(e)[:100]}", show_alert=True)
+            except Exception:
+                pass
+
+    # ══════════════════════════════════════════════════════════════════════════
     # 📨 State handler
     # ══════════════════════════════════════════════════════════════════════════
     @_bot.message_handler(func=lambda m: (m.from_user.id == OWNER_TG_ID or db.is_sub_admin(m.from_user.id)) and m.from_user.id in _owner_states, chat_types=['private'],
@@ -4105,6 +4306,68 @@ def start_token_bot():
             state_data = _owner_states[message.from_user.id]
             state = state_data["state"]
             text = (message.text or "").strip()
+
+            # ── مدیریت کاربران: جستجو با یوزرنیم یا آیدی عددی تلگرام ────────────
+            if state == "manage_user_lookup":
+                _owner_states.pop(message.from_user.id, None)
+                account = None
+                if text.isdigit():
+                    account = _get_account_cached(int(text))
+                if not account:
+                    account = db.get_account_by_username(text.lstrip("@"))
+                if not account:
+                    _bot.reply_to(message, "❌ کاربری با این مشخصات پیدا نشد.", reply_markup=_owner_keyboard())
+                    return
+                card_text, card_markup = _manage_user_card(account)
+                _bot.reply_to(message, card_text, reply_markup=card_markup)
+                return
+
+            if state == "manage_give_amount":
+                acc_id = state_data["data"]["account_id"]
+                try:
+                    amount = int(text)
+                    if amount <= 0:
+                        raise ValueError
+                except ValueError:
+                    return _bot.reply_to(message, "❌ مقدار باید عدد مثبت باشد. دوباره ارسال کنید:")
+                _owner_states.pop(message.from_user.id, None)
+                db.add_tokens(acc_id, amount)
+                new_balance = db.get_token_balance(acc_id)
+                tg_id = db.get_telegram_id_by_owner(acc_id)
+                if tg_id:
+                    try:
+                        _bot.send_message(tg_id, f"{EM.EMOJI_DAILY_GIFT} <b>{amount} الماس</b> از طرف مالک دریافت کردید!\n{EM.EMOJI_BALANCE} موجودی جدید: <b>{new_balance}</b>")
+                    except Exception:
+                        pass
+                account = _get_account_by_id(acc_id) or {"id": acc_id, "username": "-"}
+                card_text, card_markup = _manage_user_card(account)
+                _bot.reply_to(message, f"✅ {amount} الماس اضافه شد. موجودی جدید: {new_balance}\n\n{card_text}", reply_markup=card_markup)
+                return
+
+            if state == "manage_deduct_amount":
+                acc_id = state_data["data"]["account_id"]
+                try:
+                    amount = int(text)
+                    if amount <= 0:
+                        raise ValueError
+                except ValueError:
+                    return _bot.reply_to(message, "❌ مقدار باید عدد مثبت باشد. دوباره ارسال کنید:")
+                _owner_states.pop(message.from_user.id, None)
+                current_balance = db.get_token_balance(acc_id)
+                if amount > current_balance:
+                    amount = current_balance
+                db.add_tokens(acc_id, -amount)
+                new_balance = db.get_token_balance(acc_id)
+                tg_id = db.get_telegram_id_by_owner(acc_id)
+                if tg_id:
+                    try:
+                        _bot.send_message(tg_id, f"⚠️ <b>{amount} الماس</b> توسط مالک از موجودی شما کسر شد.\n{EM.EMOJI_BALANCE} موجودی جدید: <b>{new_balance}</b>")
+                    except Exception:
+                        pass
+                account = _get_account_by_id(acc_id) or {"id": acc_id, "username": "-"}
+                card_text, card_markup = _manage_user_card(account)
+                _bot.reply_to(message, f"✅ {amount} الماس کسر شد. موجودی جدید: {new_balance}\n\n{card_text}", reply_markup=card_markup)
+                return
 
             # ── پیام به کانال (با پشتیبانی از ایموجی پرمیوم و فرمت‌بندی) ───────
             if state == "channel_msg_text":
