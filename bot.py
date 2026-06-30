@@ -635,7 +635,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تبچی", "تبچی روشن", "تبچی خاموش", "تبچی کامل",
+            "تبچی ", "تبچی خاموش",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -1194,7 +1194,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
         await edit(_help_text())
 
     # ─── تبچی (با لینک) ─────────────────────────────────────────────────────
-    elif text.startswith("تبچی ") and text not in ("تبچی روشن", "تبچی خاموش", "تبچی کامل"):
+    elif text.startswith("تبچی ") and text != "تبچی خاموش":
         link = text[len("تبچی "):].strip()
         replied = await event.get_reply_message()
         if not replied:
@@ -1651,6 +1651,11 @@ def _help_text():
             "حذف کانال اجباری",
             "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
         ]),
+        ("🔹 تبچی", [
+            "تبچی [لینک یا یوزرنیم مقصد]  ← ریپلای روی پیام بنر",
+            "تبچی خاموش",
+            "💡 پیام ریپلای‌شده هر ۱ ساعت به مقصد فوروارد می‌شود",
+        ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
             "سین خودکار خاموش",
@@ -1817,3 +1822,4 @@ async def _scheduler_loop(cl, owner_id):
         except Exception:
             pass
         await asyncio.sleep(30)
+
