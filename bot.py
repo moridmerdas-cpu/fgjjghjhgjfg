@@ -26,10 +26,18 @@ FONTS = {
     "6": lambda t: _convert_font(t, "𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏"),
     "7": lambda t: "".join(c + "\u0336" for c in t),
     "8": lambda t: "".join(c + "\u0332" for c in t),
-    "9": lambda t: f"**{t}**",   # بولد — کار می‌کنه برای فارسی و انگلیسی (با Markdown تلگرام)
+    # ── فونت‌های مبتنی بر فرمت تلگرام — کار می‌کنن برای فارسی و انگلیسی هر دو ──
+    "9":  lambda t: f"**{t}**",        # بولد (Markdown)
+    "10": lambda t: f"__{t}__",        # ایتالیک (Markdown)
+    "11": lambda t: f"<u>{t}</u>",     # زیرخط (فقط HTML — Markdown زیرخط نداره)
+    "12": lambda t: f"~~{t}~~",        # خط‌خورده (Markdown)
+    "13": lambda t: f"`{t}`",          # مونو/کد (Markdown)
+    "14": lambda t: "\n".join(f"> {line}" for line in t.split("\n")),  # نقل قول (Markdown، هر خط)
+    "15": lambda t: f"||{t}||",        # اسپویلر (Markdown تلگرام)
 }
-# فونت‌هایی که باید با parse_mode='md' ارسال/ادیت بشن (چون از ** استفاده می‌کنن، نه یونیکد استایل‌شده)
-_MARKDOWN_FONTS = {"9"}
+# فونت‌هایی که باید با parse_mode مناسب ارسال/ادیت بشن (چون از سینتکس فرمت‌بندی استفاده می‌کنن، نه یونیکد استایل‌شده)
+_MARKDOWN_FONTS = {"9", "10", "12", "13", "14", "15"}
+_HTML_FONTS = {"11"}
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 # ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
@@ -989,22 +997,28 @@ async def _handle_command(cl, event, text, owner_id, entry):
         if font_id in FONTS:
             ss("selected_font", font_id)
             fn = FONTS[font_id]
-            if preview_words:
-                preview = fn(" ".join(preview_words))
-                await edit(f"✅ فونت {font_id} انتخاب شد:\n`{preview}`")
-            else:
-                sample = fn("Hello World")
-                await edit(f"✅ فونت {font_id} انتخاب شد.\nنمونه: `{sample}`")
+            mode = "html" if font_id in _HTML_FONTS else "md"
+            sample_text = " ".join(preview_words) if preview_words else "نمونه متن"
+            preview = fn(sample_text)
+            await event.edit(f"✅ فونت {font_id} انتخاب شد:\n{preview}", parse_mode=mode)
         else:
-            await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
+            await edit(f"❗ شماره فونت باید بین ۰ تا {len(FONTS)-1} باشد.")
 
     elif text == "لیست فونت":
-        lines = ["🔤 **فونت‌های موجود:**\n"]
+        names = {
+            "0": "بدون فونت", "1": "بولد لاتین (یونیکد)", "2": "ایتالیک لاتین (یونیکد)",
+            "3": "مونو لاتین (یونیکد)", "4": "پهن (Fullwidth)", "5": "بولد سریف",
+            "6": "اسکریپت", "7": "خط‌خورده (یونیکد)", "8": "زیرخط (یونیکد)",
+            "9": "بولد (فارسی+انگلیسی)", "10": "ایتالیک (فارسی+انگلیسی)",
+            "11": "زیرخط (فارسی+انگلیسی)", "12": "خط‌خورده (فارسی+انگلیسی)",
+            "13": "مونو/کد (فارسی+انگلیسی)", "14": "نقل‌قول (فارسی+انگلیسی)",
+            "15": "اسپویلر (فارسی+انگلیسی)",
+        }
+        lines = ["🔤 فونت‌های موجود:\n"]
         for k in FONTS:
-            fn = FONTS[k]
-            sample = fn("Hello World")
-            lines.append(f"`فونت {k}` — `{sample}`")
-        lines.append("\n💡 برای انتخاب: `فونت [شماره]`")
+            lines.append(f"فونت {k} — {names.get(k, '')}")
+        lines.append("\n💡 برای انتخاب: فونت [شماره]")
+        lines.append("💡 فونت‌های ۹ تا ۱۵ مخصوص متن فارسی هم کار می‌کنن")
         await edit("\n".join(lines))
 
     # ─── ساعت نام/بیو ─────────────────────────────────────────────────────────
@@ -1269,8 +1283,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
 async def _safe_edit(event, owner_id, text):
     try:
-        fn = FONTS.get(db.get_setting(owner_id, "selected_font", "0"), FONTS["0"])
-        await event.edit(fn(text), parse_mode="md")
+        font_id = db.get_setting(owner_id, "selected_font", "0")
+        fn = FONTS.get(font_id, FONTS["0"])
+        mode = "html" if font_id in _HTML_FONTS else "md"
+        await event.edit(fn(text), parse_mode=mode)
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds + 1)
     except Exception:
