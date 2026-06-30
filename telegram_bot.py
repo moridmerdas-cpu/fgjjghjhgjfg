@@ -834,7 +834,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 💎 انتقال الماس
     # ══════════════════════════════════════════════════════════════════════════
-    def _transfer_success_message(amount, sender_name, receiver_name, tax_msg):
+    def _transfer_success_message(amount, sender_name, receiver_name, new_balance):
         """پیام موفقیت انتقال الماس با ایموجی‌های پرمیوم (tg-emoji)"""
         return (
             f'<tg-emoji emoji-id="5278467510604160626">💎</tg-emoji> '
@@ -842,7 +842,7 @@ def start_token_bot():
             f'<tg-emoji emoji-id="6111444480286528430">✅</tg-emoji>\n\n'
             f'<tg-emoji emoji-id="5782766782200682322">📤</tg-emoji> <b>فرستنده:</b>\n@{sender_name}\n\n'
             f'<tg-emoji emoji-id="4958472587123360612">📥</tg-emoji> <b>گیرنده:</b>\n@{receiver_name}\n'
-            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> {tax_msg}'
+            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> <b>موجودی جدید:</b> {new_balance} الماس'
         )
 
     @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال "), chat_types=['private', 'group', 'supergroup'])
@@ -890,7 +890,8 @@ def start_token_bot():
 
                     sender_name = message.from_user.username or "کاربر"
                     receiver_name = target_user.username or "کاربر"
-                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, msg)
+                    new_balance = db.get_token_balance(from_account["id"])
+                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, new_balance)
                     return _bot.reply_to(message, formatted_msg)
 
                 return _bot.reply_to(message, msg)
@@ -933,7 +934,8 @@ def start_token_bot():
                         pass
 
                 sender_name = message.from_user.username or "کاربر"
-                formatted_msg = _transfer_success_message(amount, sender_name, username, msg)
+                new_balance = db.get_token_balance(from_account["id"])
+                formatted_msg = _transfer_success_message(amount, sender_name, username, new_balance)
                 return _bot.reply_to(message, formatted_msg)
 
             _bot.reply_to(message, msg)
