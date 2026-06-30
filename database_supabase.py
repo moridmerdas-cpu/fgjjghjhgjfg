@@ -1409,3 +1409,125 @@ def sub_admin_has_permission(telegram_id: int, perm: str) -> bool:
         return perm in perms
     except Exception:
         return False
+
+
+# ─── ✅ چنل‌های اجباری (منتقل‌شده از کش موقت SQLite به Supabase دائمی) ─────────
+
+def init_forced_channels_table():
+    q = """
+        CREATE TABLE IF NOT EXISTS amel_forced_channels (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            added_at TIMESTAMP DEFAULT NOW()
+        )
+    """
+    try:
+        execute_query(q)
+    except Exception as e:
+        print(f"❌ init_forced_channels_table error: {e}")
+
+try:
+    init_forced_channels_table()
+except Exception as e:
+    print(f"❌ خطا در ایجاد جدول چنل‌های اجباری: {e}")
+
+
+def _migrate_forced_channels_from_sqlite():
+    """مهاجرت یک‌باره‌ی چنل‌های اجباری از کش موقت SQLite قبلی به Supabase (اگر چیزی مونده باشه)"""
+    try:
+        import sqlite3
+        from config import CACHE_DB_PATH
+        conn = sqlite3.connect(CACHE_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='forced_channels'")
+        if not cur.fetchone():
+            conn.close()
+            return
+        cur.execute("SELECT username FROM forced_channels")
+        rows = cur.fetchall()
+        conn.close()
+        if not rows:
+            return
+        migrated = 0
+        for r in rows:
+            try:
+                execute_query(
+                    "INSERT INTO amel_forced_channels (username) VALUES (%s) ON CONFLICT (username) DO NOTHING",
+                    (r["username"],)
+                )
+                migrated += 1
+            except Exception:
+                pass
+        if migrated:
+            rc.invalidate_forced_channels()
+            print(f"✅ {migrated} چنل اجباری از کش موقت به دیتابیس دائمی منتقل شد")
+    except Exception as e:
+        print(f"⚠️ مهاجرت چنل‌های اجباری انجام نشد: {e}")
+
+try:
+    _migrate_forced_channels_from_sqlite()
+except Exception as e:
+    print(f"❌ خطا در مهاجرت چنل‌های اجباری: {e}")
+
+
+def get_forced_channels() -> list:
+    cached = rc.rget_json(rc.k_forced_channels())
+    if cached is not None:
+        return cached
+    try:
+        rows = execute_query(
+            "SELECT username FROM amel_forced_channels ORDER BY added_at DESC",
+            fetch_all=True
+        )
+        result = [r["username"] for r in rows] if rows else []
+        rc.rset_json(rc.k_forced_channels(), result, rc.TTL_CHANNELS)
+        return result
+    except Exception as e:
+        print(f"❌ get_forced_channels error: {e}")
+        return []
+
+
+def add_forced_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    try:
+        execute_query(
+            "INSERT INTO amel_forced_channels (username) VALUES (%s) ON CONFLICT (username) DO NOTHING",
+            (username,)
+        )
+        rc.invalidate_forced_channels()
+        return True
+    except Exception as e:
+        print(f"❌ add_forced_channel error: {e}")
+        return False
+
+
+def remove_forced_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    try:
+        rowcount = execute_query(
+            "DELETE FROM amel_forced_channels WHERE username = %s",
+            (username,)
+        )
+        rc.invalidate_forced_channels()
+        return bool(rowcount)
+    except Exception as e:
+        print(f"❌ remove_forced_channel error: {e}")
+        return False
+
+
+def check_user_membership(bot, user_id: int) -> tuple:
+    channels = get_forced_channels()
+    if not channels:
+        return True, []
+    missing = []
+    for ch in channels:
+        try:
+            member = bot.get_chat_member(ch, user_id)
+            if member.status not in ['member', 'administrator', 'creator']:
+                missing.append(ch)
+        except Exception:
+            missing.append(ch)
+    return len(missing) == 0, missing
