@@ -22,6 +22,13 @@ def _init_tables():
     conn = get_conn()
     c = conn.cursor()
     
+    # ─── چنل‌های اجباری ──────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS forced_channels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    
     # ─── سایلنت ──────────────────────────────────────────────────────────────
     c.execute("""CREATE TABLE IF NOT EXISTS silent_chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +76,55 @@ def _init_tables():
     
     conn.commit()
     print("✅ جداول دیتابیس کش ایجاد شدند!")
+
+# ─── چنل‌های اجباری ──────────────────────────────────────────────────────────
+def get_forced_channels():
+    cached = rc.rget_json(rc.k_forced_channels())
+    if cached is not None:
+        return cached
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT username FROM forced_channels ORDER BY added_at DESC")
+    result = [r["username"] for r in c.fetchall()]
+    rc.rset_json(rc.k_forced_channels(), result, rc.TTL_CHANNELS)
+    return result
+
+def add_forced_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    conn = get_conn()
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO forced_channels (username) VALUES (?)", (username,))
+        conn.commit()
+        rc.invalidate_forced_channels()
+        return True
+    except Exception:
+        return False
+
+def remove_forced_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM forced_channels WHERE username = ?", (username,))
+    conn.commit()
+    rc.invalidate_forced_channels()
+    return c.rowcount > 0
+
+def check_user_membership(bot, user_id: int) -> tuple:
+    channels = get_forced_channels()
+    if not channels:
+        return True, []
+    missing = []
+    for ch in channels:
+        try:
+            member = bot.get_chat_member(ch, user_id)
+            if member.status not in ['member', 'administrator', 'creator']:
+                missing.append(ch)
+        except Exception:
+            missing.append(ch)
+    return len(missing) == 0, missing
 
 # ─── سایلنت ───────────────────────────────────────────────────────────────────
 def add_silent_chat(owner_id: int, chat_id: int):
