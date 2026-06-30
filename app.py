@@ -531,6 +531,12 @@ if __name__ == "__main__":
     # ۳. استارت ربات توکن
     from telegram_bot import start_token_bot
     start_token_bot()
+
+    # ۳.۵ استارت ربات کمکی پنل دکمه‌ای سلف‌ها (via @HelperBot)
+    from helper_bot import start_helper_bot
+    loop = get_loop()
+    asyncio.run_coroutine_threadsafe(start_helper_bot(), loop)
+    print("✅ ربات کمکی پنل در حال بالا آمدن است...")
     
     # ۴. استارت بات برای همه کاربران لاگین‌شده
     loop = get_loop()

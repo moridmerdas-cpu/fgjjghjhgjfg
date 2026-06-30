@@ -8,13 +8,13 @@ import threading
 import time
 from telethon import TelegramClient, events, Button
 from telethon.tl.types import InputMediaDice
-from banner import generate_banner
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.errors import FloodWaitError
 import database as db
 import config
-from texts import ENEMY_REPLIES, FRIEND_REPLIES  
+from texts import ENEMY_REPLIES, FRIEND_REPLIES
+from telegram_bot import get_all_commands_buttons, PANEL_PAGE_SIZE  
 
 # ─── فونت‌ها ───────────────────────────────────────────────────────────────────
 FONTS = {
@@ -124,6 +124,17 @@ class BotManager:
     def get_client(self, owner_id: int):
         entry = self._bots.get(owner_id)
         return entry["client"] if entry else None
+
+    def get_entry(self, owner_id: int):
+        return self._bots.get(owner_id)
+
+    def get_owner_by_tg_id(self, tg_id: int):
+        """با آیدی عددی تلگرام، owner_id داخلی و entry مربوطه رو پیدا می‌کنه.
+        برای ربات کمکی استفاده می‌شه تا بفهمه این کلیک/inline query مال کدوم سلفه."""
+        for oid, entry in self._bots.items():
+            if entry.get("tg_id") == tg_id:
+                return oid, entry
+        return None, None
 
     def _cancel_timer(self, owner_id: int):
         t = self._timers.pop(owner_id, None)
@@ -310,6 +321,7 @@ class BotManager:
                 print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
 
                 db.save_telegram_user_id(owner_id, me.id)
+                entry["tg_id"] = me.id
 
                 # ✅ تشخیص مالک - اصلاح شده با ۳ روش
                 me_phone = (me.phone or "").lstrip("+")
@@ -596,6 +608,10 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
+    # ℹ️ توجه: هندل کلیک دکمه‌های پنل (CallbackQuery) اینجا نیست — چون پیام پنل
+    # از طریق ربات کمکی (helper_bot.py) با inline query ارسال می‌شه، کلیک روی
+    # دکمه‌هاش هم به همون بات می‌رسه نه به این سشن سلف. ببین: helper_bot.py
+
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
         text = event.raw_text.strip()
@@ -608,6 +624,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         if text == "سلف خاموش":
             db.set_setting(owner_id, "self_bot_active", "0")
             await _safe_edit(event, owner_id, "❌ سلف‌بات خاموش شد.")
+            return
+
+        # ✅ پنل دکمه‌ای دستورات (فقط مالک سلف می‌تونه - این همون اکانته)
+        if text == "پنل":
+            await _send_panel(cl, event, owner_id, page=0)
             return
 
         # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن
@@ -686,71 +707,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         await event.delete()
         target = int(event.pattern_match.group(1))
         await send_dice(event, "🎲", target=target)
-
-    # ─── پنل: دستور باز کردن پنل بنری ───────────────────────────────────────
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^پنل$"))
-    async def open_panel(event):
-        if entry.get("paused"):
-            return
-        await event.delete()
-        try:
-            me = await cl.get_me()
-            photo_bytes = None
-            async for p in cl.iter_profile_photos(me, limit=1):
-                photo_bytes = await cl.download_media(p, bytes)
-                break
-
-            if photo_bytes is None:
-                # عکس پروفایل نداره — یه پس‌زمینه خاکستری ساده می‌سازیم
-                from PIL import Image
-                import io as _io
-                blank = Image.new("RGB", (256, 256), (60, 60, 60))
-                buf = _io.BytesIO()
-                blank.save(buf, format="JPEG")
-                photo_bytes = buf.getvalue()
-
-            banner_bytes = generate_banner(photo_bytes, bottom_text="self nexo", bottom_sub=f"@{me.username}" if me.username else "")
-            await cl.send_file(
-                event.chat_id,
-                banner_bytes,
-                caption="Self Nexo",
-                buttons=_panel_main_buttons(),
-            )
-        except Exception as e:
-            print(f"[Panel] خطا: {e}")
-            await event.respond(f"❌ خطا در ساخت پنل: {e}")
-
-    # ─── پنل: مدیریت دکمه‌های inline ────────────────────────────────────────
-    @cl.on(events.CallbackQuery())
-    async def panel_callback(event):
-        if event.sender_id != owner_id:
-            await event.answer("⛔ این پنل مخصوص شما نیست.", alert=True)
-            return
-        data = event.data.decode("utf-8")
-
-        if data == "panel:main":
-            await event.edit(buttons=_panel_main_buttons())
-            await event.answer()
-
-        elif data == "panel:text_mode":
-            await event.edit(buttons=_panel_text_mode_buttons(owner_id))
-            await event.answer()
-
-        elif data.startswith("panel:toggle:"):
-            font_key = data.split(":")[2]
-            current = gs_panel(owner_id, "selected_font", "0")
-            # toggle: اگه همینه خاموشش کن (برگرد به 0)، وگرنه روشنش کن
-            new_val = "0" if current == font_key else font_key
-            ss_panel(owner_id, "selected_font", new_val)
-            ss_panel(owner_id, "text_font_auto", "1" if new_val != "0" else "0")
-            await event.edit(buttons=_panel_text_mode_buttons(owner_id))
-            await event.answer("✅ بروزرسانی شد")
-
-        elif data == "panel:noop":
-            await event.answer("🚧 این بخش هنوز فعال نشده.", alert=False)
-
-        else:
-            await event.answer()
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -970,10 +926,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
         if not raw:
             await edit("❗ فرمت: بنویس [متن]")
         else:
-            font_id = gs("selected_font", "0")
-            fn = FONTS.get(font_id, FONTS["0"])
-            styled = fn(raw)
-            await _safe_edit(event, owner_id, styled)
+            # ⚠️ فونت اینجا اعمال نمی‌شه چون _safe_edit خودش طبق فونت انتخابی اعمال می‌کنه
+            # (قبلاً اینجا fn(raw) صدا زده می‌شد و دوباره داخل _safe_edit هم اعمال می‌شد
+            # که باعث می‌شد فونت‌هایی مثل «نقل قول» دوبار تو در تو اعمال بشن و خراب بشن)
+            await _safe_edit(event, owner_id, raw)
 
     # ─── قالب‌بندی تلگرام (entities) — کار با فارسی هم دارد ────────────────────
     elif text.startswith("بولد "):
@@ -1694,7 +1650,89 @@ async def _get_currency_text(target: str = None) -> str:
     return "\n".join(lines) if lines else "❌ دریافت قیمت ممکن نیست"
 
 
-def _help_text():
+# ─── پنل دکمه‌ای (دستورات بدون نیاز به ورودی اضافه) ────────────────────────────
+PANEL_COMMANDS = [
+    ("🔹 اصلی", "وضعیت", "وضعیت"),
+    ("🔹 اصلی", "راهنما", "راهنما"),
+    ("🔹 اصلی", "سلف روشن", "سلف روشن"),
+    ("🔹 اصلی", "سلف خاموش", "سلف خاموش"),
+
+    ("🔹 لیست‌ها", "لیست دشمن", "نمایش لیست دشمن"),
+    ("🔹 لیست‌ها", "پاک کردن دشمن", "پاک کردن لیست دشمن"),
+    ("🔹 لیست‌ها", "لیست دوست", "نمایش لیست دوست"),
+    ("🔹 لیست‌ها", "پاک کردن دوست", "پاک کردن لیست دوست"),
+
+    ("🔹 منشی", "منشی روشن", "منشی روشن"),
+    ("🔹 منشی", "منشی خاموش", "منشی خاموش"),
+
+    ("🔹 امنیت", "ضد حذف روشن", "ضد حذف روشن"),
+    ("🔹 امنیت", "ضد حذف خاموش", "ضد حذف خاموش"),
+    ("🔹 امنیت", "ضد لینک روشن", "ضد لینک روشن"),
+    ("🔹 امنیت", "ضد لینک خاموش", "ضد لینک خاموش"),
+    ("🔹 امنیت", "قفل پیوی روشن", "قفل پیوی روشن"),
+    ("🔹 امنیت", "قفل پیوی خاموش", "قفل پیوی خاموش"),
+    ("🔹 امنیت", "پاسخ دشمن روشن", "پاسخ دشمن روشن"),
+    ("🔹 امنیت", "پاسخ دشمن خاموش", "پاسخ دشمن خاموش"),
+    ("🔹 امنیت", "لیست سکوت", "لیست سکوت"),
+
+    ("🔹 جوین اجباری", "جوین اجباری روشن", "جوین اجباری روشن"),
+    ("🔹 جوین اجباری", "جوین اجباری خاموش", "جوین اجباری خاموش"),
+    ("🔹 جوین اجباری", "حذف کانال اجباری", "حذف کانال اجباری"),
+
+    ("🔹 تبچی", "تبچی خاموش", "تبچی خاموش"),
+
+    ("🔹 اتوماسیون", "سین خودکار روشن", "سین خودکار روشن"),
+    ("🔹 اتوماسیون", "سین خودکار خاموش", "سین خودکار خاموش"),
+    ("🔹 اتوماسیون", "ری‌اکشن روشن", "ری‌اکشن روشن"),
+    ("🔹 اتوماسیون", "ری‌اکشن خاموش", "ری‌اکشن خاموش"),
+    ("🔹 اتوماسیون", "ذخیره مدیا روشن", "ذخیره مدیا روشن"),
+    ("🔹 اتوماسیون", "ذخیره مدیا خاموش", "ذخیره مدیا خاموش"),
+    ("🔹 اتوماسیون", "ساعت نام روشن", "ساعت نام روشن"),
+    ("🔹 اتوماسیون", "ساعت نام خاموش", "ساعت نام خاموش"),
+    ("🔹 اتوماسیون", "ساعت بیو روشن", "ساعت بیو روشن"),
+    ("🔹 اتوماسیون", "ساعت بیو خاموش", "ساعت بیو خاموش"),
+
+    ("🔹 ابزار", "قیمت دلار", "قیمت دلار"),
+    ("🔹 ابزار", "ارز", "ارز"),
+
+    ("🔹 سیو مدیا", "توقف سیو", "توقف سیو"),
+
+    ("🔹 فونت", "لیست فونت", "لیست فونت"),
+    ("🔹 فونت", "فونت متن روشن", "فونت متن روشن"),
+    ("🔹 فونت", "فونت متن خاموش", "فونت متن خاموش"),
+    ("🔹 فونت", "لیست فونت ساعت", "لیست فونت ساعت"),
+]
+
+
+async def _execute_panel_command(cl, owner_id, command_text):
+    """دستور انتخاب‌شده از پنل را دقیقاً مثل تایپ دستی اجرا می‌کند."""
+    try:
+        await cl.send_message("me", command_text)
+    except Exception as e:
+        print(f"⚠️ خطا در اجرای دستور پنل: {e}")
+
+
+async def _send_panel(cl, event, owner_id, page=0):
+    """
+    سلف نمی‌تونه مستقیم پیام دکمه‌دار بفرسته که دکمه‌هاش کار کنن (callback query
+    فقط برای پیام‌های ارسالی از طرف بات فعال می‌شه)، پس از ربات کمکی استفاده
+    می‌کنیم: یک inline query به بات کمکی می‌زنیم و نتیجه رو توی همین چت کلیک
+    می‌کنیم تا پیام به‌صورت «via @HelperBot» با دکمه‌های واقعاً فعال ارسال بشه.
+    """
+    if not config.HELPER_BOT_TOKEN:
+        await event.respond("⚠️ ربات کمکی پنل تنظیم نشده. لطفاً HELPER_BOT_TOKEN رو در تنظیمات قرار بده.")
+        return
+    try:
+        results = await cl.inline_query(config.HELPER_BOT_USERNAME, "پنل")
+        if not results:
+            await event.respond("⚠️ ربات کمکی پاسخ نداد. مطمئن شو ربات کمکی روشن و در دسترسه.")
+            return
+        await results[0].click(event.chat_id, reply_to=event.id if event.is_group or event.is_channel else None)
+    except Exception as e:
+        await event.respond(f"⚠️ خطا در نمایش پنل: {e}")
+
+
+
     # هر دستور در یک بلوک quote + mono جداگانه
     sections = [
         ("🔹 اصلی", [
@@ -1702,6 +1740,7 @@ def _help_text():
             "سلف خاموش",
             "وضعیت",
             "راهنما",
+            "پنل  ← نمایش پنل دکمه‌ای دستورات",
         ]),
         ("🔹 لیست‌ها", [
             "تنظیم دشمن  ← ریپلای روی پیام",
@@ -1863,53 +1902,6 @@ async def _clock_loop(cl, owner_id):
         except Exception as e:
             print(f"❌ خطا در _clock_loop: {e}")
             await asyncio.sleep(10)
-
-
-def gs_panel(owner_id, key, default=None):
-    return db.get_setting(owner_id, key, default)
-
-
-def ss_panel(owner_id, key, value):
-    db.set_setting(owner_id, key, value)
-
-
-def _toggle_label(label: str, active: bool) -> str:
-    mark = "✓" if active else "✗"
-    return f"{label} ({mark})"
-
-
-def _panel_main_buttons():
-    """دکمه‌های پنل اصلی (مثل تصویر نمونه)."""
-    return [
-        [Button.inline("حالت‌متن", b"panel:text_mode"), Button.inline("ساعت", b"panel:noop"), Button.inline("نگهبان‌چت", b"panel:noop")],
-        [Button.inline("پینگ", b"panel:noop"), Button.inline("لوگو", b"panel:noop"), Button.inline("قفل‌ها", b"panel:noop"), Button.inline("اکشن", b"panel:noop")],
-        [Button.inline("دوست‌ودشمن", b"panel:noop"), Button.inline("منشی", b"panel:noop"), Button.inline("فیلترکلمات", b"panel:noop")],
-        [Button.inline("پاسخ‌خودکار", b"panel:noop"), Button.inline("عضویت اجباری پیوی", b"panel:noop")],
-        [Button.inline("دانلودر", b"panel:noop"), Button.inline("ریکت", b"panel:noop"), Button.inline("اسپم", b"panel:noop")],
-        [Button.inline("سکوت", b"panel:noop"), Button.inline("اطلاعات", b"panel:noop"), Button.inline("تگ", b"panel:noop"), Button.inline("بلاک", b"panel:noop"), Button.inline("حذف", b"panel:noop")],
-        [Button.inline("سین خودکار", b"panel:noop"), Button.inline("هوش مصنوعی", b"panel:noop")],
-        [Button.inline("ترجمه", b"panel:noop"), Button.inline("انیمیشن", b"panel:noop"), Button.inline("تقلب", b"panel:noop")],
-    ]
-
-
-def _panel_text_mode_buttons(owner_id: int):
-    """زیرمنوی حالت‌متن — toggle برای فونت‌های مارک‌داون (مثل تصویر دوم)."""
-    current = gs_panel(owner_id, "selected_font", "0")
-    # نگاشت فونت‌ها به برچسب فارسی (مطابق طرح نمونه)
-    items = [
-        ("9", "بولد"), ("14", "نقل قول"),
-        ("10", "ایتالیک"), ("11", "زیرخط"),
-        ("12", "خط‌خورده"), ("15", "اسپویلر"),
-    ]
-    rows = []
-    for i in range(0, len(items), 2):
-        row = []
-        for key, label in items[i:i + 2]:
-            active = (current == key)
-            row.append(Button.inline(_toggle_label(label, active), f"panel:toggle:{key}".encode()))
-        rows.append(row)
-    rows.append([Button.inline("« بازگشت", b"panel:main")])
-    return rows
 
 
 def _tabchi_stop(owner_id: int) -> bool:
