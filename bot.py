@@ -15,19 +15,6 @@ import database as db
 import config
 from texts import ENEMY_REPLIES, FRIEND_REPLIES  
 
-# ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
-# ساختار هر session:
-# tabchi_sessions[owner_id] = {
-#   "mode": 1 یا 2,
-#   "banner": bytes,          # عکس بنر
-#   "extra_photo": bytes,     # عکس همراه (روش ۱)
-#   "dest_entity": entity,    # گروه مقصد (روش ۱)
-#   "task": asyncio.Task,     # تسک ارسال دوره‌ای
-#   "step": str,              # مرحله setup فعلی
-# }
-_tabchi_sessions = {}
-_TABCHI_INTERVAL = 3600  # هر ۱ ساعت
-
 # ─── فونت‌ها ───────────────────────────────────────────────────────────────────
 FONTS = {
     "0": lambda t: t,
@@ -41,6 +28,16 @@ FONTS = {
     "8": lambda t: "".join(c + "\u0332" for c in t),
 }
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+# ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
+# tabchi_sessions[owner_id] = {
+#   "banner_msg": Message,      # خود پیام بنر (که forward می‌شه)
+#   "dest_entity": entity یا None,  # برای روش "لینک"
+#   "mode": "link" یا "full" یا None,
+#   "task": asyncio.Task,
+# }
+_tabchi_sessions = {}
+_TABCHI_INTERVAL = 3600  # هر ۱ ساعت
 
 LINK_PATTERN = re.compile(
     r"(https?://\S+|t\.me/\S+|telegram\.me/\S+|www\.\S+)", re.IGNORECASE
@@ -326,15 +323,23 @@ class BotManager:
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
 
                 # ✅ اگه تبچی قبلاً فعال بوده، دوباره راه‌اندازی کن
-                _tabchi_restart_if_needed(cl, owner_id)
+                _sess = _tabchi_sessions.get(owner_id)
+                if _sess and _sess.get("mode") == "link":
+                    _t = _sess.get("task")
+                    if not _t or _t.done():
+                        _sess["task"] = asyncio.ensure_future(_tabchi_loop_link(cl, owner_id))
 
                 retry_delay = 5
                 await cl.run_until_disconnected()
 
                 clock_task.cancel()
                 sched_task.cancel()
-                # تبچی رو هم متوقف کن تا بعد از reconnect دوباره استارت بخوره
-                _tabchi_cancel_task(owner_id)
+                _tsess = _tabchi_sessions.get(owner_id)
+                if _tsess:
+                    _tt = _tsess.get("task")
+                    if _tt and not _tt.done():
+                        _tt.cancel()
+                    _tsess["task"] = None
 
                 if entry["stop"]:
                     break
@@ -583,116 +588,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
     async def on_outgoing(event):
         text = event.raw_text.strip()
 
-        # ─── تبچی: setup در اولویت — قبل از هر دستور دیگه‌ای ─────────────────
-        try:
-            sess = _tabchi_sessions.get(owner_id)
-            if sess and sess.get("step") is not None and not entry.get("paused"):
-                step = sess["step"]
-                msg = event.message
-                print(f"[Tabchi DEBUG] owner={owner_id} step={step} text={text!r}")
-
-                if step == "choose_mode":
-                    if text in ("1", "2"):
-                        sess["mode"] = int(text)
-                        sess["step"] = "wait_banner"
-                        try:
-                            await event.delete()
-                        except Exception as e:
-                            print(f"[Tabchi DEBUG] delete failed: {e}")
-                        await event.respond("📸 بنرت رو بفرست (عکس):")
-                    elif text != "تبچی خاموش":
-                        try:
-                            await event.delete()
-                        except Exception:
-                            pass
-                        await event.respond("⚠️ فقط عدد ۱ یا ۲ بفرست.")
-                    return
-
-                elif step == "wait_banner":
-                    photo = await _tabchi_get_photo(cl, msg)
-                    if photo is None:
-                        if text != "تبچی خاموش":
-                            try:
-                                await event.delete()
-                            except Exception:
-                                pass
-                            await event.respond("⚠️ لطفاً یه عکس بفرست (نه متن).")
-                        return
-                    sess["banner"] = photo
-                    try:
-                        await event.delete()
-                    except Exception:
-                        pass
-                    if sess["mode"] == 1:
-                        sess["step"] = "wait_extra_photo"
-                        await event.respond("🖼 حالا عکس همراه بنر رو بفرست:")
-                    else:
-                        sess["step"] = None
-                        await event.respond(
-                            "✅ تبچی روش ۲ شروع شد!\n"
-                            "بنر هر ۱ ساعت به تمام پیوی‌ها و گروه‌هات ارسال میشه.\n"
-                            "برای توقف: تبچی خاموش"
-                        )
-                        sess["task"] = asyncio.ensure_future(_tabchi_mode2(cl, owner_id))
-                    return
-
-                elif step == "wait_extra_photo":
-                    photo = await _tabchi_get_photo(cl, msg)
-                    if photo is None:
-                        if text != "تبچی خاموش":
-                            try:
-                                await event.delete()
-                            except Exception:
-                                pass
-                            await event.respond("⚠️ لطفاً یه عکس بفرست (نه متن).")
-                        return
-                    sess["extra_photo"] = photo
-                    try:
-                        await event.delete()
-                    except Exception:
-                        pass
-                    sess["step"] = "wait_dest_link"
-                    await event.respond("🔗 لینک یا username گروه مقصد رو بده (مثلاً @mygroup):")
-                    return
-
-                elif step == "wait_dest_link":
-                    if text == "تبچی خاموش":
-                        pass  # بذار به بلوک پایین برسه و خاموش بشه
-                    elif not text:
-                        await event.respond("⚠️ لینک معتبر نیست.")
-                        return
-                    else:
-                        try:
-                            entity = await cl.get_entity(text)
-                            sess["dest_entity"] = entity
-                            sess["step"] = None
-                            try:
-                                await event.delete()
-                            except Exception:
-                                pass
-                            name = getattr(entity, "title", text)
-                            await event.respond(
-                                f"✅ تبچی روش ۱ شروع شد!\n"
-                                f"بنر هر ۱ ساعت به {name} ارسال میشه.\n"
-                                "برای توقف: تبچی خاموش"
-                            )
-                            sess["task"] = asyncio.ensure_future(_tabchi_mode1(cl, owner_id))
-                        except Exception as e:
-                            print(f"[Tabchi DEBUG] get_entity failed: {e}")
-                            try:
-                                await event.delete()
-                            except Exception:
-                                pass
-                            await event.respond(f"❌ گروه پیدا نشد: {e}\nدوباره لینک رو بفرست:")
-                        return
-        except Exception as e:
-            print(f"[Tabchi DEBUG] UNCAUGHT ERROR in setup block: {e}")
-            try:
-                await event.respond(f"⚠️ خطای داخلی تبچی: {e}")
-            except Exception:
-                pass
-        # ─── پایان تبچی setup ────────────────────────────────────────────────
-
         # دستورات همیشه فعال
         if text == "سلف روشن":
             db.set_setting(owner_id, "self_bot_active", "1")
@@ -740,7 +635,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
-            "تبچی روشن", "تبچی خاموش",
+            "تبچی", "تبچی روشن", "تبچی خاموش", "تبچی کامل",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -1298,27 +1193,43 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text in ("راهنما", "help"):
         await edit(_help_text())
 
-    # ─── تبچی ────────────────────────────────────────────────────────────────
-    elif text == "تبچی روشن":
-        # اگه session قبلی داره، متوقفش کن
-        _tabchi_stop(owner_id)
-        _tabchi_sessions[owner_id] = {
-            "mode": None, "banner": None, "extra_photo": None,
-            "dest_entity": None, "task": None, "step": "choose_mode",
-        }
-        await edit(
-            "🎯 تبچی فعال شد!\n\n"
-            "روش رو انتخاب کن:\n"
-            "1 — ارسال به گروه مقصد (هر ۱ ساعت)\n"
-            "2 — ارسال به تمام پیوی‌ها و گروه‌هات (هر ۱ ساعت)\n\n"
-            "عدد ۱ یا ۲ رو بفرست:"
-        )
+    # ─── تبچی (با لینک) ─────────────────────────────────────────────────────
+    elif text.startswith("تبچی ") and text not in ("تبچی روشن", "تبچی خاموش", "تبچی کامل"):
+        link = text[len("تبچی "):].strip()
+        replied = await event.get_reply_message()
+        if not replied:
+            await edit("❗ باید روی پیام بنرت (عکس) ریپلای بزنی و بنویسی: تبچی [لینک مقصد]")
+        elif not link:
+            await edit("❗ فرمت: تبچی [لینک یا یوزرنیم مقصد]\nمثال: تبچی @mygroup")
+        else:
+            try:
+                dest = await cl.get_entity(link)
+            except Exception as e:
+                await edit(f"❌ مقصد پیدا نشد: {e}")
+            else:
+                _tabchi_stop(owner_id)
+                _tabchi_sessions[owner_id] = {
+                    "banner_chat_id": replied.chat_id,
+                    "banner_msg_id": replied.id,
+                    "dest_entity": dest,
+                    "mode": "link",
+                    "task": None,
+                }
+                _tabchi_sessions[owner_id]["task"] = asyncio.ensure_future(
+                    _tabchi_loop_link(cl, owner_id)
+                )
+                dest_name = getattr(dest, "title", None) or getattr(dest, "username", link)
+                await edit(
+                    f"✅ تبچی فعال شد.\n"
+                    f"این پیام هر ۱ ساعت به «{dest_name}» فوروارد می‌شود.\n"
+                    f"برای توقف: تبچی خاموش"
+                )
 
     elif text == "تبچی خاموش":
         if _tabchi_stop(owner_id):
             await edit("⛔ تبچی متوقف شد.")
         else:
-            await edit("❌ تبچی فعالی پیدا نشد.")
+            await edit("❗ تبچی فعالی پیدا نشد.")
 
     # ─── ارسال زمان‌بندی شده ─────────────────────────────────────────────────
     elif text.startswith("ارسال زمان‌بندی "):
@@ -1858,6 +1769,42 @@ async def _clock_loop(cl, owner_id):
             await asyncio.sleep(10)
 
 
+def _tabchi_stop(owner_id: int) -> bool:
+    """تسک تبچی رو کنسل و session رو پاک می‌کنه."""
+    sess = _tabchi_sessions.pop(owner_id, None)
+    if sess:
+        task = sess.get("task")
+        if task and not task.done():
+            task.cancel()
+        return True
+    return False
+
+
+async def _tabchi_loop_link(cl, owner_id: int):
+    """
+    هر ۱ ساعت پیام بنر اصلی رو (با عکس و متنش) به یک مقصد تأییدشده فوروارد می‌کنه.
+    """
+    while True:
+        sess = _tabchi_sessions.get(owner_id)
+        if not sess:
+            break
+        try:
+            await cl.forward_messages(
+                sess["dest_entity"],
+                sess["banner_msg_id"],
+                sess["banner_chat_id"],
+            )
+            print(f"[Tabchi] [{owner_id}] فوروارد شد به {sess['dest_entity']}")
+        except FloodWaitError as e:
+            print(f"[Tabchi] FloodWait {e.seconds}s")
+            await asyncio.sleep(e.seconds + 5)
+            continue
+        except Exception as e:
+            print(f"[Tabchi] [{owner_id}] خطا: {e}")
+
+        await asyncio.sleep(_TABCHI_INTERVAL)
+
+
 async def _scheduler_loop(cl, owner_id):
     while True:
         try:
@@ -1870,146 +1817,3 @@ async def _scheduler_loop(cl, owner_id):
         except Exception:
             pass
         await asyncio.sleep(30)
-
-
-# ─── تبچی: توابع کمکی ──────────────────────────────────────────────────────────
-
-def _tabchi_cancel_task(owner_id: int):
-    """فقط تسک رو کنسل می‌کنه ولی session رو نگه می‌داره (برای reconnect)."""
-    sess = _tabchi_sessions.get(owner_id)
-    if sess:
-        task = sess.get("task")
-        if task and not task.done():
-            task.cancel()
-        sess["task"] = None
-
-
-def _tabchi_restart_if_needed(cl, owner_id: int):
-    """اگه session تبچی فعاله ولی تسک نداره، دوباره استارتش می‌کنه."""
-    sess = _tabchi_sessions.get(owner_id)
-    if not sess or sess.get("step") is not None:
-        # در حال setup هست یا session نداره
-        return
-    task = sess.get("task")
-    if task and not task.done():
-        return  # هنوز در حال اجراست
-    mode = sess.get("mode")
-    if mode == 1 and sess.get("dest_entity") and sess.get("banner"):
-        sess["task"] = asyncio.ensure_future(_tabchi_mode1(cl, owner_id))
-        print(f"[Tabchi] [{owner_id}] روش ۱ دوباره راه‌اندازی شد (reconnect)")
-    elif mode == 2 and sess.get("banner"):
-        sess["task"] = asyncio.ensure_future(_tabchi_mode2(cl, owner_id))
-        print(f"[Tabchi] [{owner_id}] روش ۲ دوباره راه‌اندازی شد (reconnect)")
-    """تسک در حال اجرا رو کنسل و session رو پاک می‌کنه. True اگه چیزی بود."""
-    sess = _tabchi_sessions.pop(owner_id, None)
-    if sess:
-        task = sess.get("task")
-        if task and not task.done():
-            task.cancel()
-        return True
-    return False
-
-
-async def _tabchi_get_photo(cl, msg) -> bytes | None:
-    """اگه پیام عکس داشت bytes برمی‌گردونه، وگرنه None."""
-    has_photo = bool(msg.photo)
-    has_img_doc = (
-        msg.document and
-        msg.document.mime_type and
-        msg.document.mime_type.startswith("image/")
-    )
-    if has_photo or has_img_doc:
-        try:
-            return await cl.download_media(msg, bytes)
-        except Exception:
-            return None
-    return None
-
-
-async def _tabchi_mode1(cl, owner_id: int):
-    """
-    روش ۱: هر INTERVAL ثانیه بنر + عکس اضافه رو به گروه مقصد ارسال می‌کنه.
-    اگه هر دو عکس باشن → آلبوم (دو عکس با هم)، وگرنه فقط بنر.
-    """
-    while True:
-        sess = _tabchi_sessions.get(owner_id)
-        if not sess:
-            break
-        try:
-            entity = sess["dest_entity"]
-            banner = sess.get("banner")
-            extra = sess.get("extra_photo")
-
-            if banner and extra:
-                # ارسال آلبوم — دو عکس باهم
-                await cl.send_file(entity, [banner, extra], caption="")
-            elif banner:
-                await cl.send_file(entity, banner, caption="")
-
-            print(f"[Tabchi M1] [{owner_id}] ارسال به {getattr(entity, 'title', entity)}")
-
-        except FloodWaitError as e:
-            print(f"[Tabchi M1] FloodWait {e.seconds}s")
-            await asyncio.sleep(e.seconds + 5)
-            continue
-        except Exception as e:
-            print(f"[Tabchi M1] [{owner_id}] خطا: {e}")
-
-        await asyncio.sleep(_TABCHI_INTERVAL)
-
-
-async def _tabchi_mode2(cl, owner_id: int):
-    """
-    روش ۲: هر INTERVAL ثانیه بنر رو به تمام دیالوگ‌های کاربر ارسال می‌کنه.
-    شامل پیوی‌ها، گروه‌ها، و کانال‌هایی که ادمینه.
-    """
-    from telethon.errors import (
-        UserIsBlockedError, ChatWriteForbiddenError,
-        ChannelPrivateError, PeerIdInvalidError
-    )
-
-    while True:
-        sess = _tabchi_sessions.get(owner_id)
-        if not sess:
-            break
-
-        banner = sess.get("banner")
-        if not banner:
-            await asyncio.sleep(_TABCHI_INTERVAL)
-            continue
-
-        try:
-            me = await cl.get_me()
-            async for dialog in cl.iter_dialogs():
-                # چک کن session هنوز فعاله
-                if not _tabchi_sessions.get(owner_id):
-                    return
-
-                entity = dialog.entity
-                entity_id = getattr(entity, "id", None)
-
-                # skip: خود کاربر (saved messages)
-                if dialog.is_user and entity_id == me.id:
-                    continue
-
-                try:
-                    await cl.send_file(entity, banner, caption="")
-                    print(f"[Tabchi M2] [{owner_id}] ارسال به: {dialog.name}")
-                    # تأخیر کوتاه بین هر ارسال تا flood نگیریم
-                    await asyncio.sleep(3)
-
-                except FloodWaitError as e:
-                    print(f"[Tabchi M2] FloodWait {e.seconds}s")
-                    await asyncio.sleep(e.seconds + 5)
-                except (UserIsBlockedError, ChatWriteForbiddenError,
-                        ChannelPrivateError, PeerIdInvalidError):
-                    # چت‌هایی که نمی‌شه پیام فرستاد — رد می‌کنیم
-                    pass
-                except Exception as e:
-                    print(f"[Tabchi M2] [{owner_id}] skip {dialog.name}: {e}")
-
-        except Exception as e:
-            print(f"[Tabchi M2] [{owner_id}] خطای کلی: {e}")
-
-        await asyncio.sleep(_TABCHI_INTERVAL)
-
