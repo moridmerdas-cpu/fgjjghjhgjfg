@@ -26,7 +26,10 @@ FONTS = {
     "6": lambda t: _convert_font(t, "𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏"),
     "7": lambda t: "".join(c + "\u0336" for c in t),
     "8": lambda t: "".join(c + "\u0332" for c in t),
+    "9": lambda t: f"**{t}**",   # بولد — کار می‌کنه برای فارسی و انگلیسی (با Markdown تلگرام)
 }
+# فونت‌هایی که باید با parse_mode='md' ارسال/ادیت بشن (چون از ** استفاده می‌کنن، نه یونیکد استایل‌شده)
+_MARKDOWN_FONTS = {"9"}
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 # ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
@@ -896,7 +899,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             font_id = gs("selected_font", "0")
             fn = FONTS.get(font_id, FONTS["0"])
             styled = fn(raw)
-            await edit(styled)
+            await _safe_edit(event, owner_id, styled)
 
     # ─── قالب‌بندی تلگرام (entities) — کار با فارسی هم دارد ────────────────────
     elif text.startswith("بولد "):
@@ -1256,7 +1259,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             styled = fn(text)
             if styled != text:
                 try:
-                    await event.edit(styled)
+                    await event.edit(styled, parse_mode="md")
                 except FloodWaitError as e:
                     await asyncio.sleep(e.seconds + 1)
                 except Exception:
@@ -1267,7 +1270,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
 async def _safe_edit(event, owner_id, text):
     try:
         fn = FONTS.get(db.get_setting(owner_id, "selected_font", "0"), FONTS["0"])
-        await event.edit(fn(text))
+        await event.edit(fn(text), parse_mode="md")
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds + 1)
     except Exception:
