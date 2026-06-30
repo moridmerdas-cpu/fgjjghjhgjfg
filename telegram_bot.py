@@ -834,6 +834,17 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 💎 انتقال الماس
     # ══════════════════════════════════════════════════════════════════════════
+    def _transfer_success_message(amount, sender_name, receiver_name, tax_msg):
+        """پیام موفقیت انتقال الماس با ایموجی‌های پرمیوم (tg-emoji)"""
+        return (
+            f'<tg-emoji emoji-id="5278467510604160626">💎</tg-emoji> '
+            f'<b>{amount} الماس با موفقیت انتقال یافت</b> '
+            f'<tg-emoji emoji-id="6111444480286528430">✅</tg-emoji>\n\n'
+            f'<tg-emoji emoji-id="5782766782200682322">📤</tg-emoji> <b>فرستنده:</b>\n@{sender_name}\n\n'
+            f'<tg-emoji emoji-id="4958472587123360612">📥</tg-emoji> <b>گیرنده:</b>\n@{receiver_name}\n'
+            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> {tax_msg}'
+        )
+
     @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال "), chat_types=['private', 'group', 'supergroup'])
     def cmd_transfer(message):
         try:
@@ -879,12 +890,7 @@ def start_token_bot():
 
                     sender_name = message.from_user.username or "کاربر"
                     receiver_name = target_user.username or "کاربر"
-                    formatted_msg = (
-                        f"{EM.EMOJI_TRANSFER_SUCCESS} <b>{amount} الماس با موفقیت انتقال یافت</b> {EM.EMOJI_CHECK_PREMIUM}\n\n"
-                        f"{EM.EMOJI_SENDER} <b>فرستنده:</b> @{sender_name}\n\n"
-                        f"{EM.EMOJI_RECEIVER} <b>گیرنده:</b> @{receiver_name}\n"
-                        f"{EM.EMOJI_TAX_TRANSFER} {msg}"
-                    )
+                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, msg)
                     return _bot.reply_to(message, formatted_msg)
 
                 return _bot.reply_to(message, msg)
@@ -927,12 +933,7 @@ def start_token_bot():
                         pass
 
                 sender_name = message.from_user.username or "کاربر"
-                formatted_msg = (
-                    f"{EM.EMOJI_TRANSFER_SUCCESS} <b>{amount} الماس با موفقیت انتقال یافت</b> {EM.EMOJI_CHECK_PREMIUM}\n\n"
-                    f"{EM.EMOJI_SENDER} <b>فرستنده:</b> @{sender_name}\n\n"
-                    f"{EM.EMOJI_RECEIVER} <b>گیرنده:</b> @{username}\n"
-                    f"{EM.EMOJI_TAX_TRANSFER} {msg}"
-                )
+                formatted_msg = _transfer_success_message(amount, sender_name, username, msg)
                 return _bot.reply_to(message, formatted_msg)
 
             _bot.reply_to(message, msg)
