@@ -68,6 +68,13 @@ def _init_tables():
         UNIQUE (owner_id, user_id)
     )""")
     
+    # ─── درخواست‌های ورود (تایید ادمین) ────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS start_approvals (
+        user_id INTEGER PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'pending',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
     # ─── شاخص‌ها ──────────────────────────────────────────────────────────────
     c.execute("CREATE INDEX IF NOT EXISTS idx_enemies_owner ON enemies(owner_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_friends_owner ON friends(owner_id)")
@@ -76,6 +83,26 @@ def _init_tables():
     
     conn.commit()
     print("✅ جداول دیتابیس کش ایجاد شدند!")
+
+# ─── درخواست‌های ورود (تایید ادمین) ────────────────────────────────────────
+def get_start_approval_status(user_id: int):
+    """وضعیت درخواست ورود کاربر را برمی‌گرداند: 'pending' | 'approved' | 'rejected' | None"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT status FROM start_approvals WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    return row["status"] if row else None
+
+def set_start_approval_status(user_id: int, status: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO start_approvals (user_id, status, updated_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(user_id) DO UPDATE SET status = excluded.status, updated_at = CURRENT_TIMESTAMP""",
+        (user_id, status)
+    )
+    conn.commit()
 
 # ─── چنل‌های اجباری ──────────────────────────────────────────────────────────
 def get_forced_channels():

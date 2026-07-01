@@ -1,8 +1,10 @@
 import threading
 import time
+import secrets
 import telebot
 from telebot import types
 import database as db
+import db_cache
 import config
 import datetime
 import random
@@ -233,6 +235,10 @@ _active_bets = {}
 # ══════════════════════════════════════════════════════════════════════════════
 _reg_sessions: dict = {}
 _REG_TIMEOUT = 300
+
+# ─── سیستم تایید ورود توسط ادمین ────────────────────────────────────────────
+# نگه‌داری پیام اصلی /start کاربر تا زمانی که ادمین تصمیم بگیرد (برای ادامه‌ی خودکار)
+_pending_start_messages: dict = {}
 
 _tg_loop = None
 
@@ -1481,51 +1487,141 @@ def start_token_bot():
     # 🆕 ساخت اکانت از طریق ربات — فلوی کامل Telethon
     # ══════════════════════════════════════════════════════════════════════════
 
-    # ── مرحله ۱: کاربر «ساخت اکانت با ربات» را می‌زند → شماره بخواه ─────────
-    @_bot.callback_query_handler(func=lambda call: call.data == "reg_start")
-    def callback_reg_start(call):
-        tg_id = call.from_user.id
-        _reg_sessions[tg_id] = {
-            "step": "phone",
-            "digits": "",
-            "expires": time.time() + _REG_TIMEOUT,
-        }
-        _bot.answer_callback_query(call.id)
+    # ── ابزار کمکی: ادیت پیام موجود یا ارسال پیام جدید ────────────────────────
+    def _send_or_edit(text, chat_id, message_id=None, reply_markup=None):
+        if message_id:
+            try:
+                _bot.edit_message_text(text, chat_id=chat_id, message_id=message_id, reply_markup=reply_markup)
+                return
+            except Exception:
+                pass
         try:
-            # 🔴 دکمه لغو با رنگ danger (قرمز)
-            _bot.edit_message_text(
-                "📱 <b>مرحله ۱ از ۳ — شماره تلفن</b>\n\n"
-                "شماره تلفن خود را با کد کشور وارد کنید:\n"
-                "مثال: <code>+989123456789</code>\n\n"
-                "⏱ این فرم ۵ دقیقه اعتبار دارد.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                reply_markup=types.InlineKeyboardMarkup().add(
-                    types.InlineKeyboardButton("❌ لغو", callback_data="reg_cancel", style="danger", icon_custom_emoji_id="5832353674281620438")  # 🔴 قرمز
-                ),
-            )
+            _bot.send_message(chat_id, text, reply_markup=reply_markup)
         except Exception:
             pass
 
-    # ── مرحله ۱b: دریافت شماره به صورت متن ──────────────────────────────────
-    @_bot.message_handler(
-        func=lambda m: m.chat.type == "private"
-        and m.from_user.id in _reg_sessions
-        and _reg_sessions[m.from_user.id].get("step") == "phone"
-        and not _reg_expired(m.from_user.id)
-    )
-    def handle_reg_phone(message):
-        tg_id = message.from_user.id
-        phone = message.text.strip()
-        if not phone.startswith("+"):
-            phone = "+" + phone
+    # ── ساخت/اتصال اکانت پس از تایید کد یا ۲FA — بدون پرسیدن رمز پنل ─────────
+    def _finalize_registration(tg_id, session, chat_id, message_id=None):
+        try:
+            tg_user = session["tg_user"]
+            saved_session = session["saved_session"]
+            phone = session.get("phone", "")
+            tg_id_val = tg_user["id"]
 
-        session = _reg_sessions[tg_id]
-        session["phone"] = phone
-        session["step"] = "sending_code"
-        session["expires"] = time.time() + _REG_TIMEOUT
+            # بررسی اکانت تکراری — اول بر اساس همین کاربری که با ربات چت می‌کند
+            # (مثلاً بعد از «حذف سلف») و در غیر این صورت بر اساس اکانت تلگرامی
+            # که الان واردش شده. این کار باعث می‌شود اگر کاربر اکانت قبلی خودش
+            # را داشته باشد، حتی با لاگین یک اکانت تلگرام دیگر، یوزرنیم/دارایی‌های
+            # قبلی‌اش حفظ شود و یوزرنیم جدید ساخته نشود.
+            existing = db.get_account_by_tg_id(tg_id) or db.get_account_by_tg_id(tg_id_val)
+            if existing:
+                db.set_setting(existing["id"], "session_data", saved_session)
+                db.set_setting(existing["id"], "logged_in", "1")
+                if phone:
+                    db.set_setting(existing["id"], "phone", phone)
+                db.save_telegram_user_id(existing["id"], tg_id)
+                _reg_clear(tg_id)
 
-        wait_msg = _bot.reply_to(message, "⏳ در حال ارسال کد تأیید...")
+                def _start_existing(_acc_id):
+                    time.sleep(1.5)
+                    try:
+                        from bot import bot_manager
+                        from app import get_loop
+                        bot_manager.start(_acc_id, get_loop(), check_tokens=False)
+                    except Exception as _e:
+                        print(f"⚠️ bot_manager.start (existing): {_e}")
+                threading.Thread(target=_start_existing, args=(existing["id"],), daemon=True).start()
+
+                _send_or_edit(
+                    f"✅ <b>خوش برگشتید!</b>\n\n"
+                    f"👤 {tg_user['name']}\n"
+                    f"🆔 اکانت موجود بود — سلف‌بات فعال شد!\n\n"
+                    f"{EM.EMOJI_BALANCE} موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
+                    chat_id, message_id,
+                )
+                return
+
+            # ساخت یوزرنیم از نام یا username تلگرام
+            base_username = (tg_user.get("username") or tg_user["name"] or f"user{tg_id_val}").lower()
+            base_username = "".join(c for c in base_username if c.isalnum() or c == "_")[:20] or f"user{tg_id_val}"
+
+            candidate = base_username
+            suffix = 1
+            while db.get_account_by_username(candidate):
+                candidate = f"{base_username}{suffix}"
+                suffix += 1
+
+            # 🔓 رمز پنل وب دیگر از کاربر پرسیده نمی‌شود — به‌صورت خودکار تولید می‌شود
+            auto_password = secrets.token_urlsafe(24)
+            new_id = db.create_account(candidate, auto_password)
+            if not new_id:
+                _reg_clear(tg_id)
+                _send_or_edit("❌ خطا در ساخت اکانت. دوباره /start بزنید.", chat_id, message_id)
+                return
+
+            db.init_user_settings(new_id)
+            db.set_setting(new_id, "session_data", saved_session)
+            db.set_setting(new_id, "logged_in", "1")
+            if phone:
+                db.set_setting(new_id, "phone", phone)
+            db.save_telegram_user_id(new_id, tg_id)
+
+            # هدیه خوش‌آمد
+            db.add_tokens(new_id, config.WELCOME_TOKENS)
+
+            # اشتراک رایگان یک‌روزه برای کاربر جدید
+            try:
+                if not db.get_subscription(new_id):
+                    db.set_subscription(new_id, "free_trial", 1)
+            except Exception as _e:
+                print(f"⚠️ set free_trial on register: {_e}")
+
+            _reg_clear(tg_id)
+
+            def _start_new(_acc_id, _tg_id):
+                time.sleep(1.5)
+                try:
+                    from bot import bot_manager
+                    from app import get_loop
+                    bot_manager.start(_acc_id, get_loop(), check_tokens=False)
+                except Exception as _e:
+                    print(f"⚠️ bot_manager.start (new): {_e}")
+                threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
+            threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
+
+            site_url = getattr(config, "SITE_URL", "")
+            markup_done = types.InlineKeyboardMarkup()
+            if site_url:
+                markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
+
+            _send_or_edit(
+                f"🎉 <b>اکانت ساخته شد!</b>\n\n"
+                f"👤 نام: <b>{tg_user['name']}</b>\n"
+                f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n\n"
+                f"{EM.EMOJI_DAILY_GIFT} <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
+                f"⏰ <b>۱ روز سلف رایگان</b> فعال شد!\n\n"
+                f"✅ سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
+                chat_id, message_id,
+                reply_markup=markup_done,
+            )
+
+            ref_tg_id = session.get("referrer_tg_id")
+            if ref_tg_id:
+                threading.Thread(target=_process_referral_async, args=(ref_tg_id, tg_id_val), daemon=True).start()
+
+        except Exception as e:
+            _reg_clear(tg_id)
+            _send_or_edit(f"❌ خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id, message_id)
+
+    # ── ارسال کد تایید تلگرام به یک شماره (مشترک بین ثبت‌نام و اتصال مجدد) ───
+    def _send_verification_code(tg_id, phone, chat_id=None):
+        chat_id = chat_id or tg_id
+        session = _reg_sessions.setdefault(tg_id, {"digits": "", "expires": time.time() + _REG_TIMEOUT})
+        wait_msg = None
+        try:
+            wait_msg = _bot.send_message(chat_id, "⏳ در حال ارسال کد تأیید...")
+        except Exception:
+            pass
 
         try:
             from telethon import TelegramClient
@@ -1540,20 +1636,22 @@ def start_token_bot():
                 return result.phone_code_hash, partial
 
             phone_hash, partial_sess = _run_tg(_send_code())
+            session["phone"] = phone
             session["phone_hash"] = phone_hash
             session["partial_session"] = partial_sess
             session["step"] = "code"
             session["digits"] = ""
             session["expires"] = time.time() + _REG_TIMEOUT
 
-            try:
-                _bot.delete_message(message.chat.id, wait_msg.message_id)
-            except Exception:
-                pass
+            if wait_msg:
+                try:
+                    _bot.delete_message(chat_id, wait_msg.message_id)
+                except Exception:
+                    pass
 
             sent = _bot.send_message(
                 tg_id,
-                f"📲 <b>مرحله ۲ از ۳ — کد تأیید</b>\n\n"
+                f"📲 <b>کد تأیید</b>\n\n"
                 f"کد ارسال‌شده به <b>{phone}</b> را با کیپد زیر وارد کنید:\n\n"
                 f"<code>{_kp_display('', 'code')}</code>",
                 reply_markup=_kp_markup("", "code"),
@@ -1562,13 +1660,115 @@ def start_token_bot():
 
         except Exception as e:
             _reg_clear(tg_id)
+            if wait_msg:
+                try:
+                    _bot.delete_message(chat_id, wait_msg.message_id)
+                except Exception:
+                    pass
+            _bot.send_message(chat_id, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
+
+    # ── مرحله ۱: کاربر «ساخت اکانت / وصل کردن سلف» را می‌زند ──────────────────
+    @_bot.callback_query_handler(func=lambda call: call.data == "reg_start")
+    def callback_reg_start(call):
+        tg_id = call.from_user.id
+        _bot.answer_callback_query(call.id)
+
+        # اگر قبلاً شماره‌ای برای این کاربر ثبت شده (ثبت‌نام قبلی/اتصال مجدد سلف)
+        # → بدون سوال دوباره، مستقیم کد تایید به همان شماره فرستاده می‌شود
+        existing_acc = db.get_account_by_tg_id(tg_id)
+        stored_phone = db.get_setting(existing_acc["id"], "phone", "") if existing_acc else ""
+
+        if stored_phone:
+            _reg_sessions[tg_id] = {
+                "step": "sending_code",
+                "digits": "",
+                "expires": time.time() + _REG_TIMEOUT,
+            }
             try:
-                _bot.delete_message(message.chat.id, wait_msg.message_id)
+                _bot.edit_message_text(
+                    f"📲 در حال ارسال کد تایید به شماره ثبت‌شده‌ی شما...\n<code>{stored_phone}</code>",
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                )
             except Exception:
                 pass
-            _bot.reply_to(message, f"❌ خطا در ارسال کد: {str(e)}\n\nدوباره /start بزنید.")
+            _send_verification_code(tg_id, stored_phone, chat_id=call.message.chat.id)
+            return
+
+        _reg_sessions[tg_id] = {
+            "step": "await_contact",
+            "digits": "",
+            "expires": time.time() + _REG_TIMEOUT,
+        }
+        try:
+            _bot.delete_message(call.message.chat.id, call.message.message_id)
+        except Exception:
+            pass
+
+        kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(types.KeyboardButton("📱 تایید شماره من", request_contact=True))
+        _bot.send_message(
+            tg_id,
+            "📱 <b>مرحله ۱ از ۲ — شماره تلفن</b>\n\n"
+            "برای ادامه، شماره خودت رو با دکمه زیر تایید کن 👇\n\n"
+            "⏱ این فرم ۵ دقیقه اعتبار دارد.",
+            reply_markup=kb,
+        )
+
+    # ── مرحله ۱b: دریافت شماره از طریق دکمه‌ی اشتراک‌گذاری مخاطب ─────────────
+    @_bot.message_handler(
+        content_types=["contact"],
+        func=lambda m: m.chat.type == "private"
+        and m.from_user.id in _reg_sessions
+        and _reg_sessions[m.from_user.id].get("step") == "await_contact"
+        and not _reg_expired(m.from_user.id)
+    )
+    def handle_reg_contact(message):
+        tg_id = message.from_user.id
+        contact = message.contact
+
+        if contact.user_id and contact.user_id != tg_id:
+            _bot.reply_to(
+                message,
+                "❗️ لطفاً شماره‌ی خودتان را با دکمه ارسال کنید، نه شخص دیگر.",
+            )
+            return
+
+        phone = contact.phone_number.strip()
+        if not phone.startswith("+"):
+            phone = "+" + phone
+
+        try:
+            _bot.send_message(tg_id, "✅ شماره دریافت شد.", reply_markup=types.ReplyKeyboardRemove())
+        except Exception:
+            pass
+
+        session = _reg_sessions[tg_id]
+        session["phone"] = phone
+        session["step"] = "sending_code"
+        session["expires"] = time.time() + _REG_TIMEOUT
+
+        _send_verification_code(tg_id, phone, chat_id=message.chat.id)
+
+    # ── لغو با فرستادن /start در حین انتظار شماره ────────────────────────────
+    @_bot.message_handler(
+        func=lambda m: m.chat.type == "private"
+        and m.from_user.id in _reg_sessions
+        and _reg_sessions[m.from_user.id].get("step") == "await_contact"
+        and m.content_type == "text"
+        and not (m.text or "").startswith("/start")
+    )
+    def handle_reg_await_contact_other_text(message):
+        kb = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(types.KeyboardButton("📱 تایید شماره من", request_contact=True))
+        _bot.reply_to(
+            message,
+            "👆 لطفاً با زدن دکمه زیر شماره خودتان را ارسال کنید.",
+            reply_markup=kb,
+        )
 
     # ── مرحله ۲fa: دریافت رمز دومرحله‌ای به صورت متن ────────────────────────
+
     @_bot.message_handler(
         func=lambda m: m.chat.type == "private"
         and m.from_user.id in _reg_sessions
@@ -1609,25 +1809,14 @@ def start_token_bot():
             sess, me = _run_tg(_verify_2fa())
             session["saved_session"] = sess
             session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
-            session["step"] = "pw"
             session["digits"] = ""
-            session["expires"] = time.time() + _REG_TIMEOUT
 
             try:
                 _bot.delete_message(tg_id, wait_msg.message_id)
             except Exception:
                 pass
 
-            sent = _bot.send_message(
-                tg_id,
-                "✅ رمز دو مرحله‌ای تأیید شد!\n\n"
-                "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
-                "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
-                f"(حداقل ۴ رقم)\n\n"
-                f"<code>{_kp_display('', 'pw')}</code>",
-                reply_markup=_kp_markup("", "pw"),
-            )
-            session["msg_id"] = sent.message_id
+            _finalize_registration(tg_id, session, message.chat.id)
 
         except Exception as e:
             try:
@@ -1680,9 +1869,8 @@ def start_token_bot():
         display = _kp_display(digits, mode)
 
         label_map = {
-            "code": "📲 <b>مرحله ۲ از ۳ — کد تأیید</b>\n\nکد دریافتی را وارد کنید:",
+            "code": "📲 <b>مرحله ۲ از ۲ — کد تأیید</b>\n\nکد دریافتی را وارد کنید:",
             "2fa": "🔒 <b>رمز دو مرحله‌ای</b>\n\nرمز دو مرحله‌ای تلگرام را وارد کنید:",
-            "pw": "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\nرمز عبور برای ورود به پنل وب را وارد کنید:\n(حداقل ۴ رقم)",
         }
         text = f"{label_map.get(mode, '')}\n\n<code>{display}</code>"
 
@@ -1727,25 +1915,11 @@ def start_token_bot():
 
                 try:
                     sess, me = _run_tg(_verify_code())
-                    # کد درسته — ذخیره session موقت و رفتن به مرحله pw
+                    # کد درسته — ساخت/اتصال اکانت بدون پرسیدن رمز عبور پنل
                     session["saved_session"] = sess
                     session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
-                    session["step"] = "pw"
                     session["digits"] = ""
-                    session["expires"] = time.time() + _REG_TIMEOUT
-
-                    try:
-                        _bot.edit_message_text(
-                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
-                            "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
-                            "(حداقل ۴ رقم)\n\n"
-                            f"<code>{_kp_display('', 'pw')}</code>",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=_kp_markup("", "pw"),
-                        )
-                    except Exception:
-                        pass
+                    _finalize_registration(tg_id, session, call.message.chat.id, call.message.message_id)
 
                 except Exception as e:
                     err_str = str(e)
@@ -1825,22 +1999,8 @@ def start_token_bot():
                     sess, me = _run_tg(_verify_2fa())
                     session["saved_session"] = sess
                     session["tg_user"] = {"id": me.id, "name": me.first_name, "username": getattr(me, "username", "")}
-                    session["step"] = "pw"
                     session["digits"] = ""
-                    session["expires"] = time.time() + _REG_TIMEOUT
-                    try:
-                        _bot.edit_message_text(
-                            "✅ ورود موفق!\n\n"
-                            "🔑 <b>مرحله ۳ — رمز عبور پنل</b>\n\n"
-                            "یک رمز عبور برای ورود به پنل وب انتخاب کنید:\n"
-                            "(حداقل ۴ رقم)\n\n"
-                            f"<code>{_kp_display('', 'pw')}</code>",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                            reply_markup=_kp_markup("", "pw"),
-                        )
-                    except Exception:
-                        pass
+                    _finalize_registration(tg_id, session, call.message.chat.id, call.message.message_id)
                 except Exception as e:
                     session["digits"] = ""
                     try:
@@ -1855,140 +2015,6 @@ def start_token_bot():
                 _reg_clear(tg_id)
                 try:
                     _bot.edit_message_text(f"❌ خطا: {str(e)[:200]}", chat_id=call.message.chat.id, message_id=call.message.message_id)
-                except Exception:
-                    pass
-
-        # ── ثبت رمز عبور پنل و ساخت اکانت ──────────────────────────────────
-        elif mode == "pw":
-            if len(digits) < 4:
-                _bot.answer_callback_query(call.id, "❗ رمز باید حداقل ۴ رقم باشد!", show_alert=True)
-                return
-
-            try:
-                tg_user = session["tg_user"]
-                saved_session = session["saved_session"]
-                tg_id_val = tg_user["id"]
-
-                # بررسی اکانت تکراری — اول بر اساس همین کاربری که با ربات چت می‌کند
-                # (مثلاً بعد از «حذف سلف») و در غیر این صورت بر اساس اکانت تلگرامی
-                # که الان واردش شده. این کار باعث می‌شود اگر کاربر اکانت قبلی خودش
-                # را داشته باشد، حتی با لاگین یک اکانت تلگرام دیگر، یوزرنیم/دارایی‌های
-                # قبلی‌اش حفظ شود و یوزرنیم جدید ساخته نشود.
-                existing = db.get_account_by_tg_id(tg_id) or db.get_account_by_tg_id(tg_id_val)
-                if existing:
-                    # اکانت قبلاً وجود دارد — فقط session رو آپدیت کن
-                    db.set_setting(existing["id"], "session_data", saved_session)
-                    db.set_setting(existing["id"], "logged_in", "1")
-                    db.save_telegram_user_id(existing["id"], tg_id)
-                    _reg_clear(tg_id)
-
-                    # ── استارت سلف در thread جدا با تاخیر کوتاه تا DB کاملاً commit شه ──
-                    def _start_existing(_acc_id):
-                        time.sleep(1.5)
-                        try:
-                            from bot import bot_manager
-                            from app import get_loop
-                            bot_manager.start(_acc_id, get_loop(), check_tokens=False)
-                        except Exception as _e:
-                            print(f"⚠️ bot_manager.start (existing): {_e}")
-                    threading.Thread(target=_start_existing, args=(existing["id"],), daemon=True).start()
-
-                    try:
-                        _bot.edit_message_text(
-                            f"✅ <b>خوش برگشتید!</b>\n\n"
-                            f"👤 {tg_user['name']}\n"
-                            f"🆔 اکانت موجود بود — سلف‌بات فعال شد!\n\n"
-                            f"{EM.EMOJI_BALANCE} موجودی: <b>{db.get_token_balance(existing['id'])}</b> الماس",
-                            chat_id=call.message.chat.id,
-                            message_id=call.message.message_id,
-                        )
-                    except Exception:
-                        pass
-                    return
-
-                # ساخت یوزرنیم از نام یا username تلگرام
-                base_username = (tg_user.get("username") or tg_user["name"] or f"user{tg_id_val}").lower()
-                base_username = "".join(c for c in base_username if c.isalnum() or c == "_")[:20] or f"user{tg_id_val}"
-
-                # بررسی تکراری بودن username
-                candidate = base_username
-                suffix = 1
-                while db.get_account_by_username(candidate):
-                    candidate = f"{base_username}{suffix}"
-                    suffix += 1
-
-                # ساخت اکانت
-                new_id = db.create_account(candidate, digits)
-                if not new_id:
-                    _reg_clear(tg_id)
-                    try:
-                        _bot.edit_message_text("❌ خطا در ساخت اکانت. دوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
-                    except Exception:
-                        pass
-                    return
-
-                db.init_user_settings(new_id)
-                db.set_setting(new_id, "session_data", saved_session)
-                db.set_setting(new_id, "logged_in", "1")
-                db.save_telegram_user_id(new_id, tg_id)
-
-                # هدیه خوش‌آمد
-                db.add_tokens(new_id, config.WELCOME_TOKENS)
-
-                # اشتراک رایگان یک‌روزه برای کاربر جدید — همین‌جا ست می‌شه
-                # تا /start بعدی دوباره set_subscription صدا نزنه و سلف قطع نشه
-                try:
-                    if not db.get_subscription(new_id):
-                        db.set_subscription(new_id, "free_trial", 1)
-                except Exception as _e:
-                    print(f"⚠️ set free_trial on register: {_e}")
-
-                _reg_clear(tg_id)
-
-                # ── استارت سلف در thread جدا با تاخیر کوتاه تا DB کاملاً commit شه ──
-                def _start_new(_acc_id, _tg_id):
-                    time.sleep(1.5)
-                    try:
-                        from bot import bot_manager
-                        from app import get_loop
-                        bot_manager.start(_acc_id, get_loop(), check_tokens=False)
-                    except Exception as _e:
-                        print(f"⚠️ bot_manager.start (new): {_e}")
-                    # اطلاع‌رسانی انقضا ۲۴ ساعت بعد
-                    threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
-                threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
-
-                site_url = getattr(config, "SITE_URL", "")
-                markup_done = types.InlineKeyboardMarkup()
-                if site_url:
-                    # 🔵 دکمه ورود با رنگ primary (آبی)
-                    markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
-
-                try:
-                    _bot.edit_message_text(
-                        f"🎉 <b>اکانت ساخته شد!</b>\n\n"
-                        f"👤 نام: <b>{tg_user['name']}</b>\n"
-                        f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n"
-                        f"🔒 رمز عبور: همان رمزی که وارد کردید\n\n"
-                        f"{EM.EMOJI_DAILY_GIFT} <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
-                        f"⏰ <b>۱ روز سلف رایگان</b> فعال شد!\n\n"
-                        f"✅ سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
-                        chat_id=call.message.chat.id,
-                        message_id=call.message.message_id,
-                        reply_markup=markup_done,
-                    )
-                except Exception:
-                    pass
-
-                # رفرال
-                ref_tg_id = session.get("referrer_tg_id")
-                if ref_tg_id:
-                    threading.Thread(target=_process_referral_async, args=(ref_tg_id, tg_id_val), daemon=True).start()
-
-            except Exception as e:
-                _reg_clear(tg_id)
-                try:
-                    _bot.edit_message_text(f"❌ خطا: {str(e)[:300]}\n\nدوباره /start بزنید.", chat_id=call.message.chat.id, message_id=call.message.message_id)
                 except Exception:
                     pass
 
@@ -2317,10 +2343,110 @@ def start_token_bot():
             except Exception:
                 pass
 
+    def _send_start_approval_request(message):
+        """برای ادمین درخواست ورود کاربر را با دکمه‌های تایید/رد ارسال می‌کند"""
+        tg_id = message.from_user.id
+        tg_user = message.from_user
+        full_name = ((tg_user.first_name or "") + (" " + tg_user.last_name if tg_user.last_name else "")).strip()
+        username_part = f"@{tg_user.username}" if tg_user.username else "ندارد"
+
+        # درخواست کاربر را برای اجرای خودکار پس از تایید نگه می‌داریم
+        _pending_start_messages[tg_id] = message
+        db_cache.set_start_approval_status(tg_id, "pending")
+
+        _bot.reply_to(
+            message,
+            "🔒 <b>درخواست ورود شما ثبت شد.</b>\n\n"
+            "درخواست شما برای ورود به ربات برای ادمین ارسال شد ✅\n"
+            "لطفاً منتظر تایید ادمین بمانید."
+        )
+
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("✅ تایید", callback_data=f"start_approve_{tg_id}", style="success"),
+            types.InlineKeyboardButton("❌ رد", callback_data=f"start_reject_{tg_id}", style="danger"),
+        )
+        try:
+            _bot.send_message(
+                OWNER_TG_ID,
+                "🔔 <b>درخواست ورود جدید</b>\n\n"
+                f"👤 نام: {full_name or 'نامشخص'}\n"
+                f"🆔 آیدی: <code>{tg_id}</code>\n"
+                f"🔗 یوزرنیم: {username_part}\n\n"
+                "آیا این کاربر اجازه ورود به ربات را دارد؟",
+                reply_markup=markup
+            )
+        except Exception as e:
+            print(f"❌ خطا در ارسال درخواست ورود به ادمین: {e}")
+
+    @_bot.callback_query_handler(func=lambda call: call.data.startswith("start_approve_") or call.data.startswith("start_reject_"))
+    def callback_start_approval(call):
+        try:
+            if call.from_user.id != OWNER_TG_ID and not db.is_sub_admin(call.from_user.id):
+                _bot.answer_callback_query(call.id, "⛔️ شما اجازه انجام این کار را ندارید", show_alert=True)
+                return
+
+            is_approve = call.data.startswith("start_approve_")
+            target_tg_id = int(call.data.split("_")[-1])
+
+            if is_approve:
+                db_cache.set_start_approval_status(target_tg_id, "approved")
+                _bot.answer_callback_query(call.id, "✅ کاربر تایید شد")
+                try:
+                    _bot.edit_message_text(
+                        call.message.text + "\n\n✅ <b>تایید شد</b>",
+                        call.message.chat.id, call.message.message_id
+                    )
+                except Exception:
+                    pass
+
+                orig_message = _pending_start_messages.pop(target_tg_id, None)
+                try:
+                    _bot.send_message(target_tg_id, "✅ درخواست ورود شما توسط ادمین تایید شد! به ربات خوش آمدید 🎉")
+                except Exception:
+                    pass
+                if orig_message is not None:
+                    try:
+                        cmd_start(orig_message)
+                    except Exception as e:
+                        print(f"❌ خطا در اجرای خودکار start پس از تایید: {e}")
+            else:
+                db_cache.set_start_approval_status(target_tg_id, "rejected")
+                _pending_start_messages.pop(target_tg_id, None)
+                _bot.answer_callback_query(call.id, "❌ کاربر رد شد")
+                try:
+                    _bot.edit_message_text(
+                        call.message.text + "\n\n❌ <b>رد شد</b>",
+                        call.message.chat.id, call.message.message_id
+                    )
+                except Exception:
+                    pass
+                try:
+                    _bot.send_message(target_tg_id, "❌ درخواست ورود شما توسط ادمین رد شد.")
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"❌ خطا در callback_start_approval: {e}")
+
     @_bot.message_handler(commands=["start"])
     def cmd_start(message):
         try:
             tg_id = message.from_user.id
+
+            # ── دروازه‌ی تایید ادمین ────────────────────────────────────────────
+            if tg_id != OWNER_TG_ID:
+                approval_status = db_cache.get_start_approval_status(tg_id)
+                if approval_status != "approved":
+                    if approval_status == "pending":
+                        _bot.reply_to(
+                            message,
+                            "⏳ درخواست ورود شما هنوز در انتظار تایید ادمین است.\n"
+                            "لطفاً کمی صبر کنید."
+                        )
+                    else:
+                        _send_start_approval_request(message)
+                    return
+
             parts = message.text.strip().split()
             ref_code = parts[1] if len(parts) > 1 else None
 
