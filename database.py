@@ -60,10 +60,6 @@ from database_supabase import (
     update_payment as supa_update_payment,
     get_payment as supa_get_payment,
     get_pending_payments as supa_get_pending_payments,
-    get_forced_channels as supa_get_forced_channels,
-    add_forced_channel as supa_add_forced_channel,
-    remove_forced_channel as supa_remove_forced_channel,
-    check_user_membership as supa_check_user_membership,
     SETTING_DEFAULTS,
     _hash_pw,
 )
@@ -231,18 +227,18 @@ def remove_silent_user(owner_id: int, user_id: int):
 def is_silent_user(owner_id: int, user_id: int) -> bool:
     return cache.is_silent_user(owner_id, user_id)
 
-# ─── ✅ توابع چنل‌های اجباری (دیتابیس دائمی Supabase) ─────────────────────────
+# ─── ✅ توابع چنل‌های اجباری (دیتابیس کش) ─────────────────────────────────────
 def get_forced_channels():
-    return supa_get_forced_channels()
+    return cache.get_forced_channels()
 
 def add_forced_channel(username: str) -> bool:
-    return supa_add_forced_channel(username)
+    return cache.add_forced_channel(username)
 
 def remove_forced_channel(username: str) -> bool:
-    return supa_remove_forced_channel(username)
+    return cache.remove_forced_channel(username)
 
 def check_user_membership(bot, user_id: int) -> tuple:
-    return supa_check_user_membership(bot, user_id)
+    return cache.check_user_membership(bot, user_id)
 
 # ─── ✅ توابع چالش جام جهانی ───────────────────────────────────────────────────
 def create_world_cup_challenge(team1, team2, match_time, bet_amount):

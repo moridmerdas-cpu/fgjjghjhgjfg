@@ -8,119 +8,9 @@ import datetime
 import random
 import re
 import emoji as EM
-from telethon import Button as TButton
 
-# ─── پنل دکمه‌ای دستورات سلف (Telethon) ─────────────────────────────────────
-PANEL_PAGE_SIZE = 8          # تعداد دستور در هر صفحه
-PANEL_BUTTONS_PER_ROW = 2    # تعداد دکمه در هر ردیف
-
-
-def get_category_buttons(commands_list, cat_rows=None):
-    """
-    صفحه‌ی اول پنل: دکمه‌های دسته‌بندی — دقیقاً مثل عکس نمونه.
-    اگر cat_rows داده بشه، ترتیب و ردیف‌بندی از اون گرفته می‌شه (۳ تا در هر ردیف).
-    در غیر این صورت از همه‌ی دسته‌های commands_list با ۳ تا در هر ردیف ساخته می‌شه.
-    """
-    if cat_rows:
-        rows = []
-        for row_cats in cat_rows:
-            row = []
-            for cat in row_cats:
-                # پیدا کردن index دسته
-                cats_list = []
-                for c, _l, _cmd in commands_list:
-                    if c not in cats_list:
-                        cats_list.append(c)
-                idx = cats_list.index(cat) if cat in cats_list else -1
-                if idx >= 0:
-                    row.append(TButton.inline(cat, data=f"panel_cat_{idx}".encode()))
-            if row:
-                rows.append(row)
-        return rows, []
-    else:
-        categories = []
-        for category, _label, _cmd in commands_list:
-            if category not in categories:
-                categories.append(category)
-
-        rows = []
-        current_row = []
-        for i, cat in enumerate(categories):
-            current_row.append(TButton.inline(cat, data=f"panel_cat_{i}".encode()))
-            if len(current_row) == 3:
-                rows.append(current_row)
-                current_row = []
-        if current_row:
-            rows.append(current_row)
-        return rows, categories
-
-
-def get_category_commands_buttons(commands_list, category, page=0):
-    """
-    دکمه‌های دستورات داخل یک دسته + صفحه‌بندی + دکمه بازگشت.
-    هر ردیف ۲ دکمه.
-    """
-    items = [(idx, label, cmd) for idx, (cat, label, cmd) in enumerate(commands_list) if cat == category]
-
-    total = len(items)
-    total_pages = max(1, (total + PANEL_PAGE_SIZE - 1) // PANEL_PAGE_SIZE)
-    page = max(0, min(page, total_pages - 1))
-    start = page * PANEL_PAGE_SIZE
-    page_items = items[start:start + PANEL_PAGE_SIZE]
-
-    rows = []
-    current_row = []
-    for idx, label, _cmd in page_items:
-        current_row.append(TButton.inline(label, data=f"panel_cmd_{idx}".encode()))
-        if len(current_row) == 2:
-            rows.append(current_row)
-            current_row = []
-    if current_row:
-        rows.append(current_row)
-
-    if total_pages > 1:
-        nav_row = []
-        if page > 0:
-            nav_row.append(TButton.inline("◀️ قبلی", data=f"panel_catpage_{category}_{page - 1}".encode()))
-        nav_row.append(TButton.inline(f"📄 {page + 1}/{total_pages}", data=b"panel_noop"))
-        if page < total_pages - 1:
-            nav_row.append(TButton.inline("بعدی ▶️", data=f"panel_catpage_{category}_{page + 1}".encode()))
-        rows.append(nav_row)
-
-    rows.append([TButton.inline("🔙 بازگشت", data=b"panel_categories")])
-    return rows
-
-
-def get_all_commands_buttons(commands_list, page=0):
-    """legacy — نگه داشته شده برای سازگاری."""
-    total = len(commands_list)
-    total_pages = max(1, (total + PANEL_PAGE_SIZE - 1) // PANEL_PAGE_SIZE)
-    page = max(0, min(page, total_pages - 1))
-    start = page * PANEL_PAGE_SIZE
-    page_items = list(enumerate(commands_list))[start:start + PANEL_PAGE_SIZE]
-
-    rows = []
-    current_row = []
-    for idx, (_cat, label, _cmd) in page_items:
-        current_row.append(TButton.inline(label, data=f"panel_cmd_{idx}".encode()))
-        if len(current_row) == 2:
-            rows.append(current_row)
-            current_row = []
-    if current_row:
-        rows.append(current_row)
-
-    if total_pages > 1:
-        nav_row = []
-        if page > 0:
-            nav_row.append(TButton.inline("◀️ قبلی", data=f"panel_page_{page - 1}".encode()))
-        nav_row.append(TButton.inline(f"📄 {page + 1}/{total_pages}", data=b"panel_noop"))
-        if page < total_pages - 1:
-            nav_row.append(TButton.inline("بعدی ▶️", data=f"panel_page_{page + 1}".encode()))
-        rows.append(nav_row)
-
-    rows.append([TButton.inline("🔙 بازگشت", data=b"panel_back")])
-    return rows
-
+# ─── وقت تهران ───────────────────────────────────────────────────────────────
+_TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
 
 def _now_tehran() -> datetime.datetime:
     return datetime.datetime.now(_TEHRAN_OFFSET)
@@ -944,7 +834,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 💎 انتقال الماس
     # ══════════════════════════════════════════════════════════════════════════
-    def _transfer_success_message(amount, sender_name, receiver_name, new_balance):
+    def _transfer_success_message(amount, sender_name, receiver_name, tax_msg):
         """پیام موفقیت انتقال الماس با ایموجی‌های پرمیوم (tg-emoji)"""
         return (
             f'<tg-emoji emoji-id="5278467510604160626">💎</tg-emoji> '
@@ -952,7 +842,7 @@ def start_token_bot():
             f'<tg-emoji emoji-id="6111444480286528430">✅</tg-emoji>\n\n'
             f'<tg-emoji emoji-id="5782766782200682322">📤</tg-emoji> <b>فرستنده:</b>\n@{sender_name}\n\n'
             f'<tg-emoji emoji-id="4958472587123360612">📥</tg-emoji> <b>گیرنده:</b>\n@{receiver_name}\n'
-            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> <b>موجودی جدید:</b> {new_balance} الماس'
+            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> {tax_msg}'
         )
 
     @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال "), chat_types=['private', 'group', 'supergroup'])
@@ -1000,8 +890,7 @@ def start_token_bot():
 
                     sender_name = message.from_user.username or "کاربر"
                     receiver_name = target_user.username or "کاربر"
-                    new_balance = db.get_token_balance(from_account["id"])
-                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, new_balance)
+                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, msg)
                     return _bot.reply_to(message, formatted_msg)
 
                 return _bot.reply_to(message, msg)
@@ -1044,8 +933,7 @@ def start_token_bot():
                         pass
 
                 sender_name = message.from_user.username or "کاربر"
-                new_balance = db.get_token_balance(from_account["id"])
-                formatted_msg = _transfer_success_message(amount, sender_name, username, new_balance)
+                formatted_msg = _transfer_success_message(amount, sender_name, username, msg)
                 return _bot.reply_to(message, formatted_msg)
 
             _bot.reply_to(message, msg)
