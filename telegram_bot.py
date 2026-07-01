@@ -8,6 +8,60 @@ import datetime
 import random
 import re
 import emoji as EM
+from telethon import Button as TButton
+
+# ─── پنل دکمه‌ای دستورات سلف (Telethon) ─────────────────────────────────────
+PANEL_PAGE_SIZE = 8          # تعداد دستور در هر صفحه
+PANEL_BUTTONS_PER_ROW = 2    # تعداد دکمه در هر ردیف
+
+
+def get_all_commands_buttons(commands_list, page=0):
+    """
+    commands_list: لیست تاپل‌های (category, label, command_text)
+    خروجی: لیست لیست از telethon.Button مناسب پارامتر buttons در send_message/respond
+
+    - دکمه‌ها به‌صورت خودکار از روی commands_list ساخته می‌شوند (نه دستی)
+    - اگر تعداد دستورات بیشتر از PANEL_PAGE_SIZE باشد، صفحه‌بندی اضافه می‌شود
+    - یک دکمه برگشت/راهنما همیشه در پایین قرار می‌گیرد
+    """
+    total = len(commands_list)
+    total_pages = max(1, (total + PANEL_PAGE_SIZE - 1) // PANEL_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+
+    start = page * PANEL_PAGE_SIZE
+    end = start + PANEL_PAGE_SIZE
+    page_items = list(enumerate(commands_list))[start:end]
+
+    rows = []
+    current_row = []
+    last_category = None
+    for idx, (category, label, _cmd) in page_items:
+        if category != last_category and current_row:
+            rows.append(current_row)
+            current_row = []
+        last_category = category
+        current_row.append(TButton.inline(f"⚙️ {label}", data=f"panel_cmd_{idx}".encode()))
+        if len(current_row) == PANEL_BUTTONS_PER_ROW:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+
+    # ─── ردیف صفحه‌بندی ─────────────────────────────────────────────────────
+    if total_pages > 1:
+        nav_row = []
+        if page > 0:
+            nav_row.append(TButton.inline("◀️ قبلی", data=f"panel_page_{page - 1}".encode()))
+        nav_row.append(TButton.inline(f"📄 {page + 1}/{total_pages}", data=b"panel_noop"))
+        if page < total_pages - 1:
+            nav_row.append(TButton.inline("بعدی ▶️", data=f"panel_page_{page + 1}".encode()))
+        rows.append(nav_row)
+
+    # ─── دکمه برگشت ─────────────────────────────────────────────────────────
+    rows.append([TButton.inline("🔙 بازگشت به صفحه اول", data=b"panel_back")])
+
+    return rows
+
 
 # ─── وقت تهران ───────────────────────────────────────────────────────────────
 _TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
@@ -834,7 +888,7 @@ def start_token_bot():
     # ══════════════════════════════════════════════════════════════════════════
     # 💎 انتقال الماس
     # ══════════════════════════════════════════════════════════════════════════
-    def _transfer_success_message(amount, sender_name, receiver_name, tax_msg):
+    def _transfer_success_message(amount, sender_name, receiver_name, new_balance):
         """پیام موفقیت انتقال الماس با ایموجی‌های پرمیوم (tg-emoji)"""
         return (
             f'<tg-emoji emoji-id="5278467510604160626">💎</tg-emoji> '
@@ -842,7 +896,7 @@ def start_token_bot():
             f'<tg-emoji emoji-id="6111444480286528430">✅</tg-emoji>\n\n'
             f'<tg-emoji emoji-id="5782766782200682322">📤</tg-emoji> <b>فرستنده:</b>\n@{sender_name}\n\n'
             f'<tg-emoji emoji-id="4958472587123360612">📥</tg-emoji> <b>گیرنده:</b>\n@{receiver_name}\n'
-            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> {tax_msg}'
+            f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> <b>موجودی جدید:</b> {new_balance} الماس'
         )
 
     @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال "), chat_types=['private', 'group', 'supergroup'])
@@ -890,7 +944,8 @@ def start_token_bot():
 
                     sender_name = message.from_user.username or "کاربر"
                     receiver_name = target_user.username or "کاربر"
-                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, msg)
+                    new_balance = db.get_token_balance(from_account["id"])
+                    formatted_msg = _transfer_success_message(amount, sender_name, receiver_name, new_balance)
                     return _bot.reply_to(message, formatted_msg)
 
                 return _bot.reply_to(message, msg)
@@ -933,7 +988,8 @@ def start_token_bot():
                         pass
 
                 sender_name = message.from_user.username or "کاربر"
-                formatted_msg = _transfer_success_message(amount, sender_name, username, msg)
+                new_balance = db.get_token_balance(from_account["id"])
+                formatted_msg = _transfer_success_message(amount, sender_name, username, new_balance)
                 return _bot.reply_to(message, formatted_msg)
 
             _bot.reply_to(message, msg)

@@ -6,14 +6,15 @@ import datetime
 import random
 import threading
 import time
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, Button
 from telethon.tl.types import InputMediaDice
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.errors import FloodWaitError
 import database as db
 import config
-from texts import ENEMY_REPLIES, FRIEND_REPLIES  
+from texts import ENEMY_REPLIES, FRIEND_REPLIES
+from telegram_bot import get_all_commands_buttons, PANEL_PAGE_SIZE  
 
 # ─── فونت‌ها ───────────────────────────────────────────────────────────────────
 FONTS = {
@@ -26,8 +27,29 @@ FONTS = {
     "6": lambda t: _convert_font(t, "𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏"),
     "7": lambda t: "".join(c + "\u0336" for c in t),
     "8": lambda t: "".join(c + "\u0332" for c in t),
+    # ── فونت‌های مبتنی بر فرمت تلگرام — کار می‌کنن برای فارسی و انگلیسی هر دو ──
+    "9":  lambda t: f"**{t}**",        # بولد (Markdown)
+    "10": lambda t: f"__{t}__",        # ایتالیک (Markdown)
+    "11": lambda t: f"<u>{t}</u>",     # زیرخط (فقط HTML — Markdown زیرخط نداره)
+    "12": lambda t: f"~~{t}~~",        # خط‌خورده (Markdown)
+    "13": lambda t: f"`{t}`",          # مونو/کد (Markdown)
+    "14": lambda t: f"<blockquote>{t}</blockquote>",  # نقل قول واقعی (HTML)
+    "15": lambda t: f"||{t}||",        # اسپویلر (Markdown تلگرام)
 }
+# فونت‌هایی که باید با parse_mode مناسب ارسال/ادیت بشن (چون از سینتکس فرمت‌بندی استفاده می‌کنن، نه یونیکد استایل‌شده)
+_MARKDOWN_FONTS = {"9", "10", "12", "13", "15"}
+_HTML_FONTS = {"11", "14"}
 _ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+# ─── تبچی: نگهداری وضعیت per-user ─────────────────────────────────────────────
+# tabchi_sessions[owner_id] = {
+#   "banner_msg": Message,      # خود پیام بنر (که forward می‌شه)
+#   "dest_entity": entity یا None,  # برای روش "لینک"
+#   "mode": "link" یا "full" یا None,
+#   "task": asyncio.Task,
+# }
+_tabchi_sessions = {}
+_TABCHI_INTERVAL = 3600  # هر ۱ ساعت
 
 LINK_PATTERN = re.compile(
     r"(https?://\S+|t\.me/\S+|telegram\.me/\S+|www\.\S+)", re.IGNORECASE
@@ -102,6 +124,17 @@ class BotManager:
     def get_client(self, owner_id: int):
         entry = self._bots.get(owner_id)
         return entry["client"] if entry else None
+
+    def get_entry(self, owner_id: int):
+        return self._bots.get(owner_id)
+
+    def get_owner_by_tg_id(self, tg_id: int):
+        """با آیدی عددی تلگرام، owner_id داخلی و entry مربوطه رو پیدا می‌کنه.
+        برای ربات کمکی استفاده می‌شه تا بفهمه این کلیک/inline query مال کدوم سلفه."""
+        for oid, entry in self._bots.items():
+            if entry.get("tg_id") == tg_id:
+                return oid, entry
+        return None, None
 
     def _cancel_timer(self, owner_id: int):
         t = self._timers.pop(owner_id, None)
@@ -288,6 +321,7 @@ class BotManager:
                 print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
 
                 db.save_telegram_user_id(owner_id, me.id)
+                entry["tg_id"] = me.id
 
                 # ✅ تشخیص مالک - اصلاح شده با ۳ روش
                 me_phone = (me.phone or "").lstrip("+")
@@ -312,11 +346,24 @@ class BotManager:
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
 
+                # ✅ اگه تبچی قبلاً فعال بوده، دوباره راه‌اندازی کن
+                _sess = _tabchi_sessions.get(owner_id)
+                if _sess and _sess.get("mode") == "link":
+                    _t = _sess.get("task")
+                    if not _t or _t.done():
+                        _sess["task"] = asyncio.ensure_future(_tabchi_loop_link(cl, owner_id))
+
                 retry_delay = 5
                 await cl.run_until_disconnected()
 
                 clock_task.cancel()
                 sched_task.cancel()
+                _tsess = _tabchi_sessions.get(owner_id)
+                if _tsess:
+                    _tt = _tsess.get("task")
+                    if _tt and not _tt.done():
+                        _tt.cancel()
+                    _tsess["task"] = None
 
                 if entry["stop"]:
                     break
@@ -561,6 +608,10 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
+    # ℹ️ توجه: هندل کلیک دکمه‌های پنل (CallbackQuery) اینجا نیست — چون پیام پنل
+    # از طریق ربات کمکی (helper_bot.py) با inline query ارسال می‌شه، کلیک روی
+    # دکمه‌هاش هم به همون بات می‌رسه نه به این سشن سلف. ببین: helper_bot.py
+
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
         text = event.raw_text.strip()
@@ -573,6 +624,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         if text == "سلف خاموش":
             db.set_setting(owner_id, "self_bot_active", "0")
             await _safe_edit(event, owner_id, "❌ سلف‌بات خاموش شد.")
+            return
+
+        # ✅ پنل دکمه‌ای دستورات (فقط مالک سلف می‌تونه - این همون اکانته)
+        if text == "پنل":
+            await _send_panel(cl, event, owner_id, page=0)
             return
 
         # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن
@@ -612,6 +668,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
+            "تبچی لینک ", "تبچی خاموش",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -869,10 +926,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
         if not raw:
             await edit("❗ فرمت: بنویس [متن]")
         else:
-            font_id = gs("selected_font", "0")
-            fn = FONTS.get(font_id, FONTS["0"])
-            styled = fn(raw)
-            await edit(styled)
+            # ⚠️ فونت اینجا اعمال نمی‌شه چون _safe_edit خودش طبق فونت انتخابی اعمال می‌کنه
+            # (قبلاً اینجا fn(raw) صدا زده می‌شد و دوباره داخل _safe_edit هم اعمال می‌شد
+            # که باعث می‌شد فونت‌هایی مثل «نقل قول» دوبار تو در تو اعمال بشن و خراب بشن)
+            await _safe_edit(event, owner_id, raw)
 
     # ─── قالب‌بندی تلگرام (entities) — کار با فارسی هم دارد ────────────────────
     elif text.startswith("بولد "):
@@ -962,22 +1019,28 @@ async def _handle_command(cl, event, text, owner_id, entry):
         if font_id in FONTS:
             ss("selected_font", font_id)
             fn = FONTS[font_id]
-            if preview_words:
-                preview = fn(" ".join(preview_words))
-                await edit(f"✅ فونت {font_id} انتخاب شد:\n`{preview}`")
-            else:
-                sample = fn("Hello World")
-                await edit(f"✅ فونت {font_id} انتخاب شد.\nنمونه: `{sample}`")
+            mode = "html" if font_id in _HTML_FONTS else "md"
+            sample_text = " ".join(preview_words) if preview_words else "نمونه متن"
+            preview = fn(sample_text)
+            await event.edit(f"✅ فونت {font_id} انتخاب شد:\n{preview}", parse_mode=mode)
         else:
-            await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
+            await edit(f"❗ شماره فونت باید بین ۰ تا {len(FONTS)-1} باشد.")
 
     elif text == "لیست فونت":
-        lines = ["🔤 **فونت‌های موجود:**\n"]
+        names = {
+            "0": "بدون فونت", "1": "بولد لاتین (یونیکد)", "2": "ایتالیک لاتین (یونیکد)",
+            "3": "مونو لاتین (یونیکد)", "4": "پهن (Fullwidth)", "5": "بولد سریف",
+            "6": "اسکریپت", "7": "خط‌خورده (یونیکد)", "8": "زیرخط (یونیکد)",
+            "9": "بولد (فارسی+انگلیسی)", "10": "ایتالیک (فارسی+انگلیسی)",
+            "11": "زیرخط (فارسی+انگلیسی)", "12": "خط‌خورده (فارسی+انگلیسی)",
+            "13": "مونو/کد (فارسی+انگلیسی)", "14": "نقل‌قول (فارسی+انگلیسی)",
+            "15": "اسپویلر (فارسی+انگلیسی)",
+        }
+        lines = ["🔤 فونت‌های موجود:\n"]
         for k in FONTS:
-            fn = FONTS[k]
-            sample = fn("Hello World")
-            lines.append(f"`فونت {k}` — `{sample}`")
-        lines.append("\n💡 برای انتخاب: `فونت [شماره]`")
+            lines.append(f"فونت {k} — {names.get(k, '')}")
+        lines.append("\n💡 برای انتخاب: فونت [شماره]")
+        lines.append("💡 فونت‌های ۹ تا ۱۵ مخصوص متن فارسی هم کار می‌کنن")
         await edit("\n".join(lines))
 
     # ─── ساعت نام/بیو ─────────────────────────────────────────────────────────
@@ -1169,6 +1232,49 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text in ("راهنما", "help"):
         await edit(_help_text())
 
+    # ─── تبچی (با لینک) ─────────────────────────────────────────────────────
+    # فرمت دقیق: تبچی لینک [مقصد] [ساعت اختیاری]
+    elif re.match(r"^تبچی\s+لینک\s+\S+", text):
+        m = re.match(r"^تبچی\s+لینک\s+(\S+)(?:\s+(\d+(?:\.\d+)?))?\s*$", text)
+        if not m:
+            await edit("❗ فرمت: تبچی لینک [مقصد] [ساعت اختیاری]\nمثال: تبچی لینک @mygroup 2")
+        else:
+            link = m.group(1)
+            hours = float(m.group(2)) if m.group(2) else 1.0
+            replied = await event.get_reply_message()
+            if not replied:
+                await edit("❗ باید روی پیام بنرت (عکس) ریپلای بزنی و بنویسی: تبچی لینک [مقصد]")
+            else:
+                try:
+                    dest = await cl.get_entity(link)
+                except Exception as e:
+                    await edit(f"❌ مقصد پیدا نشد: {e}")
+                else:
+                    _tabchi_stop(owner_id)
+                    _tabchi_sessions[owner_id] = {
+                        "banner_chat_id": replied.chat_id,
+                        "banner_msg_id": replied.id,
+                        "dest_entity": dest,
+                        "mode": "link",
+                        "interval": max(hours, 0.05) * 3600,
+                        "task": None,
+                    }
+                    _tabchi_sessions[owner_id]["task"] = asyncio.ensure_future(
+                        _tabchi_loop_link(cl, owner_id)
+                    )
+                    dest_name = getattr(dest, "title", None) or getattr(dest, "username", link)
+                    await edit(
+                        f"✅ تبچی فعال شد.\n"
+                        f"این پیام هر {hours:g} ساعت به «{dest_name}» فوروارد می‌شود.\n"
+                        f"برای توقف: تبچی خاموش"
+                    )
+
+    elif text == "تبچی خاموش":
+        if _tabchi_stop(owner_id):
+            await edit("⛔ تبچی متوقف شد.")
+        else:
+            await edit("❗ تبچی فعالی پیدا نشد.")
+
     # ─── ارسال زمان‌بندی شده ─────────────────────────────────────────────────
     elif text.startswith("ارسال زمان‌بندی "):
         m = re.match(r"^ارسال زمان‌بندی (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) (.+)$", text, re.DOTALL)
@@ -1189,7 +1295,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             styled = fn(text)
             if styled != text:
                 try:
-                    await event.edit(styled)
+                    await event.edit(styled, parse_mode="md")
                 except FloodWaitError as e:
                     await asyncio.sleep(e.seconds + 1)
                 except Exception:
@@ -1199,8 +1305,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
 async def _safe_edit(event, owner_id, text):
     try:
-        fn = FONTS.get(db.get_setting(owner_id, "selected_font", "0"), FONTS["0"])
-        await event.edit(fn(text))
+        font_id = db.get_setting(owner_id, "selected_font", "0")
+        fn = FONTS.get(font_id, FONTS["0"])
+        mode = "html" if font_id in _HTML_FONTS else "md"
+        await event.edit(fn(text), parse_mode=mode)
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds + 1)
     except Exception:
@@ -1542,7 +1650,89 @@ async def _get_currency_text(target: str = None) -> str:
     return "\n".join(lines) if lines else "❌ دریافت قیمت ممکن نیست"
 
 
-def _help_text():
+# ─── پنل دکمه‌ای (دستورات بدون نیاز به ورودی اضافه) ────────────────────────────
+PANEL_COMMANDS = [
+    ("🔹 اصلی", "وضعیت", "وضعیت"),
+    ("🔹 اصلی", "راهنما", "راهنما"),
+    ("🔹 اصلی", "سلف روشن", "سلف روشن"),
+    ("🔹 اصلی", "سلف خاموش", "سلف خاموش"),
+
+    ("🔹 لیست‌ها", "لیست دشمن", "نمایش لیست دشمن"),
+    ("🔹 لیست‌ها", "پاک کردن دشمن", "پاک کردن لیست دشمن"),
+    ("🔹 لیست‌ها", "لیست دوست", "نمایش لیست دوست"),
+    ("🔹 لیست‌ها", "پاک کردن دوست", "پاک کردن لیست دوست"),
+
+    ("🔹 منشی", "منشی روشن", "منشی روشن"),
+    ("🔹 منشی", "منشی خاموش", "منشی خاموش"),
+
+    ("🔹 امنیت", "ضد حذف روشن", "ضد حذف روشن"),
+    ("🔹 امنیت", "ضد حذف خاموش", "ضد حذف خاموش"),
+    ("🔹 امنیت", "ضد لینک روشن", "ضد لینک روشن"),
+    ("🔹 امنیت", "ضد لینک خاموش", "ضد لینک خاموش"),
+    ("🔹 امنیت", "قفل پیوی روشن", "قفل پیوی روشن"),
+    ("🔹 امنیت", "قفل پیوی خاموش", "قفل پیوی خاموش"),
+    ("🔹 امنیت", "پاسخ دشمن روشن", "پاسخ دشمن روشن"),
+    ("🔹 امنیت", "پاسخ دشمن خاموش", "پاسخ دشمن خاموش"),
+    ("🔹 امنیت", "لیست سکوت", "لیست سکوت"),
+
+    ("🔹 جوین اجباری", "جوین اجباری روشن", "جوین اجباری روشن"),
+    ("🔹 جوین اجباری", "جوین اجباری خاموش", "جوین اجباری خاموش"),
+    ("🔹 جوین اجباری", "حذف کانال اجباری", "حذف کانال اجباری"),
+
+    ("🔹 تبچی", "تبچی خاموش", "تبچی خاموش"),
+
+    ("🔹 اتوماسیون", "سین خودکار روشن", "سین خودکار روشن"),
+    ("🔹 اتوماسیون", "سین خودکار خاموش", "سین خودکار خاموش"),
+    ("🔹 اتوماسیون", "ری‌اکشن روشن", "ری‌اکشن روشن"),
+    ("🔹 اتوماسیون", "ری‌اکشن خاموش", "ری‌اکشن خاموش"),
+    ("🔹 اتوماسیون", "ذخیره مدیا روشن", "ذخیره مدیا روشن"),
+    ("🔹 اتوماسیون", "ذخیره مدیا خاموش", "ذخیره مدیا خاموش"),
+    ("🔹 اتوماسیون", "ساعت نام روشن", "ساعت نام روشن"),
+    ("🔹 اتوماسیون", "ساعت نام خاموش", "ساعت نام خاموش"),
+    ("🔹 اتوماسیون", "ساعت بیو روشن", "ساعت بیو روشن"),
+    ("🔹 اتوماسیون", "ساعت بیو خاموش", "ساعت بیو خاموش"),
+
+    ("🔹 ابزار", "قیمت دلار", "قیمت دلار"),
+    ("🔹 ابزار", "ارز", "ارز"),
+
+    ("🔹 سیو مدیا", "توقف سیو", "توقف سیو"),
+
+    ("🔹 فونت", "لیست فونت", "لیست فونت"),
+    ("🔹 فونت", "فونت متن روشن", "فونت متن روشن"),
+    ("🔹 فونت", "فونت متن خاموش", "فونت متن خاموش"),
+    ("🔹 فونت", "لیست فونت ساعت", "لیست فونت ساعت"),
+]
+
+
+async def _execute_panel_command(cl, owner_id, command_text):
+    """دستور انتخاب‌شده از پنل را دقیقاً مثل تایپ دستی اجرا می‌کند."""
+    try:
+        await cl.send_message("me", command_text)
+    except Exception as e:
+        print(f"⚠️ خطا در اجرای دستور پنل: {e}")
+
+
+async def _send_panel(cl, event, owner_id, page=0):
+    """
+    سلف نمی‌تونه مستقیم پیام دکمه‌دار بفرسته که دکمه‌هاش کار کنن (callback query
+    فقط برای پیام‌های ارسالی از طرف بات فعال می‌شه)، پس از ربات کمکی استفاده
+    می‌کنیم: یک inline query به بات کمکی می‌زنیم و نتیجه رو توی همین چت کلیک
+    می‌کنیم تا پیام به‌صورت «via @HelperBot» با دکمه‌های واقعاً فعال ارسال بشه.
+    """
+    if not config.HELPER_BOT_TOKEN:
+        await event.respond("⚠️ ربات کمکی پنل تنظیم نشده. لطفاً HELPER_BOT_TOKEN رو در تنظیمات قرار بده.")
+        return
+    try:
+        results = await cl.inline_query(config.HELPER_BOT_USERNAME, "پنل")
+        if not results:
+            await event.respond("⚠️ ربات کمکی پاسخ نداد. مطمئن شو ربات کمکی روشن و در دسترسه.")
+            return
+        await results[0].click(event.chat_id, reply_to=event.id if event.is_group or event.is_channel else None)
+    except Exception as e:
+        await event.respond(f"⚠️ خطا در نمایش پنل: {e}")
+
+
+
     # هر دستور در یک بلوک quote + mono جداگانه
     sections = [
         ("🔹 اصلی", [
@@ -1550,6 +1740,7 @@ def _help_text():
             "سلف خاموش",
             "وضعیت",
             "راهنما",
+            "پنل  ← نمایش پنل دکمه‌ای دستورات",
         ]),
         ("🔹 لیست‌ها", [
             "تنظیم دشمن  ← ریپلای روی پیام",
@@ -1588,6 +1779,12 @@ def _help_text():
             "جوین اجباری روشن / خاموش",
             "حذف کانال اجباری",
             "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
+        ]),
+        ("🔹 تبچی", [
+            "تبچی لینک [مقصد] [ساعت اختیاری]  ← ریپلای روی پیام بنر",
+            "تبچی خاموش",
+            "💡 پیام ریپلای‌شده طبق بازه تعیین‌شده (پیش‌فرض ۱ ساعت) به مقصد فوروارد می‌شود",
+            "💡 پیام ریپلای‌شده هر ۱ ساعت به مقصد فوروارد می‌شود",
         ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
@@ -1705,6 +1902,42 @@ async def _clock_loop(cl, owner_id):
         except Exception as e:
             print(f"❌ خطا در _clock_loop: {e}")
             await asyncio.sleep(10)
+
+
+def _tabchi_stop(owner_id: int) -> bool:
+    """تسک تبچی رو کنسل و session رو پاک می‌کنه."""
+    sess = _tabchi_sessions.pop(owner_id, None)
+    if sess:
+        task = sess.get("task")
+        if task and not task.done():
+            task.cancel()
+        return True
+    return False
+
+
+async def _tabchi_loop_link(cl, owner_id: int):
+    """
+    هر ۱ ساعت پیام بنر اصلی رو (با عکس و متنش) به یک مقصد تأییدشده فوروارد می‌کنه.
+    """
+    while True:
+        sess = _tabchi_sessions.get(owner_id)
+        if not sess:
+            break
+        try:
+            await cl.forward_messages(
+                sess["dest_entity"],
+                sess["banner_msg_id"],
+                sess["banner_chat_id"],
+            )
+            print(f"[Tabchi] [{owner_id}] فوروارد شد به {sess['dest_entity']}")
+        except FloodWaitError as e:
+            print(f"[Tabchi] FloodWait {e.seconds}s")
+            await asyncio.sleep(e.seconds + 5)
+            continue
+        except Exception as e:
+            print(f"[Tabchi] [{owner_id}] خطا: {e}")
+
+        await asyncio.sleep(_TABCHI_INTERVAL)
 
 
 async def _scheduler_loop(cl, owner_id):
