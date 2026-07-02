@@ -38,9 +38,11 @@ _POST_LINK_RE = re.compile(
     r"^(?:https?://)?t\.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
 )
 
-# ─── سیستم محدودیت زمانی برای منشی ────────────────────────────────────────────
+# ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
 _last_secretary_reply = {}  # {chat_id: timestamp}
+_last_friend_reply = {}     # {sender_id: timestamp}
 SECRETARY_COOLDOWN = 86400  # 24 ساعت
+FRIEND_COOLDOWN = 3600      # 1 ساعت
 
 def _convert_font(text, chars):
     result = []
@@ -283,8 +285,6 @@ class BotManager:
 
                 await cl.start()
                 me = await cl.get_me()
-                entry["me"] = me  # ✅ کش کردن اطلاعات خود کاربر — تا دیگه لازم نباشه توی
-                                   # هندلر هر پیام دوباره از تلگرام get_me() بگیریم (باعث 429 می‌شد)
                 print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
 
                 db.save_telegram_user_id(owner_id, me.id)
@@ -358,18 +358,6 @@ bot_manager = BotManager()
 
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
-async def _get_cached_me(cl: TelegramClient, entry: dict):
-    """اطلاعات خود کاربر رو از کش entry برمی‌گردونه؛ فقط اگه به هر دلیلی هنوز
-    کش نشده باشه (مثلاً یک race نادر موقع استارت)، یک‌بار از تلگرام می‌گیره
-    و کش می‌کنه. این جلوی صدها request غیرضروری get_me() روی هر پیام رو می‌گیره
-    که باعث flood/HTTP 429 از سمت تلگرام می‌شد."""
-    me = entry.get("me")
-    if me is None:
-        me = await cl.get_me()
-        entry["me"] = me
-    return me
-
-
 def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.NewMessage(incoming=True))
@@ -395,7 +383,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         # ✅ بررسی آیا ربات تگ شده است (برای گروه‌ها)
         is_tagged = False
         if not event.is_private:
-            me = await _get_cached_me(cl, entry)
+            me = await cl.get_me()
             if msg.entities:
                 for entity in msg.entities:
                     if hasattr(entity, 'user_id') and entity.user_id == me.id:
@@ -406,22 +394,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 is_tagged = True
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
-
-        # ✅ پاسخ به دشمن/دوست — حتی توی گروه بدون تگ یا ریپلای (اولویت با این دو گروهه)
-        # فقط اگه چت/کاربر سایلنت نباشه — دقیقاً یک جواب برای هر پیام، بدون جلوگیری
-        # از بقیه‌ی کارهای خودکار (سین، ذخیره مدیا و ...) روی همون پیام
-        if not (db.is_silent_chat(owner_id, chat_id) or db.is_silent_user(owner_id, sender_id)):
-            if db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
-                try:
-                    await event.reply(random.choice(ENEMY_REPLIES))
-                except Exception:
-                    pass
-
-            if db.is_friend(owner_id, sender_id):
-                try:
-                    await event.reply(random.choice(FRIEND_REPLIES))
-                except Exception:
-                    pass
 
         # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
@@ -457,7 +429,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             ttl = getattr(msg.media, "ttl_seconds", None)
             if ttl:
                 try:
-                    me = await _get_cached_me(cl, entry)
+                    me = await cl.get_me()
                     media_dir = f"saved_media/{owner_id}"
                     os.makedirs(media_dir, exist_ok=True)
                     path = await cl.download_media(msg, file=media_dir + "/")
@@ -555,6 +527,25 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 ))
             except Exception as e:
                 print(f"⚠️ خطا در ری‌اکشن: {e}")
+
+        # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
+        if event.is_private and db.is_friend(owner_id, sender_id):
+            now = time.time()
+            last_reply = _last_friend_reply.get(sender_id, 0)
+            
+            if now - last_reply >= FRIEND_COOLDOWN:
+                try:
+                    await event.reply(random.choice(FRIEND_REPLIES))
+                    _last_friend_reply[sender_id] = now
+                except Exception:
+                    pass
+
+        # پاسخ به دشمن
+        if db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
+            try:
+                await event.reply(random.choice(ENEMY_REPLIES))
+            except Exception:
+                pass
 
         # ضد لینک (فقط پیوی)
         if db.get_setting(owner_id, "anti_link_active") == "1" and event.is_private and LINK_PATTERN.search(text):
@@ -1661,7 +1652,7 @@ def _help_text():
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
-            "هر پیام دوست/دشمن دقیقاً یک جواب خودکار می‌گیرد",
+            "پاسخ به دوستان هر ۱ ساعت یک بار",
         ]),
     ]
     parts = ["📖 **راهنمای NexoSelf**\n"]

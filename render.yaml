@@ -22,10 +22,6 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
-      # ─── Upstash Redis (چند سرور همزمان — اختیاری) ──────────────────────────
+      # ─── Upstash Redis ──────────────────────────────────────────────────────
       - key: UPSTASH_REDIS_URL
-        sync: false
-      - key: UPSTASH_REDIS_URL_2
-        sync: false
-      - key: UPSTASH_REDIS_URL_3
         sync: false
