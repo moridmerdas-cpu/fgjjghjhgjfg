@@ -1,30 +1,206 @@
 # redis_cache.py
-# لایه کش Redis با Upstash — جایگزین کش RAM و SQLite موقت
+# لایه کش Redis — پشتیبانی از چند سرور/اکانت Redis به‌صورت هم‌زمان
+# (مثلاً چند اکانت رایگان Upstash / Redis Cloud و ...) برای جمع‌کردن سقف
+# درخواست رایگان همه‌شون با هم و هم برای redundancy (اگه یکی خواب بود، بقیه کار کنن)
 import os
 import json
+import time
+import hashlib
 import redis
-from typing import Any, Optional
+from typing import Any, Optional, List
 
-# ─── اتصال به Upstash Redis ────────────────────────────────────────────────────
-_redis: Optional[redis.Redis] = None
+# ══════════════════════════════════════════════════════════════════════════════
+# 🔀 پروکسی چند-Redis: هر کلید بر اساس هش‌اش به یکی از سرورها sharding می‌شه
+#    (consistent hashing) تا همیشه یک کلید مشخص به همون سرور برسه — و اگه اون
+#    سرور در دسترس نبود، خودکار سراغ سرور بعدی می‌ره (failover)
+# ══════════════════════════════════════════════════════════════════════════════
+class MultiRedisClient:
+    """رابطی شبیه redis.Redis که پشت صحنه بین چند اتصال Redis پخش می‌کند."""
 
-def get_redis() -> Optional[redis.Redis]:
-    """دریافت اتصال Redis — اگه UPSTASH_REDIS_URL نباشه None برمی‌گردونه"""
-    global _redis
-    if _redis is not None:
-        return _redis
-    url = os.environ.get("UPSTASH_REDIS_URL", "")
-    if not url:
+    def __init__(self, clients: List["redis.Redis"]):
+        self._clients = clients
+
+    def __len__(self):
+        return len(self._clients)
+
+    def _shard_index(self, key: str) -> int:
+        h = int(hashlib.md5(str(key).encode()).hexdigest(), 16)
+        return h % len(self._clients)
+
+    def _ordered_clients(self, key: str) -> List["redis.Redis"]:
+        """اول سروری که این کلید بهش تعلق داره، بعد بقیه به‌عنوان fallback"""
+        idx = self._shard_index(key)
+        return [self._clients[idx]] + [c for i, c in enumerate(self._clients) if i != idx]
+
+    def _call(self, key: str, method: str, *args, **kwargs):
+        last_err = None
+        for client in self._ordered_clients(key):
+            try:
+                return getattr(client, method)(key, *args, **kwargs)
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
         return None
-    try:
-        _redis = redis.from_url(url, decode_responses=True, socket_timeout=2)
-        _redis.ping()
-        print("✅ Upstash Redis متصل شد!")
-        return _redis
-    except Exception as e:
-        print(f"⚠️ Redis اتصال ناموفق: {e} — بدون کش ادامه می‌دهیم")
-        _redis = None
+
+    # ── متدهای تک‌کلیدی (بر اساس کلید shard می‌شن) ─────────────────────────
+    def get(self, key):
+        return self._call(key, "get")
+
+    def set(self, key, value, *a, **kw):
+        return self._call(key, "set", value, *a, **kw)
+
+    def setex(self, key, ttl, value):
+        return self._call(key, "setex", ttl, value)
+
+    def delete(self, *keys):
+        ok = True
+        for k in keys:
+            try:
+                self._call(k, "delete")
+            except Exception:
+                ok = False
+        return ok
+
+    def exists(self, key):
+        return self._call(key, "exists")
+
+    def expire(self, key, ttl):
+        return self._call(key, "expire", ttl)
+
+    def rpush(self, key, *values):
+        return self._call(key, "rpush", *values)
+
+    def lpush(self, key, *values):
+        return self._call(key, "lpush", *values)
+
+    def lpop(self, key):
+        return self._call(key, "lpop")
+
+    def llen(self, key):
+        return self._call(key, "llen")
+
+    def sadd(self, key, *values):
+        return self._call(key, "sadd", *values)
+
+    def srem(self, key, *values):
+        return self._call(key, "srem", *values)
+
+    def smembers(self, key):
+        return self._call(key, "smembers")
+
+    # ── متدهایی که کلید مشخصی ندارن (باید روی همه سرورها پخش بشن) ──────────
+    def keys(self, pattern="*"):
+        result = []
+        for client in self._clients:
+            try:
+                result.extend(client.keys(pattern))
+            except Exception:
+                continue
+        return result
+
+    def ping(self):
+        ok = False
+        for client in self._clients:
+            try:
+                if client.ping():
+                    ok = True
+            except Exception:
+                continue
+        return ok
+
+
+# ─── اتصال به چند سرور Redis ────────────────────────────────────────────────
+_redis_pool: List["redis.Redis"] = []
+_multi_client: Optional[MultiRedisClient] = None
+_pool_initialized = False
+
+
+def _collect_redis_urls() -> List[str]:
+    """جمع‌آوری آدرس‌های Redis از env vars — دو فرمت پشتیبانی می‌شه:
+    ۱) چند متغیر جدا: UPSTASH_REDIS_URL, UPSTASH_REDIS_URL_2, UPSTASH_REDIS_URL_3, ...
+    ۲) یک متغیر با چند آدرس جدا شده با کاما: UPSTASH_REDIS_URLS=url1,url2,url3
+    """
+    urls: List[str] = []
+
+    primary = os.environ.get("UPSTASH_REDIS_URL", "").strip()
+    if primary:
+        urls.append(primary)
+
+    i = 2
+    while True:
+        u = os.environ.get(f"UPSTASH_REDIS_URL_{i}", "").strip()
+        if not u:
+            break
+        urls.append(u)
+        i += 1
+
+    combined = os.environ.get("UPSTASH_REDIS_URLS", "").strip()
+    if combined:
+        for u in combined.split(","):
+            u = u.strip()
+            if u and u not in urls:
+                urls.append(u)
+
+    return urls
+
+
+def _init_pool():
+    global _redis_pool, _pool_initialized
+    if _pool_initialized:
+        return
+    _pool_initialized = True
+
+    urls = _collect_redis_urls()
+    if not urls:
+        print("⚠️ هیچ UPSTASH_REDIS_URL ای تنظیم نشده — بدون کش ادامه می‌دهیم")
+        return
+
+    for idx, url in enumerate(urls, start=1):
+        try:
+            client = redis.from_url(url, decode_responses=True, socket_timeout=2)
+            client.ping()
+            _redis_pool.append(client)
+            print(f"✅ Redis شماره {idx} از {len(urls)} متصل شد!")
+        except Exception as e:
+            print(f"⚠️ Redis شماره {idx} اتصال ناموفق: {e}")
+
+    if not _redis_pool:
+        print("⚠️ هیچ‌کدام از سرورهای Redis وصل نشدند — بدون کش ادامه می‌دهیم")
+    else:
+        print(f"🔗 مجموعاً {len(_redis_pool)} سرور Redis فعال است (sharding + failover)")
+
+
+def get_redis():
+    """دریافت اتصال Redis — اگه چند سرور تنظیم شده باشه یک پروکسی چند-سرور
+    برمی‌گردونه که خودکار بین‌شون sharding/failover می‌کنه. اگه هیچ‌کدوم در
+    دسترس نباشن None برمی‌گردونه."""
+    global _multi_client
+    _init_pool()
+    if not _redis_pool:
         return None
+    if len(_redis_pool) == 1:
+        return _redis_pool[0]
+    if _multi_client is None:
+        _multi_client = MultiRedisClient(_redis_pool)
+    return _multi_client
+
+
+def get_pool_status() -> dict:
+    """وضعیت فعلی pool — چند سرور تنظیم شده و کدوم‌ها وصل‌ان (برای دیباگ/ادمین)"""
+    _init_pool()
+    total_configured = len(_collect_redis_urls())
+    connected = len(_redis_pool)
+    pings = []
+    for i, c in enumerate(_redis_pool, start=1):
+        try:
+            c.ping()
+            pings.append({"index": i, "ok": True})
+        except Exception as e:
+            pings.append({"index": i, "ok": False, "error": str(e)})
+    return {"configured": total_configured, "connected": connected, "servers": pings}
+
 
 # ─── توابع پایه ────────────────────────────────────────────────────────────────
 def rget(key: str) -> Optional[str]:
@@ -56,7 +232,7 @@ def rdel(key: str):
         pass
 
 def rdel_pattern(pattern: str):
-    """حذف همه کلیدهایی که با pattern مطابقت دارن"""
+    """حذف همه کلیدهایی که با pattern مطابقت دارن (روی همه‌ی سرورهای Redis)"""
     r = get_redis()
     if not r:
         return
@@ -170,7 +346,6 @@ def push_task(owner_id: int, task_type: str, data: dict) -> bool:
     if not r:
         return False
     try:
-        import json
         task = {
             "type": task_type,
             "data": data,
@@ -187,7 +362,6 @@ def pop_task(owner_id: int) -> Optional[dict]:
     if not r:
         return None
     try:
-        import json
         raw = r.lpop(k_queue(owner_id))
         if raw:
             return json.loads(raw)

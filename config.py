@@ -9,11 +9,6 @@ API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
-# ─── سرور ──────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("SECRET_KEY", "nexoself_secret_key_change_me")
-PORT = int(os.environ.get("PORT", 5000))
-SITE_URL = os.environ.get("SITE_URL", "")
-
 # ─── مالک ──────────────────────────────────────────────────────────────────
 OWNER_TG_ID = int(os.environ.get("OWNER_TG_ID", "8296865861"))
 OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "amele55")

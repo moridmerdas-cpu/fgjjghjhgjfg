@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: amel-self55
     env: python
     buildCommand: pip install -r requirements.txt
@@ -9,8 +9,6 @@ services:
         sync: false
       - key: API_HASH
         sync: false
-      - key: SECRET_KEY
-        generateValue: true
       - key: BOT_TOKEN
         sync: false
       - key: OWNER_TG_ID
@@ -19,29 +17,15 @@ services:
         value: "amele55"
       - key: OWNER_PHONE
         sync: false
-      - key: SITE_URL
-        sync: false
-      - key: PORT
-        value: "10000"
       # ─── Supabase ──────────────────────────────────────────────────────────
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
         sync: false
-      # ─── Upstash Redis ──────────────────────────────────────────────────────
+      # ─── Upstash Redis (چند سرور همزمان — اختیاری) ──────────────────────────
       - key: UPSTASH_REDIS_URL
         sync: false
-        services:
-  - type: web
-    name: amel-self55
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
-    envVars:
-      # ... متغیرهای قبلی ...
-      # ─── اضافه کردن Redis ──────────────────────────────────────────────────
-      - key: UPSTASH_REDIS_URL
+      - key: UPSTASH_REDIS_URL_2
         sync: false
-      # ─── Health Check ──────────────────────────────────────────────────────
-      - key: HEALTH_CHECK_PATH
-        value: "/health"
+      - key: UPSTASH_REDIS_URL_3
+        sync: false

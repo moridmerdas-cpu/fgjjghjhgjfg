@@ -1414,13 +1414,9 @@ def start_token_bot():
                 exp = exp.replace(tzinfo=datetime.timezone.utc)
             if exp > datetime.datetime.now(datetime.timezone.utc):
                 return  # هنوز فعاله
-            site_url = getattr(config, "SITE_URL", "")
             markup = types.InlineKeyboardMarkup()
             # 🟢 دکمه تمدید با رنگ success (سبز)
             markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
-            if site_url:
-                # 🔵 دکمه وب‌سایت با رنگ primary (آبی)
-                markup.add(types.InlineKeyboardButton("🌐 (دردسترس نیست) پنل وب", url=site_url, style="primary"))
             try:
                 _bot.send_message(
                     tg_id,
@@ -1589,20 +1585,14 @@ def start_token_bot():
                 threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
             threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
 
-            site_url = getattr(config, "SITE_URL", "")
-            markup_done = types.InlineKeyboardMarkup()
-            if site_url:
-                markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
-
             _send_or_edit(
                 f"🎉 <b>اکانت ساخته شد!</b>\n\n"
                 f"👤 نام: <b>{tg_user['name']}</b>\n"
-                f"🔑 یوزرنیم پنل: <code>{candidate}</code>\n\n"
+                f"🔑 یوزرنیم: <code>{candidate}</code>\n\n"
                 f"{EM.EMOJI_DAILY_GIFT} <b>{config.WELCOME_TOKENS} الماس</b> هدیه خوش‌آمد دریافت کردید!\n"
                 f"⏰ <b>۱ روز سلف رایگان</b> فعال شد!\n\n"
                 f"✅ سلف‌بات در حال اتصال است — چند لحظه صبر کنید.",
                 chat_id, message_id,
-                reply_markup=markup_done,
             )
 
             ref_tg_id = session.get("referrer_tg_id")
@@ -2131,7 +2121,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.",
+                return _bot.reply_to(message, "⚠️ ابتدا با ارسال /start اکانت بسازید.",
                                      reply_markup=_main_inline_keyboard())
             if _is_user_banned(account["id"]):
                 return _bot.reply_to(
@@ -2271,7 +2261,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
             if db.get_setting(account["id"], "logged_in", "0") != "1":
                 return _bot.answer_callback_query(call.id, "⚠️ سلف فعالی برای حذف وجود ندارد.", show_alert=True)
 
@@ -2310,7 +2300,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
 
             _bot.answer_callback_query(call.id, "⏳ در حال خروج سلف...")
             try:
@@ -2463,7 +2453,6 @@ def start_token_bot():
                 return
 
             account = _get_account_cached(tg_id)
-            site_url = getattr(config, "SITE_URL", "")
 
             if not account:
                 # ذخیره کد رفرال در سشن در صورت وجود
@@ -2478,18 +2467,14 @@ def start_token_bot():
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 # 🟢 دکمه ساخت اکانت با ربات با رنگ success (سبز)
                 markup.add(
-                    types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start", style="success")
+                    types.InlineKeyboardButton("🤖 ساخت اکانت", callback_data="reg_start", style="success")
                 )
-                if site_url:
-                    # 🔵 دکمه ساخت با وب‌سایت با رنگ primary (آبی)
-                    markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"))
                 markup.add(types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="primary"))
                 _bot.reply_to(
                     message,
                     "👋 <b>سلام!</b>\n\n"
                     "❌ اکانت نداری! برای استفاده از ربات باید اکانت بسازی:\n\n"
-                    "🤖 <b>ساخت با ربات</b> — مستقیم از همینجا، بدون نیاز به سایت\n"
-                    "🌐 <b>ساخت با وب سایت</b> — از طریق پنل وب",
+                    "🤖 <b>ساخت اکانت</b> — مستقیم از همینجا با تایید شماره‌ات",
                     reply_markup=markup,
                 )
                 return
@@ -2641,7 +2626,7 @@ def start_token_bot():
                 return
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا با ارسال /start اکانت بسازید.", reply_markup=_main_inline_keyboard())
             stats = db.get_token_stats(account["id"])
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
@@ -2662,7 +2647,7 @@ def start_token_bot():
                 return
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "⚠️ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
             stats = db.get_token_stats(account["id"])
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
@@ -2690,7 +2675,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا با ارسال /start اکانت بسازید.", reply_markup=_main_inline_keyboard())
             success, msg = db.claim_daily_token(account["id"])
             cache.invalidate(f"account_{tg_id}")
             if success:
@@ -2718,7 +2703,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا با ارسال /start اکانت بسازید.", reply_markup=_main_inline_keyboard())
             link = f"https://t.me/{BOT_USERNAME}?start=ref_{account['id']}"
             ref_count = db.get_referral_count(account["id"])
             token_price = getattr(config, 'TOKEN_PRICE_TOMAN', 200)
@@ -2796,7 +2781,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "❌ ابتدا با ارسال /start اکانت بسازید.", reply_markup=_main_inline_keyboard())
             balance = db.get_token_balance(account["id"])
             kwargs = {"reply_markup": _purchase_main_keyboard()}
             if reply_to:
@@ -2817,7 +2802,7 @@ def start_token_bot():
             tg_id = call.from_user.id
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
 
             # ── بازگشت ──────────────────────────────────────────────────────
             if data == "pur_back":
@@ -5592,7 +5577,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(tg_id)
             if not account:
-                return _bot.send_message(chat_id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.send_message(chat_id, "⚠️ ابتدا با ارسال /start اکانت بسازید.", reply_markup=_main_inline_keyboard())
 
             missions = db.get_active_missions()
             if not missions:
@@ -5623,7 +5608,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(call.from_user.id)
             if not account:
-                return _bot.answer_callback_query(call.id, "❌ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "❌ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
 
             missions = db.get_active_missions()
             completed_ids = db.get_completed_mission_ids(account["id"])
@@ -5668,7 +5653,7 @@ def start_token_bot():
         try:
             account = _get_account_cached(message.from_user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", reply_markup=_main_inline_keyboard())
+                return _bot.reply_to(message, "⚠️ ابتدا با ارسال /start اکانت بسازید.", reply_markup=_main_inline_keyboard())
             
             kb = _owner_keyboard() if message.from_user.id == OWNER_TG_ID else _user_keyboard()
             _bot.reply_to(message, "⚠️ دستور نامعتبر. از دکمه‌های زیر استفاده کنید:", reply_markup=kb)
@@ -5768,7 +5753,7 @@ def start_token_bot():
 
             account = db.get_account_by_tg_id(user_id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا با ارسال /start اکانت بسازید.")
 
             # جلوگیری از ورود یک کاربر به دو بازی همزمان
             _, existing = _hokm_find_by_player(user_id)
@@ -5842,7 +5827,7 @@ def start_token_bot():
 
             account = db.get_account_by_tg_id(user_id)
             if not account:
-                return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                return _bot.answer_callback_query(call.id, "⚠️ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
 
             # خروج
             if user_id in game["players"]:
@@ -6545,7 +6530,7 @@ def start_token_bot():
 
             account = _get_account_cached(user.id)
             if not account:
-                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+                return _bot.reply_to(message, "⚠️ ابتدا با ارسال /start اکانت بسازید.")
 
             balance = db.get_token_balance(account["id"])
             if balance < bet:
@@ -6639,7 +6624,7 @@ def start_token_bot():
 
                 account = _get_account_cached(user.id)
                 if not account:
-                    return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+                    return _bot.answer_callback_query(call.id, "⚠️ ابتدا با ارسال /start اکانت بسازید.", show_alert=True)
 
                 bet = game["bet"]
                 balance = db.get_token_balance(account["id"])
