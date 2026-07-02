@@ -285,6 +285,8 @@ class BotManager:
 
                 await cl.start()
                 me = await cl.get_me()
+                entry["me"] = me  # ✅ کش کردن اطلاعات خود کاربر — تا دیگه لازم نباشه توی
+                                   # هندلر هر پیام دوباره از تلگرام get_me() بگیریم (باعث 429 می‌شد)
                 print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
 
                 db.save_telegram_user_id(owner_id, me.id)
@@ -358,6 +360,18 @@ bot_manager = BotManager()
 
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
+async def _get_cached_me(cl: TelegramClient, entry: dict):
+    """اطلاعات خود کاربر رو از کش entry برمی‌گردونه؛ فقط اگه به هر دلیلی هنوز
+    کش نشده باشه (مثلاً یک race نادر موقع استارت)، یک‌بار از تلگرام می‌گیره
+    و کش می‌کنه. این جلوی صدها request غیرضروری get_me() روی هر پیام رو می‌گیره
+    که باعث flood/HTTP 429 از سمت تلگرام می‌شد."""
+    me = entry.get("me")
+    if me is None:
+        me = await cl.get_me()
+        entry["me"] = me
+    return me
+
+
 def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.NewMessage(incoming=True))
@@ -383,7 +397,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         # ✅ بررسی آیا ربات تگ شده است (برای گروه‌ها)
         is_tagged = False
         if not event.is_private:
-            me = await cl.get_me()
+            me = await _get_cached_me(cl, entry)
             if msg.entities:
                 for entity in msg.entities:
                     if hasattr(entity, 'user_id') and entity.user_id == me.id:
@@ -429,7 +443,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             ttl = getattr(msg.media, "ttl_seconds", None)
             if ttl:
                 try:
-                    me = await cl.get_me()
+                    me = await _get_cached_me(cl, entry)
                     media_dir = f"saved_media/{owner_id}"
                     os.makedirs(media_dir, exist_ok=True)
                     path = await cl.download_media(msg, file=media_dir + "/")
