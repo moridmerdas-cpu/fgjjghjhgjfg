@@ -38,11 +38,9 @@ _POST_LINK_RE = re.compile(
     r"^(?:https?://)?t\.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
 )
 
-# ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
+# ─── سیستم محدودیت زمانی برای منشی ────────────────────────────────────────────
 _last_secretary_reply = {}  # {chat_id: timestamp}
-_last_friend_reply = {}     # {sender_id: timestamp}
 SECRETARY_COOLDOWN = 86400  # 24 ساعت
-FRIEND_COOLDOWN = 3600      # 1 ساعت
 
 def _convert_font(text, chars):
     result = []
@@ -409,6 +407,22 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
 
+        # ✅ پاسخ به دشمن/دوست — حتی توی گروه بدون تگ یا ریپلای (اولویت با این دو گروهه)
+        # فقط اگه چت/کاربر سایلنت نباشه — دقیقاً یک جواب برای هر پیام، بدون جلوگیری
+        # از بقیه‌ی کارهای خودکار (سین، ذخیره مدیا و ...) روی همون پیام
+        if not (db.is_silent_chat(owner_id, chat_id) or db.is_silent_user(owner_id, sender_id)):
+            if db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
+                try:
+                    await event.reply(random.choice(ENEMY_REPLIES))
+                except Exception:
+                    pass
+
+            if db.is_friend(owner_id, sender_id):
+                try:
+                    await event.reply(random.choice(FRIEND_REPLIES))
+                except Exception:
+                    pass
+
         # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
             if db.get_setting(owner_id, "auto_seen_active") == "1":
@@ -541,25 +555,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 ))
             except Exception as e:
                 print(f"⚠️ خطا در ری‌اکشن: {e}")
-
-        # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
-        if event.is_private and db.is_friend(owner_id, sender_id):
-            now = time.time()
-            last_reply = _last_friend_reply.get(sender_id, 0)
-            
-            if now - last_reply >= FRIEND_COOLDOWN:
-                try:
-                    await event.reply(random.choice(FRIEND_REPLIES))
-                    _last_friend_reply[sender_id] = now
-                except Exception:
-                    pass
-
-        # پاسخ به دشمن
-        if db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
-            try:
-                await event.reply(random.choice(ENEMY_REPLIES))
-            except Exception:
-                pass
 
         # ضد لینک (فقط پیوی)
         if db.get_setting(owner_id, "anti_link_active") == "1" and event.is_private and LINK_PATTERN.search(text):
@@ -1666,7 +1661,7 @@ def _help_text():
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
-            "پاسخ به دوستان هر ۱ ساعت یک بار",
+            "هر پیام دوست/دشمن دقیقاً یک جواب خودکار می‌گیرد",
         ]),
     ]
     parts = ["📖 **راهنمای NexoSelf**\n"]
