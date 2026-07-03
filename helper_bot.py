@@ -35,7 +35,7 @@ async def start_helper_bot():
         return _helper_client
 
     # import داخل تابع تا از circular import با bot.py جلوگیری بشه
-    from bot import bot_manager, PANEL_COMMANDS, _execute_panel_command
+    from bot import bot_manager, build_panel_commands, _execute_panel_command
     from telegram_bot import get_all_commands_buttons
 
     cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
@@ -59,11 +59,12 @@ async def start_helper_bot():
             )
             return
 
-        buttons = get_all_commands_buttons(PANEL_COMMANDS, page=0)
+        panel_commands = build_panel_commands(owner_id)
+        buttons = get_all_commands_buttons(panel_commands, page=0)
         result = event.builder.article(
             title="🎛️ پنل مدیریت دستورات",
             description="برای نمایش پنل دکمه‌ای لمس کن",
-            text="🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا دستور اجرا بشه 👇",
+            text="🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
             buttons=buttons,
         )
         await event.answer([result], cache_time=0)
@@ -84,28 +85,42 @@ async def start_helper_bot():
             return
 
         if data == "panel_back":
-            buttons = get_all_commands_buttons(PANEL_COMMANDS, page=0)
+            panel_commands = build_panel_commands(owner_id)
+            buttons = get_all_commands_buttons(panel_commands, page=0)
             await event.edit(
-                "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا دستور اجرا بشه 👇",
+                "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
                 buttons=buttons,
             )
             return
 
         if data.startswith("panel_page_"):
             page = int(data.replace("panel_page_", ""))
-            buttons = get_all_commands_buttons(PANEL_COMMANDS, page=page)
+            panel_commands = build_panel_commands(owner_id)
+            buttons = get_all_commands_buttons(panel_commands, page=page)
             await event.edit(
-                "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا دستور اجرا بشه 👇",
+                "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
                 buttons=buttons,
             )
             return
 
         if data.startswith("panel_cmd_"):
             idx = int(data.replace("panel_cmd_", ""))
-            if 0 <= idx < len(PANEL_COMMANDS):
-                _, label, command_text = PANEL_COMMANDS[idx]
+            panel_commands = build_panel_commands(owner_id)
+            if 0 <= idx < len(panel_commands):
+                _, label, command_text = panel_commands[idx]
                 await event.answer(f"⏳ در حال اجرا: {label}")
                 await _execute_panel_command(self_client, owner_id, command_text)
+                # بعد از اجرای دستور، پنل رو با رنگ/وضعیت تازه دوباره رسم می‌کنیم
+                refreshed = build_panel_commands(owner_id)
+                page = idx // 8  # باید هم‌راستا با PANEL_PAGE_SIZE در telegram_bot.py باشه
+                buttons = get_all_commands_buttons(refreshed, page=page)
+                try:
+                    await event.edit(
+                        "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
+                        buttons=buttons,
+                    )
+                except Exception:
+                    pass
             else:
                 await event.answer("❗ دستور نامعتبر است.", alert=True)
             return

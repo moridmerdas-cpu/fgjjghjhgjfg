@@ -683,26 +683,41 @@ async def _handle_command(cl, event, text, owner_id, entry):
         await _safe_edit(event, owner_id, t)
 
     # ─── پنل دکمه‌ای مدیریت سلف ─────────────────────────────────────────────────
+    # وقتی کاربر در خودِ چت فقط «پنل» یا «panel» می‌نویسه، پیامش پاک می‌شه و
+    # به‌جاش همون پیام اینلاینِ واقعی (via @helper_bot) با دکمه‌های رنگی فعال
+    # جایگزینش می‌شه - دقیقاً انگار با نوشتن «پنل» پنل شیشه‌ای باز شده.
     if text in ("پنل", "panel"):
+        try:
+            await event.delete()
+        except Exception:
+            pass
+
         if not config.HELPER_BOT_TOKEN:
-            await edit("❗ پنل دکمه‌ای فعال نیست (بات کمکی تنظیم نشده).")
-        else:
-            from helper_bot import get_helper_client
-            helper = get_helper_client()
-            uname = None
-            if helper:
-                try:
-                    me = await helper.get_me()
-                    uname = me.username
-                except Exception:
-                    uname = None
-            if uname:
-                await edit(
-                    f"🎛️ برای باز کردن پنل دکمه‌ای، در هر چتی این را تایپ کن و "
-                    f"روی نتیجه‌ای که ظاهر می‌شود بزن:\n\n`@{uname} panel`"
-                )
+            await cl.send_message(event.chat_id, "❗ پنل دکمه‌ای فعال نیست (بات کمکی تنظیم نشده).")
+            return
+
+        from helper_bot import get_helper_client
+        helper = get_helper_client()
+        uname = None
+        if helper:
+            try:
+                me = await helper.get_me()
+                uname = me.username
+            except Exception:
+                uname = None
+
+        if not uname:
+            await cl.send_message(event.chat_id, "❗ بات کمکی هنوز آماده نیست، کمی بعد دوباره امتحان کن.")
+            return
+
+        try:
+            results = await cl.inline_query(uname, "پنل")
+            if results:
+                await results[0].click(event.chat_id)
             else:
-                await edit("❗ بات کمکی هنوز آماده نیست، کمی بعد دوباره امتحان کن.")
+                await cl.send_message(event.chat_id, "❗ نتیجه‌ای از بات کمکی دریافت نشد.")
+        except Exception as e:
+            await cl.send_message(event.chat_id, f"❗ خطا در باز کردن پنل: {e}")
 
     # ─── دشمن ────────────────────────────────────────────────────────────────
     elif text.startswith("تنظیم دشمن"):
@@ -1703,30 +1718,37 @@ def _help_text():
 
 
 # ─── پنل دکمه‌ای مدیریت سلف (برای بات کمکی / helper_bot.py) ────────────────────
-# هر آیتم: (کلید یکتا، برچسب دکمه، متن دستوری که معادل تایپ کردنش در سلف است)
-PANEL_COMMANDS = [
-    ("clock_name_on",   "⏰ ساعت نام روشن",        "ساعت نام روشن"),
-    ("clock_name_off",  "⏰ ساعت نام خاموش",       "ساعت نام خاموش"),
-    ("clock_bio_on",    "🕒 ساعت بیو روشن",        "ساعت بیو روشن"),
-    ("clock_bio_off",   "🕒 ساعت بیو خاموش",       "ساعت بیو خاموش"),
-    ("font_on",         "🔤 فونت متن روشن",        "فونت متن روشن"),
-    ("font_off",        "🔤 فونت متن خاموش",       "فونت متن خاموش"),
-    ("secretary_on",    "🤖 منشی روشن",            "منشی روشن"),
-    ("secretary_off",   "🤖 منشی خاموش",           "منشی خاموش"),
-    ("seen_on",         "👁️ سین خودکار روشن",      "سین خودکار روشن"),
-    ("seen_off",        "👁️ سین خودکار خاموش",     "سین خودکار خاموش"),
-    ("pv_lock_on",      "🔒 قفل پیوی روشن",        "قفل پیوی روشن"),
-    ("pv_lock_off",     "🔓 قفل پیوی خاموش",       "قفل پیوی خاموش"),
-    ("anti_delete_on",  "🛡️ ضد حذف روشن",          "ضد حذف روشن"),
-    ("anti_delete_off", "🛡️ ضد حذف خاموش",         "ضد حذف خاموش"),
-    ("anti_link_on",    "🔗 ضد لینک روشن",          "ضد لینک روشن"),
-    ("anti_link_off",   "🔗 ضد لینک خاموش",         "ضد لینک خاموش"),
-    ("reaction_on",     "❤️ ری‌اکشن روشن",          "ری‌اکشن روشن"),
-    ("reaction_off",    "❤️ ری‌اکشن خاموش",         "ری‌اکشن خاموش"),
-    ("save_media_on",   "💾 ذخیره مدیا روشن",       "ذخیره مدیا روشن"),
-    ("save_media_off",  "💾 ذخیره مدیا خاموش",      "ذخیره مدیا خاموش"),
-    ("status",          "📊 وضعیت",                "وضعیت"),
+# هر آیتم: (کلید تنظیم در دیتابیس، برچسب پایه، دستور روشن‌کردن، دستور خاموش‌کردن)
+PANEL_TOGGLES = [
+    ("clock_name_active",   "ساعت نام",        "ساعت نام روشن",   "ساعت نام خاموش"),
+    ("clock_bio_active",    "ساعت بیو",        "ساعت بیو روشن",   "ساعت بیو خاموش"),
+    ("text_font_auto",      "فونت متن خودکار", "فونت متن روشن",   "فونت متن خاموش"),
+    ("secretary_active",    "منشی",            "منشی روشن",       "منشی خاموش"),
+    ("auto_seen_active",    "سین خودکار",      "سین خودکار روشن", "سین خودکار خاموش"),
+    ("private_lock_active", "قفل پیوی",        "قفل پیوی روشن",   "قفل پیوی خاموش"),
+    ("anti_delete_active",  "ضد حذف",          "ضد حذف روشن",     "ضد حذف خاموش"),
+    ("anti_link_active",    "ضد لینک",         "ضد لینک روشن",    "ضد لینک خاموش"),
+    ("auto_reaction_active","ری‌اکشن",          "ری‌اکشن روشن",    "ری‌اکشن خاموش"),
+    ("auto_save_media",     "ذخیره مدیا",      "ذخیره مدیا روشن", "ذخیره مدیا خاموش"),
 ]
+
+
+def build_panel_commands(owner_id: int):
+    """
+    برای هر تنظیم، وضعیت فعلیِ owner رو از دیتابیس می‌خونه و یک آیتم پنل با
+    رنگِ متناظر می‌سازه: 🟢 یعنی روشنه (دکمه دستور خاموش‌کردن رو اجرا می‌کنه)،
+    🔴 یعنی خاموشه (دکمه دستور روشن‌کردن رو اجرا می‌کنه). ترتیب و تعداد آیتم‌ها
+    همیشه ثابته، فقط رنگ/برچسب/دستور بر اساس وضعیت لحظه‌ای عوض می‌شه.
+    """
+    items = []
+    for key, label, on_cmd, off_cmd in PANEL_TOGGLES:
+        is_on = db.get_setting(owner_id, key) == "1"
+        if is_on:
+            items.append((key, f"🟢 {label}: روشن", off_cmd))
+        else:
+            items.append((key, f"🔴 {label}: خاموش", on_cmd))
+    items.append(("status", "📊 وضعیت", "وضعیت"))
+    return items
 
 
 class _FakePanelEvent:
