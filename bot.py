@@ -1842,10 +1842,11 @@ PANEL_CATEGORY_ORDER = [
 
 def build_category_commands(owner_id: int, category_key: str):
     """
-    برای یک دسته‌ی مشخص، آیتم‌های toggle (رنگی، بر اساس وضعیت لحظه‌ای owner)
-    و آیتم‌های action (ساده، بدون رنگ) رو با هم به‌صورت یک لیست واحد
-    (key, label, command_text) برمی‌گردونه - دقیقاً فرمتی که get_all_commands_buttons
-    نیاز داره.
+    برای یک دسته‌ی مشخص، آیتم‌های toggle (رنگی بر اساس وضعیت لحظه‌ای owner) و
+    آیتم‌های action رو با هم به‌صورت یک لیست واحد (key, label, command_text, style)
+    برمی‌گردونه - دقیقاً فرمتی که get_all_commands_buttons/styled_button نیاز
+    داره. style همون قرارداد telegram_bot.py هست: "success" (سبز) یعنی روشنه،
+    "danger" (قرمز) یعنی خاموشه، "primary" (آبی) برای اکشن‌های ساده.
     """
     cat = PANEL_CATEGORIES.get(category_key)
     if not cat:
@@ -1855,12 +1856,12 @@ def build_category_commands(owner_id: int, category_key: str):
     for key, label, on_cmd, off_cmd in cat["toggles"]:
         is_on = db.get_setting(owner_id, key) == "1"
         if is_on:
-            items.append((key, f"🟢 {label}: روشن", off_cmd))
+            items.append((key, f"{label}: روشن", off_cmd, "success"))
         else:
-            items.append((key, f"🔴 {label}: خاموش", on_cmd))
+            items.append((key, f"{label}: خاموش", on_cmd, "danger"))
 
     for label, cmd in cat["actions"]:
-        items.append((label, f"🔵 {label}", cmd))
+        items.append((label, label, cmd, "primary"))
 
     return items
 

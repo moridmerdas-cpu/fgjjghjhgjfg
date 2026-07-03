@@ -22,7 +22,6 @@
 #   سطح ۲: آیتم‌های همون دسته (سوییچ‌های رنگی روشن/خاموش + دکمه‌های اکشن ساده)
 
 from telethon import TelegramClient, events
-from telethon.tl.custom import Button
 from telethon.sessions import StringSession
 import config
 
@@ -70,7 +69,7 @@ async def start_helper_bot():
         build_category_commands,
         _execute_panel_command,
     )
-    from telegram_bot import get_all_commands_buttons
+    from telegram_bot import get_all_commands_buttons, styled_button
 
     cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
     await cl.start(bot_token=config.HELPER_BOT_TOKEN)
@@ -79,9 +78,9 @@ async def start_helper_bot():
     print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
 
     def _menu_buttons(owner_tg_id):
-        """دکمه‌های سطح ۱ (لیست دسته‌ها)، هر کدام رنگی (🟣) + پسوند آیدی صاحب پنل."""
+        """دکمه‌های سطح ۱ (لیست دسته‌ها) - style='primary' (آبی)، مثل خودِ telegram_bot.py."""
         return [
-            [Button.inline(f"🟣 {title}", data=f"panel_cat_{key}_{owner_tg_id}")]
+            [styled_button(title, f"panel_cat_{key}_{owner_tg_id}", style="primary")]
             for key, title, _ in build_category_menu()
         ]
 
@@ -95,7 +94,7 @@ async def start_helper_bot():
             page_prefix=f"panel_item_page_{category_key}_",
             owner_suffix=f"_{owner_tg_id}",
         )
-        buttons.append([Button.inline("⚪ 🔙 بازگشت به منو", data=f"panel_menu_{owner_tg_id}")])
+        buttons.append([styled_button("🔙 بازگشت به منو", f"panel_menu_{owner_tg_id}", style="danger")])
         return buttons
 
     # ─── پاسخ به inline query (وقتی سلف داره نتیجه رو می‌گیره تا کلیک کنه) ───
