@@ -7,20 +7,48 @@
 # سلف خودش می‌نویسه «پنل»، سلف یک inline query به این بات می‌زنه و نتیجه رو
 # توی همون چت کلیک می‌کنه؛ پیام به‌صورت «via @selfnexo_helper_bot» ارسال
 # می‌شه ولی روی دکمه‌هاش واقعاً کار می‌کنه، چون بات فرستنده‌ی واقعیشه.
-# کلیک روی دکمه‌ها هم میاد سراغ همین بات (نه سشن سلف)، پس این فایل
-# CallbackQuery رو می‌گیره و دستور مربوطه رو روی همون کلاینت سلف کاربر اجرا
-# می‌کنه (بک‌اند هر دو تو یک پروسس/event loop هستن پس مستقیم صدا می‌زنیم،
-# نیازی به IPC جدا نیست).
+#
+# قفل مالکیت پنل:
+# هر پیام inline که ساخته می‌شه، آیدی تلگرام کسی که inline query رو زده
+# (یعنی صاحب پنل) به‌صورت پسوند در callback_data تمام دکمه‌ها ذخیره می‌شه.
+# وقتی هرکسی (حتی در گروه) روی یکی از دکمه‌ها کلیک می‌کنه، اول چک می‌شه که
+# event.sender_id (کسی که واقعاً کلیک کرده) دقیقاً همون آیدیِ ذخیره‌شده باشه؛
+# اگه نبود، با یک alert رد می‌شه و هیچ دستوری اجرا نمی‌شه. یعنی پنلِ هرکس
+# فقط برای خودش کار می‌کنه، حتی اگه در یک گروه مشترک ارسال شده باشه.
+#
+# ساختار پنل دو سطحیه:
+#   سطح ۱: منوی دسته‌ها (اتوماسیون، فونت و قالب‌بندی، اصلی، لیست‌ها، منشی،
+#           امنیت، جوین اجباری، ابزار، اسپم، پیام)
+#   سطح ۲: آیتم‌های همون دسته (سوییچ‌های رنگی روشن/خاموش + دکمه‌های اکشن ساده)
 
 from telethon import TelegramClient, events
+from telethon.tl.custom import Button
 from telethon.sessions import StringSession
 import config
 
 _helper_client = None  # سینگلتون - فقط یک بار در کل پروسس بالا میاد
 
+MAIN_TEXT = "🎛️ **پنل مدیریت سلف**\nیک دسته را انتخاب کن 👇"
+DENIED_TEXT = "⛔ این پنل مخصوص کسی است که آن را باز کرده. دکمه‌ها برای شما فعال نیست."
+
+
+def _category_text(title):
+    return f"🎛️ **{title}**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه یا اجرا شه 👇"
+
 
 def get_helper_client():
     return _helper_client
+
+
+def _split_owner_tag(data: str):
+    """
+    آیدی تلگرامِ صاحبِ پنل رو که به‌صورت "..._{tg_id}" ته callback_data چسبیده
+    جدا می‌کنه. اگه فرمت نامعتبر بود (مثل panel_noop) None برمی‌گردونه.
+    """
+    body, _, tail = data.rpartition("_")
+    if tail.isdigit():
+        return body, int(tail)
+    return data, None
 
 
 async def start_helper_bot():
@@ -35,7 +63,13 @@ async def start_helper_bot():
         return _helper_client
 
     # import داخل تابع تا از circular import با bot.py جلوگیری بشه
-    from bot import bot_manager, build_panel_commands, _execute_panel_command
+    from bot import (
+        bot_manager,
+        PANEL_CATEGORIES,
+        build_category_menu,
+        build_category_commands,
+        _execute_panel_command,
+    )
     from telegram_bot import get_all_commands_buttons
 
     cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
@@ -43,6 +77,26 @@ async def start_helper_bot():
     _helper_client = cl
     me = await cl.get_me()
     print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
+
+    def _menu_buttons(owner_tg_id):
+        """دکمه‌های سطح ۱ (لیست دسته‌ها)، هر کدام رنگی (🟣) + پسوند آیدی صاحب پنل."""
+        return [
+            [Button.inline(f"🟣 {title}", data=f"panel_cat_{key}_{owner_tg_id}")]
+            for key, title, _ in build_category_menu()
+        ]
+
+    def _category_buttons(owner_id, owner_tg_id, category_key, page=0):
+        """دکمه‌های سطح ۲ (آیتم‌های داخل یک دسته) + بازگشت به منو، همه با پسوند مالک."""
+        items = build_category_commands(owner_id, category_key)
+        buttons = get_all_commands_buttons(
+            items,
+            page=page,
+            prefix=f"panel_item_{category_key}_",
+            page_prefix=f"panel_item_page_{category_key}_",
+            owner_suffix=f"_{owner_tg_id}",
+        )
+        buttons.append([Button.inline("⚪ 🔙 بازگشت به منو", data=f"panel_menu_{owner_tg_id}")])
+        return buttons
 
     # ─── پاسخ به inline query (وقتی سلف داره نتیجه رو می‌گیره تا کلیک کنه) ───
     @cl.on(events.InlineQuery())
@@ -59,70 +113,140 @@ async def start_helper_bot():
             )
             return
 
-        panel_commands = build_panel_commands(owner_id)
-        buttons = get_all_commands_buttons(panel_commands, page=0)
-        result = event.builder.article(
-            title="🎛️ پنل مدیریت دستورات",
-            description="برای نمایش پنل دکمه‌ای لمس کن",
-            text="🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
-            buttons=buttons,
+        owner_tg_id = event.query.user_id  # همون کسی که inline query زده = صاحب پنل
+        self_client = entry["client"]
+
+        # ─── جمع‌آوری مشخصات صاحب پنل (نام، آیدی عددی، یوزرنیم) ────────────
+        try:
+            me = await self_client.get_me()
+        except Exception:
+            me = None
+
+        full_name = " ".join(filter(None, [getattr(me, "first_name", None), getattr(me, "last_name", None)])) or "بدون نام"
+        username = f"@{me.username}" if getattr(me, "username", None) else "ندارد"
+        numeric_id = getattr(me, "id", owner_tg_id)
+
+        caption = (
+            f"👤 **نام:** {full_name}\n"
+            f"🆔 **آیدی عددی:** `{numeric_id}`\n"
+            f"🔗 **یوزرنیم:** {username}\n\n"
+            f"{MAIN_TEXT}"
         )
+
+        # ─── دانلود عکس پروفایل (اگه داشته باشه) تا با همون یک پیام ارسال بشه ─
+        photo_bytes = None
+        if me is not None:
+            try:
+                photo_bytes = await self_client.download_profile_photo(me, file=bytes)
+            except Exception:
+                photo_bytes = None
+
+        if photo_bytes:
+            result = event.builder.photo(
+                file=photo_bytes,
+                text=caption,
+                buttons=_menu_buttons(owner_tg_id),
+            )
+        else:
+            result = event.builder.article(
+                title="🎛️ پنل مدیریت سلف",
+                description="برای نمایش پنل دکمه‌ای لمس کن",
+                text=caption,
+                buttons=_menu_buttons(owner_tg_id),
+            )
+        # cache_time=0 تا این پنل هیچ‌وقت به‌جای کاربر دیگه از کش تلگرام serve نشه
         await event.answer([result], cache_time=0)
 
     # ─── کلیک روی دکمه‌های پنل ────────────────────────────────────────────────
     @cl.on(events.CallbackQuery())
     async def on_callback(event):
-        owner_id, entry = bot_manager.get_owner_by_tg_id(event.sender_id)
-        if owner_id is None or not entry or not entry.get("client"):
-            await event.answer("⛔ سلف فعالی برای این اکانت پیدا نشد.", alert=True)
-            return
-
-        self_client = entry["client"]
         data = event.data.decode("utf-8")
 
         if data == "panel_noop":
             await event.answer()
             return
 
-        if data == "panel_back":
-            panel_commands = build_panel_commands(owner_id)
-            buttons = get_all_commands_buttons(panel_commands, page=0)
+        body, owner_tg_id = _split_owner_tag(data)
+        if owner_tg_id is None:
+            await event.answer("❗ دکمه نامعتبر است.", alert=True)
+            return
+
+        # 🔒 قفل مالکیت: فقط همون کسی که پنل رو باز کرده اجازه‌ی کلیک داره
+        if event.sender_id != owner_tg_id:
+            await event.answer(DENIED_TEXT, alert=True)
+            return
+
+        owner_id, entry = bot_manager.get_owner_by_tg_id(event.sender_id)
+        if owner_id is None or not entry or not entry.get("client"):
+            await event.answer("⛔ سلف فعالی برای این اکانت پیدا نشد.", alert=True)
+            return
+
+        self_client = entry["client"]
+
+        # ─── بازگشت به منوی اصلی (لیست دسته‌ها) ────────────────────────────
+        if body == "panel_menu":
+            await event.edit(MAIN_TEXT, buttons=_menu_buttons(owner_tg_id))
+            return
+
+        # ─── انتخاب یک دسته از منوی اصلی ───────────────────────────────────
+        if body.startswith("panel_cat_"):
+            category_key = body.replace("panel_cat_", "")
+            cat = PANEL_CATEGORIES.get(category_key)
+            if not cat:
+                await event.answer("❗ دسته نامعتبر است.", alert=True)
+                return
             await event.edit(
-                "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
-                buttons=buttons,
+                _category_text(cat["title"]),
+                buttons=_category_buttons(owner_id, owner_tg_id, category_key, page=0),
             )
             return
 
-        if data.startswith("panel_page_"):
-            page = int(data.replace("panel_page_", ""))
-            panel_commands = build_panel_commands(owner_id)
-            buttons = get_all_commands_buttons(panel_commands, page=page)
+        # ─── ورق‌زدن صفحه‌های داخل یک دسته ─────────────────────────────────
+        if body.startswith("panel_item_page_"):
+            # فرمت بدنه: panel_item_page_{category_key}_{page}
+            rest = body.replace("panel_item_page_", "")
+            category_key, _, page_str = rest.rpartition("_")
+            cat = PANEL_CATEGORIES.get(category_key)
+            if not cat:
+                await event.answer("❗ دسته نامعتبر است.", alert=True)
+                return
             await event.edit(
-                "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
-                buttons=buttons,
+                _category_text(cat["title"]),
+                buttons=_category_buttons(owner_id, owner_tg_id, category_key, page=int(page_str)),
             )
             return
 
-        if data.startswith("panel_cmd_"):
-            idx = int(data.replace("panel_cmd_", ""))
-            panel_commands = build_panel_commands(owner_id)
-            if 0 <= idx < len(panel_commands):
-                _, label, command_text = panel_commands[idx]
-                await event.answer(f"⏳ در حال اجرا: {label}")
-                await _execute_panel_command(self_client, owner_id, command_text)
-                # بعد از اجرای دستور، پنل رو با رنگ/وضعیت تازه دوباره رسم می‌کنیم
-                refreshed = build_panel_commands(owner_id)
-                page = idx // 8  # باید هم‌راستا با PANEL_PAGE_SIZE در telegram_bot.py باشه
-                buttons = get_all_commands_buttons(refreshed, page=page)
-                try:
-                    await event.edit(
-                        "🎛️ **پنل مدیریت دستورات**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه 👇",
-                        buttons=buttons,
-                    )
-                except Exception:
-                    pass
-            else:
+        # ─── کلیک روی یک آیتم داخل دسته (toggle یا action) ─────────────────
+        if body.startswith("panel_item_"):
+            # فرمت بدنه: panel_item_{category_key}_{idx}
+            rest = body.replace("panel_item_", "")
+            category_key, _, idx_str = rest.rpartition("_")
+            cat = PANEL_CATEGORIES.get(category_key)
+            if not cat:
+                await event.answer("❗ دسته نامعتبر است.", alert=True)
+                return
+
+            items = build_category_commands(owner_id, category_key)
+            idx = int(idx_str)
+            if not (0 <= idx < len(items)):
                 await event.answer("❗ دستور نامعتبر است.", alert=True)
+                return
+
+            _, label, command_text = items[idx]
+            await event.answer(f"⏳ در حال اجرا: {label}")
+            await _execute_panel_command(self_client, owner_id, command_text)
+
+            # بعد از اجرا، همون دسته رو با وضعیت/رنگ تازه دوباره رسم می‌کنیم
+            page = idx // 8  # باید هم‌راستا با PANEL_PAGE_SIZE در telegram_bot.py باشه
+            try:
+                await event.edit(
+                    _category_text(cat["title"]),
+                    buttons=_category_buttons(owner_id, owner_tg_id, category_key, page=page),
+                )
+            except Exception:
+                pass
             return
+
+        await event.answer("❗ دکمه نامعتبر است.", alert=True)
 
     return cl

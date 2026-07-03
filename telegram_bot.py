@@ -37,12 +37,16 @@ def _fmt_tehran(dt) -> str:
 PANEL_PAGE_SIZE = 8
 
 
-def get_all_commands_buttons(panel_commands, page: int = 0):
+def get_all_commands_buttons(panel_commands, page: int = 0, prefix: str = "panel_cmd_", page_prefix: str = "panel_page_", owner_suffix: str = ""):
     """
-    از روی لیست PANEL_COMMANDS (تعریف‌شده در bot.py) یک صفحه از دکمه‌های
-    اینلاین Telethon می‌سازه، به‌همراه دکمه‌های ناوبری بعدی/قبلی.
-    هر آیتم PANEL_COMMANDS باید (key, label, command_text) باشه؛ دکمه‌ی هر
-    آیتم callback_data معادل panel_cmd_{index} می‌گیره.
+    از روی یک لیست از آیتم‌ها (هر آیتم: (key, label, command_text)) یک صفحه
+    از دکمه‌های اینلاین Telethon می‌سازه، به‌همراه دکمه‌های ناوبری بعدی/قبلی.
+    prefix: پیشوند callback_data دکمه‌های آیتم (مثلاً "panel_cmd_" یا
+            "panel_item_automation_"). هر دکمه callback_data معادل
+            f"{prefix}{index}{owner_suffix}" می‌گیره.
+    page_prefix: پیشوند callback_data دکمه‌های صفحه‌بندی (بعدی/قبلی).
+    owner_suffix: پسوندی مثل "_123456" که آیدی تلگرام صاحبِ پنل رو به
+                  callback_data می‌چسبونه تا فقط خودش بتونه دکمه‌ها رو بزنه.
     """
     total = len(panel_commands)
     total_pages = max(1, (total + PANEL_PAGE_SIZE - 1) // PANEL_PAGE_SIZE)
@@ -54,15 +58,16 @@ def get_all_commands_buttons(panel_commands, page: int = 0):
     rows = []
     for idx in range(start, end):
         _, label, _cmd = panel_commands[idx]
-        rows.append([_TLButton.inline(label, data=f"panel_cmd_{idx}")])
+        rows.append([_TLButton.inline(label, data=f"{prefix}{idx}{owner_suffix}")])
 
-    nav_row = []
-    if page > 0:
-        nav_row.append(_TLButton.inline("⬅️ قبلی", data=f"panel_page_{page - 1}"))
-    nav_row.append(_TLButton.inline(f"📄 {page + 1}/{total_pages}", data="panel_noop"))
-    if page < total_pages - 1:
-        nav_row.append(_TLButton.inline("بعدی ➡️", data=f"panel_page_{page + 1}"))
-    rows.append(nav_row)
+    if total_pages > 1:
+        nav_row = []
+        if page > 0:
+            nav_row.append(_TLButton.inline("🟡 ⬅️ قبلی", data=f"{page_prefix}{page - 1}{owner_suffix}"))
+        nav_row.append(_TLButton.inline(f"⚪ 📄 {page + 1}/{total_pages}", data="panel_noop"))
+        if page < total_pages - 1:
+            nav_row.append(_TLButton.inline("🟡 بعدی ➡️", data=f"{page_prefix}{page + 1}{owner_suffix}"))
+        rows.append(nav_row)
 
     return rows
 
