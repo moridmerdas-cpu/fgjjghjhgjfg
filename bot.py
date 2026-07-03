@@ -103,6 +103,22 @@ class BotManager:
         entry = self._bots.get(owner_id)
         return entry["client"] if entry else None
 
+    def get_owner_by_tg_id(self, tg_id: int):
+        """
+        از روی آیدی تلگرام کاربر (همان آیدی‌ای که به بات کمکی پنل وصل شده)
+        owner_id و entry مربوط به سلف در حال اجرای او را پیدا می‌کند.
+        فقط بین سلف‌های در حال اجرا جستجو می‌کند.
+        """
+        for owner_id, entry in self._bots.items():
+            if not entry or not entry.get("client"):
+                continue
+            try:
+                if db.get_telegram_id_by_owner(owner_id) == tg_id:
+                    return owner_id, entry
+            except Exception:
+                continue
+        return None, None
+
     def _cancel_timer(self, owner_id: int):
         t = self._timers.pop(owner_id, None)
         if t:
@@ -612,6 +628,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "سیو کانال", "توقف سیو",
             "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
             "پیام جوین ", "لینک کانال جوین ",
+            "پنل", "panel",
         ]
 
         is_config_command = any(text.startswith(cmd) or text == cmd for cmd in config_commands)
@@ -665,8 +682,30 @@ async def _handle_command(cl, event, text, owner_id, entry):
     async def edit(t):
         await _safe_edit(event, owner_id, t)
 
+    # ─── پنل دکمه‌ای مدیریت سلف ─────────────────────────────────────────────────
+    if text in ("پنل", "panel"):
+        if not config.HELPER_BOT_TOKEN:
+            await edit("❗ پنل دکمه‌ای فعال نیست (بات کمکی تنظیم نشده).")
+        else:
+            from helper_bot import get_helper_client
+            helper = get_helper_client()
+            uname = None
+            if helper:
+                try:
+                    me = await helper.get_me()
+                    uname = me.username
+                except Exception:
+                    uname = None
+            if uname:
+                await edit(
+                    f"🎛️ برای باز کردن پنل دکمه‌ای، در هر چتی این را تایپ کن و "
+                    f"روی نتیجه‌ای که ظاهر می‌شود بزن:\n\n`@{uname} panel`"
+                )
+            else:
+                await edit("❗ بات کمکی هنوز آماده نیست، کمی بعد دوباره امتحان کن.")
+
     # ─── دشمن ────────────────────────────────────────────────────────────────
-    if text.startswith("تنظیم دشمن"):
+    elif text.startswith("تنظیم دشمن"):
         target = await _resolve_target(event, text.split())
         if target:
             db.add_enemy(owner_id, target["id"], target.get("username"), target.get("name"))
@@ -1661,6 +1700,65 @@ def _help_text():
         for cmd in cmds:
             parts.append(f"> `{cmd}`")
     return "\n".join(parts)
+
+
+# ─── پنل دکمه‌ای مدیریت سلف (برای بات کمکی / helper_bot.py) ────────────────────
+# هر آیتم: (کلید یکتا، برچسب دکمه، متن دستوری که معادل تایپ کردنش در سلف است)
+PANEL_COMMANDS = [
+    ("clock_name_on",   "⏰ ساعت نام روشن",        "ساعت نام روشن"),
+    ("clock_name_off",  "⏰ ساعت نام خاموش",       "ساعت نام خاموش"),
+    ("clock_bio_on",    "🕒 ساعت بیو روشن",        "ساعت بیو روشن"),
+    ("clock_bio_off",   "🕒 ساعت بیو خاموش",       "ساعت بیو خاموش"),
+    ("font_on",         "🔤 فونت متن روشن",        "فونت متن روشن"),
+    ("font_off",        "🔤 فونت متن خاموش",       "فونت متن خاموش"),
+    ("secretary_on",    "🤖 منشی روشن",            "منشی روشن"),
+    ("secretary_off",   "🤖 منشی خاموش",           "منشی خاموش"),
+    ("seen_on",         "👁️ سین خودکار روشن",      "سین خودکار روشن"),
+    ("seen_off",        "👁️ سین خودکار خاموش",     "سین خودکار خاموش"),
+    ("pv_lock_on",      "🔒 قفل پیوی روشن",        "قفل پیوی روشن"),
+    ("pv_lock_off",     "🔓 قفل پیوی خاموش",       "قفل پیوی خاموش"),
+    ("anti_delete_on",  "🛡️ ضد حذف روشن",          "ضد حذف روشن"),
+    ("anti_delete_off", "🛡️ ضد حذف خاموش",         "ضد حذف خاموش"),
+    ("anti_link_on",    "🔗 ضد لینک روشن",          "ضد لینک روشن"),
+    ("anti_link_off",   "🔗 ضد لینک خاموش",         "ضد لینک خاموش"),
+    ("reaction_on",     "❤️ ری‌اکشن روشن",          "ری‌اکشن روشن"),
+    ("reaction_off",    "❤️ ری‌اکشن خاموش",         "ری‌اکشن خاموش"),
+    ("save_media_on",   "💾 ذخیره مدیا روشن",       "ذخیره مدیا روشن"),
+    ("save_media_off",  "💾 ذخیره مدیا خاموش",      "ذخیره مدیا خاموش"),
+    ("status",          "📊 وضعیت",                "وضعیت"),
+]
+
+
+class _FakePanelEvent:
+    """
+    یک شبیه‌ساز سبک از رویداد پیام Telethon تا بشه دستورات متنی موجود در
+    _handle_command رو از طریق کلیک روی دکمه‌ی پنل (به‌جای تایپ واقعی توسط
+    کاربر) اجرا کرد. به‌جای ادیت یک پیام واقعی، نتیجه رو به «پیام‌های ذخیره‌شده»
+    (Saved Messages) خود کاربر می‌فرسته تا لاگ اجرای دستور رو داشته باشه.
+    """
+
+    def __init__(self, client):
+        self._client = client
+        self.message = None
+
+    async def edit(self, text, **kwargs):
+        try:
+            await self._client.send_message("me", text)
+        except Exception:
+            pass
+
+    async def get_reply_message(self):
+        return None
+
+
+async def _execute_panel_command(cl, owner_id: int, command_text: str):
+    """دستور متنیِ متناظر با دکمه‌ی کلیک‌شده در پنل رو روی کلاینتِ سلفِ کاربر اجرا می‌کنه."""
+    entry = bot_manager._bots.get(owner_id) or {}
+    fake_event = _FakePanelEvent(cl)
+    try:
+        await _handle_command(cl, fake_event, command_text, owner_id, entry)
+    except Exception as e:
+        print(f"❌ خطا در اجرای دستور پنل ({command_text}): {e}")
 
 
 # ─── حلقه‌های پس‌زمینه ──────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import datetime
 import random
 import re
 import emoji as EM
+from telethon.tl.custom import Button as _TLButton  # فقط برای پنل دکمه‌ای بات کمکی (helper_bot.py، مبتنی بر Telethon)
 
 # ─── وقت تهران ───────────────────────────────────────────────────────────────
 _TEHRAN_OFFSET = datetime.timezone(datetime.timedelta(hours=3, minutes=30))
@@ -30,6 +31,42 @@ def _fmt_tehran(dt) -> str:
         dt = dt.replace(tzinfo=datetime.timezone.utc)
     tehran = dt.astimezone(_TEHRAN_OFFSET)
     return tehran.strftime("%Y/%m/%d — %H:%M")
+
+
+# ─── دکمه‌های پنل مدیریت سلف (برای بات کمکی / helper_bot.py) ───────────────────
+PANEL_PAGE_SIZE = 8
+
+
+def get_all_commands_buttons(panel_commands, page: int = 0):
+    """
+    از روی لیست PANEL_COMMANDS (تعریف‌شده در bot.py) یک صفحه از دکمه‌های
+    اینلاین Telethon می‌سازه، به‌همراه دکمه‌های ناوبری بعدی/قبلی.
+    هر آیتم PANEL_COMMANDS باید (key, label, command_text) باشه؛ دکمه‌ی هر
+    آیتم callback_data معادل panel_cmd_{index} می‌گیره.
+    """
+    total = len(panel_commands)
+    total_pages = max(1, (total + PANEL_PAGE_SIZE - 1) // PANEL_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+
+    start = page * PANEL_PAGE_SIZE
+    end = min(start + PANEL_PAGE_SIZE, total)
+
+    rows = []
+    for idx in range(start, end):
+        _, label, _cmd = panel_commands[idx]
+        rows.append([_TLButton.inline(label, data=f"panel_cmd_{idx}")])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(_TLButton.inline("⬅️ قبلی", data=f"panel_page_{page - 1}"))
+    nav_row.append(_TLButton.inline(f"📄 {page + 1}/{total_pages}", data="panel_noop"))
+    if page < total_pages - 1:
+        nav_row.append(_TLButton.inline("بعدی ➡️", data=f"panel_page_{page + 1}"))
+    rows.append(nav_row)
+
+    return rows
+
+
 
 def _format_plan_remaining(owner_id: int) -> str:
     """متن باقی‌مانده‌ی پلن سلف یک کاربر (برای نمایش به مالک در لیست کاربران).

@@ -571,4 +571,14 @@ if __name__ == "__main__":
     threading.Thread(target=_self_heal_watchdog, daemon=True).start()
     print("✅ واچ‌داگ سلامت سلف‌ها استارت شد")
 
+    # ۶. استارت بات کمکی پنل دکمه‌ای مدیریت سلف (اختیاری - نیازمند HELPER_BOT_TOKEN)
+    if config.HELPER_BOT_TOKEN:
+        from helper_bot import start_helper_bot
+        try:
+            asyncio.run_coroutine_threadsafe(start_helper_bot(), get_loop()).result(timeout=30)
+        except Exception as e:
+            print(f"❌ خطا در استارت بات کمکی پنل: {e}")
+    else:
+        print("⚠️ HELPER_BOT_TOKEN تنظیم نشده — پنل دکمه‌ای سلف غیرفعال می‌ماند")
+
     app.run(host="0.0.0.0", port=config.PORT, debug=False)
