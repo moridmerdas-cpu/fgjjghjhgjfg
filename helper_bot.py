@@ -22,6 +22,7 @@
 #   سطح ۲: آیتم‌های همون دسته (سوییچ‌های رنگی روشن/خاموش + دکمه‌های اکشن ساده)
 
 from telethon import TelegramClient, events
+from telethon.tl.custom import Button
 from telethon.sessions import StringSession
 import config
 
@@ -69,7 +70,7 @@ async def start_helper_bot():
         build_category_commands,
         _execute_panel_command,
     )
-    from telegram_bot import get_all_commands_buttons, styled_button
+    from telegram_bot import get_all_commands_buttons
 
     cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
     await cl.start(bot_token=config.HELPER_BOT_TOKEN)
@@ -78,9 +79,9 @@ async def start_helper_bot():
     print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
 
     def _menu_buttons(owner_tg_id):
-        """دکمه‌های سطح ۱ (لیست دسته‌ها) - style='primary' (آبی)، مثل خودِ telegram_bot.py."""
+        """دکمه‌های سطح ۱ (لیست دسته‌ها)، هر کدام با پسوند آیدی صاحب پنل."""
         return [
-            [styled_button(title, f"panel_cat_{key}_{owner_tg_id}", style="primary")]
+            [Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}")]
             for key, title, _ in build_category_menu()
         ]
 
@@ -94,7 +95,7 @@ async def start_helper_bot():
             page_prefix=f"panel_item_page_{category_key}_",
             owner_suffix=f"_{owner_tg_id}",
         )
-        buttons.append([styled_button("🔙 بازگشت به منو", f"panel_menu_{owner_tg_id}", style="danger")])
+        buttons.append([Button.inline("🔙 بازگشت به منو", data=f"panel_menu_{owner_tg_id}")])
         return buttons
 
     # ─── پاسخ به inline query (وقتی سلف داره نتیجه رو می‌گیره تا کلیک کنه) ───
@@ -113,46 +114,12 @@ async def start_helper_bot():
             return
 
         owner_tg_id = event.query.user_id  # همون کسی که inline query زده = صاحب پنل
-        self_client = entry["client"]
-
-        # ─── جمع‌آوری مشخصات صاحب پنل (نام، آیدی عددی، یوزرنیم) ────────────
-        try:
-            me = await self_client.get_me()
-        except Exception:
-            me = None
-
-        full_name = " ".join(filter(None, [getattr(me, "first_name", None), getattr(me, "last_name", None)])) or "بدون نام"
-        username = f"@{me.username}" if getattr(me, "username", None) else "ندارد"
-        numeric_id = getattr(me, "id", owner_tg_id)
-
-        caption = (
-            f"👤 **نام:** {full_name}\n"
-            f"🆔 **آیدی عددی:** `{numeric_id}`\n"
-            f"🔗 **یوزرنیم:** {username}\n\n"
-            f"{MAIN_TEXT}"
+        result = event.builder.article(
+            title="🎛️ پنل مدیریت سلف",
+            description="برای نمایش پنل دکمه‌ای لمس کن",
+            text=MAIN_TEXT,
+            buttons=_menu_buttons(owner_tg_id),
         )
-
-        # ─── دانلود عکس پروفایل (اگه داشته باشه) تا با همون یک پیام ارسال بشه ─
-        photo_bytes = None
-        if me is not None:
-            try:
-                photo_bytes = await self_client.download_profile_photo(me, file=bytes)
-            except Exception:
-                photo_bytes = None
-
-        if photo_bytes:
-            result = event.builder.photo(
-                file=photo_bytes,
-                text=caption,
-                buttons=_menu_buttons(owner_tg_id),
-            )
-        else:
-            result = event.builder.article(
-                title="🎛️ پنل مدیریت سلف",
-                description="برای نمایش پنل دکمه‌ای لمس کن",
-                text=caption,
-                buttons=_menu_buttons(owner_tg_id),
-            )
         # cache_time=0 تا این پنل هیچ‌وقت به‌جای کاربر دیگه از کش تلگرام serve نشه
         await event.answer([result], cache_time=0)
 

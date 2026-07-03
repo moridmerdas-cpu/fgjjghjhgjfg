@@ -36,39 +36,13 @@ def _fmt_tehran(dt) -> str:
 # ─── دکمه‌های پنل مدیریت سلف (برای بات کمکی / helper_bot.py) ───────────────────
 PANEL_PAGE_SIZE = 8
 
-# همون ۵ استایلی که خودِ telegram_bot.py برای دکمه‌های ادمین/مدیریتی استفاده
-# می‌کنه (success/danger/primary/secondary/warning). چون Bot API واقعی تلگرام
-# هیچ فیلد رنگی برای دکمه‌ی شیشه‌ای نداره (نه برای InlineKeyboardButton، نه
-# برای KeyboardButton)، اینجا هم دقیقاً مثل اونجا style فقط یک برچسبه که با
-# یک ایموجی رنگی معادلش نمایش داده می‌شه - تنها روشی که در عمل روی تلگرام
-# باعث دیده‌شدنِ رنگ روی دکمه می‌شه.
-STYLE_EMOJI = {
-    "success": "🟢",
-    "danger": "🔴",
-    "primary": "🔵",
-    "secondary": "⚪",
-    "warning": "🟡",
-}
-
-
-def styled_button(text: str, data: str, style: str = None):
-    """
-    معادل Telethon-ایِ types.InlineKeyboardButton(text, callback_data=data, style=style)
-    که خودِ telegram_bot.py همه‌جا استفاده می‌کنه. همون style رو می‌گیره و به
-    ایموجی رنگیِ ابتدای متن تبدیل می‌کنه.
-    """
-    prefix = STYLE_EMOJI.get(style, "")
-    label = f"{prefix} {text}".strip() if prefix else text
-    return _TLButton.inline(label, data=data)
-
 
 def get_all_commands_buttons(panel_commands, page: int = 0, prefix: str = "panel_cmd_", page_prefix: str = "panel_page_", owner_suffix: str = ""):
     """
-    از روی یک لیست از آیتم‌ها یک صفحه از دکمه‌های اینلاین Telethon می‌سازه،
-    به‌همراه دکمه‌های ناوبری بعدی/قبلی. هر آیتم می‌تونه یکی از این دو فرمت باشه:
-        (key, label, command_text)                -> بدون رنگ خاص (style=None)
-        (key, label, command_text, style)          -> رنگیِ صریح ("success"/"danger"/"primary"/...)
-    prefix: پیشوند callback_data دکمه‌های آیتم. هر دکمه callback_data معادل
+    از روی یک لیست از آیتم‌ها (هر آیتم: (key, label, command_text)) یک صفحه
+    از دکمه‌های اینلاین Telethon می‌سازه، به‌همراه دکمه‌های ناوبری بعدی/قبلی.
+    prefix: پیشوند callback_data دکمه‌های آیتم (مثلاً "panel_cmd_" یا
+            "panel_item_automation_"). هر دکمه callback_data معادل
             f"{prefix}{index}{owner_suffix}" می‌گیره.
     page_prefix: پیشوند callback_data دکمه‌های صفحه‌بندی (بعدی/قبلی).
     owner_suffix: پسوندی مثل "_123456" که آیدی تلگرام صاحبِ پنل رو به
@@ -83,18 +57,16 @@ def get_all_commands_buttons(panel_commands, page: int = 0, prefix: str = "panel
 
     rows = []
     for idx in range(start, end):
-        item = panel_commands[idx]
-        _, label, _cmd = item[0], item[1], item[2]
-        style = item[3] if len(item) > 3 else None
-        rows.append([styled_button(label, f"{prefix}{idx}{owner_suffix}", style=style)])
+        _, label, _cmd = panel_commands[idx]
+        rows.append([_TLButton.inline(label, data=f"{prefix}{idx}{owner_suffix}")])
 
     if total_pages > 1:
         nav_row = []
         if page > 0:
-            nav_row.append(styled_button("⬅️ قبلی", f"{page_prefix}{page - 1}{owner_suffix}", style="primary"))
-        nav_row.append(styled_button(f"📄 {page + 1}/{total_pages}", "panel_noop", style="secondary"))
+            nav_row.append(_TLButton.inline("⬅️ قبلی", data=f"{page_prefix}{page - 1}{owner_suffix}"))
+        nav_row.append(_TLButton.inline(f"📄 {page + 1}/{total_pages}", data="panel_noop"))
         if page < total_pages - 1:
-            nav_row.append(styled_button("بعدی ➡️", f"{page_prefix}{page + 1}{owner_suffix}", style="primary"))
+            nav_row.append(_TLButton.inline("بعدی ➡️", data=f"{page_prefix}{page + 1}{owner_suffix}"))
         rows.append(nav_row)
 
     return rows
