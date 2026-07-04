@@ -55,6 +55,7 @@ CACHE_DB_PATH = os.environ.get("CACHE_DB_PATH", "cache.db")
 BOT_NAME = "NexoSelf"
 BOT_VERSION = "1.2.0"
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 
 # ─── سیستم توکن ──────────────────────────────────────────────────────────────
 TOKENS_PER_SESSION = 2

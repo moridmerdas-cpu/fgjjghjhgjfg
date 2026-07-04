@@ -44,6 +44,12 @@ _last_friend_reply = {}     # {sender_id: timestamp}
 SECRETARY_COOLDOWN = 86400  # 24 ساعت
 FRIEND_COOLDOWN = 3600      # 1 ساعت
 
+# ─── دستیار هوش مصنوعی (دیپ‌سیک) ──────────────────────────────────────────────
+_last_ai_reply = {}  # {chat_id: timestamp} — کول‌داون پاسخ هوش مصنوعی
+_last_outgoing_activity = {}  # {owner_id: timestamp} — آخرین باری که خودِ کاربر پیام فرستاده
+AI_AWAY_SECONDS = 300  # اگه ۵ دقیقه از آخرین پیامِ خودِ کاربر گذشته باشه، "غایب" در نظر گرفته می‌شه
+AI_REPLY_COOLDOWN = 60  # حداقل فاصله بین دو پاسخ هوش مصنوعی در یک چت
+
 def _convert_font(text, chars):
     result = []
     for ch in text:
@@ -294,7 +300,7 @@ class BotManager:
             try:
                 session_data = db.get_setting(owner_id, "session_data", "")
                 if not session_data:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(2)
                     continue
 
                 cl = TelegramClient(
@@ -310,6 +316,7 @@ class BotManager:
                 print(f"✅ [{owner_id}] بات راه‌اندازی شد — {me.first_name} (@{me.username})")
 
                 db.save_telegram_user_id(owner_id, me.id)
+                _last_outgoing_activity[owner_id] = time.time()
 
                 # ✅ تشخیص مالک - اصلاح شده با ۳ روش
                 me_phone = (me.phone or "").lstrip("+")
@@ -333,6 +340,7 @@ class BotManager:
                 # ✅ استارت ساعت با دقت بالا
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
+                typing_task = asyncio.ensure_future(_typing_loop(cl, owner_id))
 
                 retry_delay = 5
                 await cl.run_until_disconnected()
@@ -534,6 +542,28 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     pass
             return
 
+        # ✅ دستیار هوش مصنوعی (دیپ‌سیک) — فقط وقتی کاربر پیوی و آفلاین/غایب باشه
+        if (
+            db.get_setting(owner_id, "ai_assistant_active") == "1"
+            and event.is_private
+            and sender_id != owner_id
+        ):
+            last_active = _last_outgoing_activity.get(owner_id, 0)
+            is_away = (time.time() - last_active) >= AI_AWAY_SECONDS
+            if is_away and text.strip():
+                now = time.time()
+                last_ai_reply = _last_ai_reply.get(chat_id, 0)
+                if now - last_ai_reply >= AI_REPLY_COOLDOWN:
+                    knowledge = db.get_setting(owner_id, "ai_knowledge_base", "")
+                    try:
+                        answer = await _ask_deepseek(knowledge, text)
+                        if answer:
+                            await event.reply(answer)
+                            _last_ai_reply[chat_id] = now
+                    except Exception as e:
+                        print(f"خطا در پاسخ هوش مصنوعی: {e}")
+
+
         # ✅ ری‌اکشن خودکار
         if db.get_setting(owner_id, "auto_reaction_active") == "1":
             emoji = db.get_setting(owner_id, "auto_reaction_emoji", "❤️")
@@ -549,6 +579,22 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 ))
             except Exception as e:
                 print(f"⚠️ خطا در ری‌اکشن: {e}")
+
+        # ✅ ری‌اکشن اختصاصی برای یک کاربر خاص
+        react_map = _get_react_map(owner_id)
+        if str(sender_id) in react_map:
+            try:
+                from telethon.tl.functions.messages import SendReactionRequest
+                from telethon.tl.types import ReactionEmoji
+                await cl(SendReactionRequest(
+                    peer=chat_id,
+                    msg_id=msg.id,
+                    reaction=[ReactionEmoji(emoticon=react_map[str(sender_id)])],
+                    big=False,
+                    add_to_recent=True
+                ))
+            except Exception:
+                pass
 
         # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
         if event.is_private and db.is_friend(owner_id, sender_id):
@@ -628,6 +674,9 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
         text = event.raw_text.strip()
+
+        # ثبت آخرین فعالیتِ خودِ کاربر — برای تشخیص «غایب/آفلاین» دستیار هوش مصنوعی
+        _last_outgoing_activity[owner_id] = time.time()
 
         # دستورات همیشه فعال
         if text == "سلف روشن":
@@ -836,6 +885,195 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit(f"نتیجه: {result}")
         except Exception:
             await edit("❗ عبارت ریاضی نامعتبر است.\nفرمت درست: `محاسبه 2+2*3`")
+
+    # ─── دستیار هوش مصنوعی (دیپ‌سیک) ───────────────────────────────────────
+    elif text == "دیپ سیک روشن":
+        if not getattr(config, "DEEPSEEK_API_KEY", ""):
+            await edit("کلید API دیپ‌سیک تنظیم نشده است.")
+        else:
+            ss("ai_assistant_active", "1")
+            await edit(
+                "دستیار هوش مصنوعی روشن شد.\n"
+                f"وقتی {AI_AWAY_SECONDS // 60} دقیقه پیامی نفرستی، به‌جای تو به پیام‌های پیوی جواب می‌ده."
+            )
+    elif text == "دیپ سیک خاموش":
+        ss("ai_assistant_active", "0")
+        await edit("دستیار هوش مصنوعی خاموش شد.")
+
+    elif text.startswith("آموزش هوش مصنوعی "):
+        info = text[len("آموزش هوش مصنوعی "):].strip()
+        if not info:
+            await edit("فرمت: آموزش هوش مصنوعی [متن]")
+        else:
+            existing = gs("ai_knowledge_base", "")
+            merged = f"{existing}\n{info}".strip() if existing else info
+            ss("ai_knowledge_base", merged)
+            await edit("اطلاعات به دانش هوش مصنوعی اضافه شد.")
+
+    elif text == "نمایش دانش هوش مصنوعی":
+        info = gs("ai_knowledge_base", "")
+        await edit(info if info else "هنوز چیزی به هوش مصنوعی آموزش نداده‌ای.")
+
+    elif text == "پاک کردن دانش هوش مصنوعی":
+        ss("ai_knowledge_base", "")
+        await edit("دانش هوش مصنوعی پاک شد.")
+
+    elif text == "تایپینگ روشن":
+        ss("typing_action_active", "1")
+        await edit("اکشن تایپینگ ۲۴ ساعته روشن شد.")
+    elif text == "تایپینگ خاموش":
+        ss("typing_action_active", "0")
+        await edit("اکشن تایپینگ ۲۴ ساعته خاموش شد.")
+
+    elif text == "گیمینگ روشن":
+        ss("gaming_action_active", "1")
+        await edit("اکشن گیمینگ ۲۴ ساعته روشن شد.")
+    elif text == "گیمینگ خاموش":
+        ss("gaming_action_active", "0")
+        await edit("اکشن گیمینگ ۲۴ ساعته خاموش شد.")
+
+    elif text == "ویس روشن":
+        ss("voice_action_active", "1")
+        await edit("اکشن ویس ۲۴ ساعته روشن شد.")
+    elif text == "ویس خاموش":
+        ss("voice_action_active", "0")
+        await edit("اکشن ویس ۲۴ ساعته خاموش شد.")
+
+    elif text == "ارسال ویدیو روشن":
+        ss("video_action_active", "1")
+        await edit("اکشن ارسال ویدیو ۲۴ ساعته روشن شد.")
+    elif text == "ارسال ویدیو خاموش":
+        ss("video_action_active", "0")
+        await edit("اکشن ارسال ویدیو ۲۴ ساعته خاموش شد.")
+
+    # ─── بلاک / آنبلاک کاربر ────────────────────────────────────────────────
+    elif text in ("بلاک کاربر", "انبلاک کاربر"):
+        target = await _resolve_target_or_username(cl, event, text.split())
+        if not target:
+            await edit("روی پیام کاربر ریپلای کن یا آیدی عددی/یوزرنیمش رو بنویس.")
+        else:
+            from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
+            blocked = _get_block_list(owner_id)
+            try:
+                if text == "بلاک کاربر":
+                    await cl(BlockRequest(id=target["id"]))
+                    if not any(u["id"] == target["id"] for u in blocked):
+                        blocked.append(target)
+                        _save_block_list(owner_id, blocked)
+                    await edit(f"کاربر {target.get('name') or target['id']} بلاک شد.")
+                else:
+                    await cl(UnblockRequest(id=target["id"]))
+                    blocked = [u for u in blocked if u["id"] != target["id"]]
+                    _save_block_list(owner_id, blocked)
+                    await edit(f"کاربر {target.get('name') or target['id']} آنبلاک شد.")
+            except Exception as e:
+                await edit(f"خطا: {e}")
+
+    elif text == "لیست بلاک":
+        blocked = _get_block_list(owner_id)
+        if not blocked:
+            await edit("لیست بلاک خالی است.")
+        else:
+            lines = [f"لیست بلاک ({len(blocked)} نفر):\n"]
+            for u in blocked:
+                lines.append(f"- {u.get('name') or u.get('username') or u['id']} — `{u['id']}`")
+            await edit("\n".join(lines))
+
+    elif text == "پاکسازی لیست بلاک":
+        from telethon.tl.functions.contacts import UnblockRequest
+        for u in _get_block_list(owner_id):
+            try:
+                await cl(UnblockRequest(id=u["id"]))
+            except Exception:
+                pass
+        _save_block_list(owner_id, [])
+        await edit("لیست بلاک پاکسازی شد و همه آنبلاک شدند.")
+
+    # ─── ری‌اکت اختصاصی برای یک کاربر خاص ───────────────────────────────────
+    elif text.startswith("تنظیم ری‌اکت "):
+        emoji = text[len("تنظیم ری‌اکت "):].strip()
+        target = await _resolve_target(event, text.split())
+        if not emoji or not target:
+            await edit("فرمت: روی پیام کاربر ریپلای کن و بنویس «تنظیم ری‌اکت [ایموجی]»")
+        else:
+            mapping = _get_react_map(owner_id)
+            mapping[str(target["id"])] = emoji
+            _save_react_map(owner_id, mapping)
+            await edit(f"از این به بعد پیام‌های {target.get('name') or target['id']} با {emoji} ری‌اکت می‌شود.")
+
+    elif text == "حذف ری‌اکت":
+        target = await _resolve_target(event, text.split())
+        if not target:
+            await edit("روی پیام کاربر ریپلای کن.")
+        else:
+            mapping = _get_react_map(owner_id)
+            mapping.pop(str(target["id"]), None)
+            _save_react_map(owner_id, mapping)
+            await edit("ری‌اکت اختصاصی این کاربر حذف شد.")
+
+    # ─── ترک همگانی گروه/کانال ──────────────────────────────────────────────
+    elif text == "ترک همگانی گروه":
+        from telethon.tl.functions.channels import LeaveChannelRequest
+        await edit("در حال ترک همه گروه‌ها...")
+        count = 0
+        async for dialog in cl.iter_dialogs():
+            if dialog.is_group:
+                try:
+                    await cl(LeaveChannelRequest(dialog.entity))
+                    count += 1
+                except Exception:
+                    pass
+        await edit(f"ترک همگانی گروه انجام شد. تعداد: {count}")
+
+    elif text == "ترک همگانی کانال":
+        from telethon.tl.functions.channels import LeaveChannelRequest
+        await edit("در حال ترک همه کانال‌ها...")
+        count = 0
+        async for dialog in cl.iter_dialogs():
+            if dialog.is_channel and not dialog.is_group:
+                try:
+                    await cl(LeaveChannelRequest(dialog.entity))
+                    count += 1
+                except Exception:
+                    pass
+        await edit(f"ترک همگانی کانال انجام شد. تعداد: {count}")
+
+    # ─── تبدیل ویدیوی ریپلای‌شده به گیف ──────────────────────────────────────
+    elif text == "تبدیل به گیف":
+        if not event.is_reply:
+            await edit("لطفا روی یک ویدیو ریپلای کن.")
+        else:
+            reply = await event.get_reply_message()
+            if not reply.video and not reply.document:
+                await edit("پیام ریپلای‌شده ویدیو نیست.")
+            else:
+                await edit("در حال تبدیل...")
+                path = await cl.download_media(reply)
+                gif_path = os.path.splitext(path)[0] + ".gif"
+                try:
+                    os.rename(path, gif_path)
+                    await cl.send_file(event.chat_id, gif_path)
+                    await event.delete()
+                except Exception as e:
+                    await edit(f"خطا در تبدیل به گیف: {e}")
+                finally:
+                    try:
+                        os.remove(gif_path)
+                    except Exception:
+                        pass
+
+    # ─── ترجمه‌ی متن ریپلای‌شده ──────────────────────────────────────────────
+    elif text == "ترجمه متن":
+        if not event.is_reply:
+            await edit("لطفا روی یک پیام متنی ریپلای کن.")
+        else:
+            reply = await event.get_reply_message()
+            raw = reply.raw_text
+            if not raw:
+                await edit("پیام ریپلای‌شده متن ندارد.")
+            else:
+                result = await _translate(raw)
+                await edit(f"ترجمه:\n{result}")
 
     # ─── دشمن ────────────────────────────────────────────────────────────────
     elif text.startswith("تنظیم دشمن"):
@@ -1522,6 +1760,42 @@ def _is_silence_user(owner_id: int, user_id: int) -> bool:
     return any(u["id"] == user_id for u in _get_silence_users(owner_id))
 
 
+# ─── بلاک: لیست کاربرانی که با «بلاک کاربر» بلاک شدن ──────────────────────────
+_BLOCK_KEY = "blocked_users"
+
+
+def _get_block_list(owner_id: int) -> list:
+    raw = db.get_setting(owner_id, _BLOCK_KEY, "")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+def _save_block_list(owner_id: int, users: list):
+    db.set_setting(owner_id, _BLOCK_KEY, json.dumps(users))
+
+
+# ─── ری‌اکت اختصاصی: یک ایموجی ثابت که فقط برای پیام‌های یک کاربر خاص زده می‌شه ─
+_REACT_MAP_KEY = "user_react_map"
+
+
+def _get_react_map(owner_id: int) -> dict:
+    raw = db.get_setting(owner_id, _REACT_MAP_KEY, "")
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def _save_react_map(owner_id: int, mapping: dict):
+    db.set_setting(owner_id, _REACT_MAP_KEY, json.dumps(mapping))
+
+
 async def _do_spam(cl, owner_id, chat_id, text, count):
     # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
     delay = float(db.get_setting(owner_id, "spam_delay", "1"))
@@ -1613,6 +1887,57 @@ async def _save_channel_media(cl, channel_input, limit, owner_id):
             await cl.send_message(me.id, f"❌ خطا در سیو کانال: {e}")
         except Exception:
             pass
+
+
+async def _ask_deepseek(knowledge_base: str, question: str) -> str:
+    """
+    یک سوال از طرف کسی که به سلف پیام داده رو به مدل دیپ‌سیک می‌ده، به‌همراه
+    اطلاعاتی که خودِ کاربر قبلاً به هوش مصنوعی آموزش داده (مثل لیست قیمت‌ها)،
+    و پاسخ متنی رو برمی‌گردونه. اگه کلید API تنظیم نشده باشه یا خطایی رخ بده،
+    None برمی‌گردونه (یعنی پاسخی ارسال نشه).
+    """
+    api_key = getattr(config, "DEEPSEEK_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        import urllib.request
+        system_prompt = (
+            "تو دستیار پاسخ‌گویی خودکار یک اکانت تلگرام هستی. صاحب اکانت الان "
+            "در دسترس نیست. فقط بر اساس اطلاعاتی که صاحب اکانت زیر آورده شده "
+            "به پیام‌های افراد پاسخ بده. اگه سوال ربطی به این اطلاعات نداشت یا "
+            "اطلاعات کافی نبود، مختصر و محترمانه بگو که صاحب اکانت به‌زودی خودش "
+            "جواب می‌ده. پاسخ باید کوتاه، مستقیم و طبیعی باشه، بدون ایموجی.\n\n"
+            f"اطلاعاتی که صاحب اکانت داده:\n{knowledge_base or '(چیزی ثبت نشده)'}"
+        )
+        payload = json.dumps({
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
+            ],
+            "max_tokens": 300,
+            "temperature": 0.4,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.deepseek.com/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+
+        def _do_request():
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                return json.loads(resp.read().decode())
+
+        data = await asyncio.get_event_loop().run_in_executor(None, _do_request)
+        return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"خطا در ارتباط با دیپ‌سیک: {e}")
+        return None
 
 
 async def _translate(text):
@@ -1975,6 +2300,10 @@ PANEL_CATEGORIES = {
             ("auto_seen_active", "سین خودکار", "سین خودکار روشن", "سین خودکار خاموش"),
             ("auto_reaction_active", "ری‌اکشن خودکار", "ری‌اکشن روشن", "ری‌اکشن خاموش"),
             ("auto_save_media", "ذخیره مدیا", "ذخیره مدیا روشن", "ذخیره مدیا خاموش"),
+            ("typing_action_active", "اکشن تایپینگ 24 ساعته", "تایپینگ روشن", "تایپینگ خاموش"),
+            ("gaming_action_active", "اکشن گیمینگ 24 ساعته", "گیمینگ روشن", "گیمینگ خاموش"),
+            ("voice_action_active", "اکشن ویس 24 ساعته", "ویس روشن", "ویس خاموش"),
+            ("video_action_active", "اکشن ارسال ویدیو 24 ساعته", "ارسال ویدیو روشن", "ارسال ویدیو خاموش"),
         ],
         "actions": [
             ("توقف اسپم", "توقف اسپم"),
@@ -1997,6 +2326,25 @@ PANEL_CATEGORIES = {
             ("آب و هوا", "INFO::برای استفاده تایپ کن: هوا [نام شهر]"),
             ("وضعیت", "وضعیت"),
             ("راهنما", "راهنما"),
+            ("لیست بلاک", "لیست بلاک"),
+            ("پاکسازی لیست بلاک", "پاکسازی لیست بلاک"),
+            ("ترک همگانی گروه", "ترک همگانی گروه"),
+            ("ترک همگانی کانال", "ترک همگانی کانال"),
+            ("تبدیل به گیف", "INFO::روی یک ویدیو ریپلای کن و تایپ کن: تبدیل به گیف"),
+            ("ترجمه متن ریپلای‌شده", "INFO::روی یک پیام متنی ریپلای کن و تایپ کن: ترجمه متن"),
+            ("بلاک کاربر", "INFO::روی پیام کاربر ریپلای کن و تایپ کن: بلاک کاربر"),
+            ("تنظیم ری‌اکت اختصاصی", "INFO::روی پیام کاربر ریپلای کن و تایپ کن: تنظیم ری‌اکت [ایموجی]"),
+        ],
+    },
+    "ai_assistant": {
+        "title": "هوش مصنوعی",
+        "toggles": [
+            ("ai_assistant_active", "دیپ سیک", "دیپ سیک روشن", "دیپ سیک خاموش"),
+        ],
+        "actions": [
+            ("افزودن اطلاعات", "INFO::برای اضافه‌کردن اطلاعات تایپ کن: آموزش هوش مصنوعی [متن] — مثال: آموزش هوش مصنوعی قیمت گوشی X ۱۰ میلیون تومان است"),
+            ("نمایش دانش هوش مصنوعی", "نمایش دانش هوش مصنوعی"),
+            ("پاک کردن دانش هوش مصنوعی", "پاک کردن دانش هوش مصنوعی"),
         ],
     },
     "premium_emoji": {
@@ -2040,7 +2388,7 @@ PANEL_CATEGORIES = {
 # ترتیب نمایش دسته‌ها در منوی اصلی پنل (فقط سطح ۱، زیرمنوها اینجا نیستن)
 PANEL_CATEGORY_ORDER = [
     "clock", "text_mode", "locks", "secretary", "forced_join",
-    "automation", "friend_enemy", "tools", "premium_emoji",
+    "automation", "friend_enemy", "tools", "ai_assistant", "premium_emoji",
 ]
 
 
@@ -2155,6 +2503,44 @@ async def _clock_loop(cl, owner_id):
             
         except Exception as e:
             print(f"❌ خطا در _clock_loop: {e}")
+            await asyncio.sleep(10)
+
+
+async def _typing_loop(cl, owner_id):
+    """
+    اکشن‌های ۲۴ ساعته: تا وقتی هرکدوم روشن باشن، به‌صورت مداوم وضعیت مربوطه
+    («در حال تایپ»، «در حال بازی»، «در حال ضبط ویس»، «در حال ارسال ویدیو»)
+    رو در پیوی‌های اخیر کاربر نشون می‌ده. هر کدوم مستقل از بقیه روشن/خاموش می‌شن.
+    """
+    ACTIONS = [
+        ("typing_action_active", "typing"),
+        ("gaming_action_active", "game"),
+        ("voice_action_active", "record-audio"),
+        ("video_action_active", "upload-video"),
+    ]
+    while True:
+        try:
+            active_actions = [action for key, action in ACTIONS if db.get_setting(owner_id, key) == "1"]
+            if active_actions:
+                try:
+                    async for dialog in cl.iter_dialogs(limit=30):
+                        if not dialog.is_user:
+                            continue
+                        for key, action in ACTIONS:
+                            if db.get_setting(owner_id, key) != "1":
+                                continue
+                            try:
+                                await cl.send_chat_action(dialog.id, action)
+                            except Exception:
+                                pass
+                            await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"خطا در اکشن‌های ۲۴ ساعته: {e}")
+                await asyncio.sleep(3)
+            else:
+                await asyncio.sleep(5)
+        except Exception as e:
+            print(f"خطا در _typing_loop: {e}")
             await asyncio.sleep(10)
 
 
