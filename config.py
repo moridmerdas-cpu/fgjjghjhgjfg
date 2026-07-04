@@ -11,10 +11,6 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 # ربات کمکی پنل دکمه‌ای سلف (اختیاری - اگر خالی باشد پنل دکمه‌ای غیرفعال می‌ماند)
 HELPER_BOT_TOKEN = os.environ.get("HELPER_BOT_TOKEN", "")
 
-# ─── هوش مصنوعی DeepSeek ─────────────────────────────────────────────────────
-# کلید API از سایت platform.deepseek.com
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-
 # ─── سرور ──────────────────────────────────────────────────────────────────
 SECRET_KEY = os.environ.get("SECRET_KEY", "nexoself_secret_key_change_me")
 PORT = int(os.environ.get("PORT", 5000))
@@ -31,9 +27,13 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 # ✅ استخراج صحیح SUPABASE_URL از DATABASE_URL
 if DATABASE_URL:
+    # postgresql://postgres.vijfkltyashuzhqcecff:Amirabas00v89%40@aws-0-eu-west-1.pooler.supabase.com:6543/postgres
     match = re.search(r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', DATABASE_URL)
     if match:
         user, password, host, port, dbname = match.groups()
+        # استخراج Project ID از host
+        # host: aws-0-eu-west-1.pooler.supabase.com
+        # Project ID: vijfkltyashuzhqcecff (از user)
         project_id = user.split('.')[-1] if '.' in user else user
         SUPABASE_URL = f"https://{project_id}.supabase.co"
         print(f"✅ استخراج SUPABASE_URL: {SUPABASE_URL}")
@@ -74,9 +74,9 @@ SPONSORS = [
 CACHE_TTL = 60
 
 # ─── سیستم جام جهانی ──────────────────────────────────────────────────────────
-FOOTBALL_API_KEY   = os.environ.get("FOOTBALL_API_KEY", "")
-WC_CHANNEL_ID      = os.environ.get("WC_CHANNEL_ID", "")
-WC_MIN_BET         = int(os.environ.get("WC_MIN_BET", "10"))
-WC_MAX_BET         = int(os.environ.get("WC_MAX_BET", "5000"))
-WC_POLL_INTERVAL   = int(os.environ.get("WC_POLL_INTERVAL", "600"))
-WC_COMPETITION     = os.environ.get("WC_COMPETITION", "WC")
+FOOTBALL_API_KEY   = os.environ.get("FOOTBALL_API_KEY", "")   # کلید API از football-data.org
+WC_CHANNEL_ID      = os.environ.get("WC_CHANNEL_ID", "")      # آیدی کانال (مثال: @mychannel یا -1001234567)
+WC_MIN_BET         = int(os.environ.get("WC_MIN_BET", "10"))  # حداقل مبلغ شرط
+WC_MAX_BET         = int(os.environ.get("WC_MAX_BET", "5000")) # حداکثر مبلغ شرط
+WC_POLL_INTERVAL   = int(os.environ.get("WC_POLL_INTERVAL", "600"))  # هر چند ثانیه چک شود (پیش‌فرض: 10 دقیقه)
+WC_COMPETITION     = os.environ.get("WC_COMPETITION", "WC")   # کد مسابقه (WC = FIFA World Cup)

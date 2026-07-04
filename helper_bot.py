@@ -21,14 +21,11 @@
 #           امنیت، جوین اجباری، ابزار، اسپم، پیام)
 #   سطح ۲: آیتم‌های همون دسته (سوییچ‌های رنگی روشن/خاموش + دکمه‌های اکشن ساده)
 
-import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import config
 
 _helper_client = None  # سینگلتون - فقط یک بار در کل پروسس بالا میاد
-_start_lock = None     # جلوگیری از چند بار همزمان start شدن
-_is_starting = False   # وقتی داریم شروع می‌کنیم True می‌شه
 
 MAIN_TEXT = "🎛️ **پنل مدیریت سلف**\nیک دسته را انتخاب کن 👇"
 DENIED_TEXT = "⛔ این پنل مخصوص کسی است که آن را باز کرده. دکمه‌ها برای شما فعال نیست."
@@ -38,81 +35,8 @@ def _category_text(title):
     return f"🎛️ **{title}**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه یا اجرا شه 👇"
 
 
-def _get_lock():
-    """قفل asyncio رو با توجه به event loop جاری برمی‌گردونه."""
-    global _start_lock
-    if _start_lock is None:
-        _start_lock = asyncio.Lock()
-    return _start_lock
-
-
 def get_helper_client():
     return _helper_client
-
-
-def is_helper_ready() -> bool:
-    """True اگه ربات کمکی وصل و آماده است."""
-    return _helper_client is not None and _helper_client.is_connected()
-
-
-async def ensure_helper_ready(timeout: float = 45.0) -> bool:
-    """
-    مطمئن می‌شه که ربات کمکی آماده است.
-
-    - اگه از قبل وصله → فوری True برمی‌گردونه.
-    - اگه در حال وصل شدنه → تا timeout ثانیه صبر می‌کنه.
-    - اگه اصلاً شروع نشده → اول start_helper_bot() رو صدا می‌زنه بعد صبر می‌کنه.
-
-    Returns:
-        True اگه ربات آماده شد، False اگه timeout رسید.
-    """
-    global _is_starting
-
-    # ─── وصله؟ همینجا برگرد ─────────────────────────────────────────────────
-    if is_helper_ready():
-        return True
-
-    # ─── اگه HELPER_BOT_TOKEN نیست اصلاً نمی‌تونه آماده بشه ──────────────
-    if not getattr(config, "HELPER_BOT_TOKEN", None):
-        return False
-
-    # ─── شروع راه‌اندازی (با قفل تا همزمان چند بار اجرا نشه) ───────────────
-    lock = _get_lock()
-    try:
-        async with asyncio.wait_for(lock.acquire(), timeout=min(timeout, 10)):
-            pass
-    except asyncio.TimeoutError:
-        pass
-    except Exception:
-        pass
-
-    if not is_helper_ready() and not _is_starting:
-        _is_starting = True
-        try:
-            asyncio.get_event_loop().create_task(start_helper_bot())
-        except Exception:
-            try:
-                asyncio.ensure_future(start_helper_bot())
-            except Exception:
-                pass
-        finally:
-            _is_starting = False
-
-    try:
-        lock.release()
-    except Exception:
-        pass
-
-    # ─── انتظار تا ربات وصل بشه ─────────────────────────────────────────────
-    step = 1.0
-    waited = 0.0
-    while waited < timeout:
-        if is_helper_ready():
-            return True
-        await asyncio.sleep(step)
-        waited += step
-
-    return is_helper_ready()
 
 
 def _split_owner_tag(data: str):
