@@ -16,10 +16,11 @@
 # اگه نبود، با یک alert رد می‌شه و هیچ دستوری اجرا نمی‌شه. یعنی پنلِ هرکس
 # فقط برای خودش کار می‌کنه، حتی اگه در یک گروه مشترک ارسال شده باشه.
 #
-# ساختار پنل دو سطحیه:
-#   سطح ۱: منوی دسته‌ها (اتوماسیون، فونت و قالب‌بندی، اصلی، لیست‌ها، منشی،
-#           امنیت، جوین اجباری، ابزار، اسپم، پیام)
+# ساختار پنل چند سطحیه:
+#   سطح ۱: منوی اصلی (ساعت، حالت متن، قفل‌ها، منشی، عضویت اجباری، اتوماسیون،
+#           دوست و دشمن، ابزار، ایموجی پرمیوم)
 #   سطح ۲: آیتم‌های همون دسته (سوییچ‌های رنگی روشن/خاموش + دکمه‌های اکشن ساده)
+#           و/یا دکمه‌هایی به زیرمنوهای دیگه (مثل «فونت ساعت» یا «دوست»/«دشمن»)
 
 import io
 
@@ -87,8 +88,19 @@ async def start_helper_bot():
             rows.append([Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}", style="primary")])
         return rows
 
+    def _back_target(category_key, owner_tg_id):
+        """دکمه‌ی بازگشتِ یک دسته: اگه دسته یک parent داشته باشه به همون
+        دسته‌ی والد برمی‌گرده، وگرنه به منوی اصلی."""
+        cat = PANEL_CATEGORIES.get(category_key, {})
+        parent = cat.get("parent")
+        if parent:
+            return f"panel_cat_{parent}_{owner_tg_id}"
+        return f"panel_menu_{owner_tg_id}"
+
     def _category_buttons(owner_id, owner_tg_id, category_key, page=0):
-        """دکمه‌های سطح ۲ (آیتم‌های داخل یک دسته) + بازگشت به منو، همه با پسوند مالک."""
+        """دکمه‌های سطح ۲ (آیتم‌های داخل یک دسته) + دکمه‌های زیرمنو (children)
+        + بازگشت، همه با پسوند مالک."""
+        cat = PANEL_CATEGORIES.get(category_key, {})
         items = build_category_commands(owner_id, category_key)
         buttons = get_all_commands_buttons(
             items,
@@ -97,7 +109,9 @@ async def start_helper_bot():
             page_prefix=f"panel_item_page_{category_key}_",
             owner_suffix=f"_{owner_tg_id}",
         )
-        buttons.append([Button.inline("بازگشت به منو", data=f"panel_menu_{owner_tg_id}", style="primary")])
+        for label, child_key in cat.get("children", []):
+            buttons.append([Button.inline(label, data=f"panel_cat_{child_key}_{owner_tg_id}", style="primary")])
+        buttons.append([Button.inline("بازگشت", data=_back_target(category_key, owner_tg_id), style="primary")])
         return buttons
 
     # ─── پاسخ به inline query (وقتی سلف داره نتیجه رو می‌گیره تا کلیک کنه) ───
@@ -204,6 +218,9 @@ async def start_helper_bot():
             if not cat:
                 await event.answer("دسته نامعتبر است.", alert=True)
                 return
+            if cat.get("stub_message"):
+                await event.answer(cat["stub_message"], alert=True)
+                return
             await event.edit(
                 _category_text(cat["title"]),
                 buttons=_category_buttons(owner_id, owner_tg_id, category_key, page=0),
@@ -241,7 +258,15 @@ async def start_helper_bot():
                 await event.answer("دستور نامعتبر است.", alert=True)
                 return
 
-            _, label, command_text = items[idx]
+            _, label, command_text, _style = items[idx]
+
+            # ─── دکمه‌های فقط-اطلاع‌رسانی (مثل ماشین‌حساب/ترجمه) ────────────
+            # این‌ها نیاز به ورودی متنی دارن، پس به‌جای اجرا روی سلف، فقط یک
+            # توضیح کوتاه (toast) نشون داده می‌شه.
+            if command_text.startswith("INFO::"):
+                await event.answer(command_text[len("INFO::"):], alert=True)
+                return
+
             await event.answer(f"در حال اجرا: {label}")
             await _execute_panel_command(self_client, owner_id, command_text)
 
