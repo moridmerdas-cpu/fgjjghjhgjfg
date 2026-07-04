@@ -1718,13 +1718,14 @@ def _help_text():
 
 
 # ─── پنل دکمه‌ای مدیریت سلف — دسته‌بندی‌شده (برای بات کمکی / helper_bot.py) ─────
-# هر دسته یک "title" داره، یک لیست "toggles" (سوییچ‌های روشن/خاموش رنگی) و یک
-# لیست "actions" (دستورهای ساده‌ی بدون رنگ که فقط اجرا می‌شن، مثل نمایش لیست‌ها).
+# هر دسته یک "title" داره، یک لیست "toggles" (سوییچ‌های روشن/خاموش، رنگشون از
+# طریق style واقعی دکمه مشخص می‌شه نه ایموجی) و یک لیست "actions" (دستورهای
+# ساده‌ی بدون رنگ خاص که فقط اجرا می‌شن، مثل نمایش لیست‌ها).
 # toggles: (کلید تنظیم در دیتابیس، برچسب پایه، دستور روشن‌کردن، دستور خاموش‌کردن)
 # actions: (برچسب دکمه، متن دستور)
 PANEL_CATEGORIES = {
     "automation": {
-        "title": "🔄 اتوماسیون",
+        "title": "اتوماسیون",
         "toggles": [
             ("clock_name_active", "ساعت نام", "ساعت نام روشن", "ساعت نام خاموش"),
             ("clock_bio_active", "ساعت بیو", "ساعت بیو روشن", "ساعت بیو خاموش"),
@@ -1734,43 +1735,43 @@ PANEL_CATEGORIES = {
         "actions": [],
     },
     "font": {
-        "title": "🔤 فونت و قالب‌بندی",
+        "title": "فونت و قالب‌بندی",
         "toggles": [
             ("text_font_auto", "فونت متن خودکار", "فونت متن روشن", "فونت متن خاموش"),
         ],
         "actions": [
-            ("🔠 لیست فونت", "لیست فونت"),
-            ("🕐 لیست فونت ساعت", "لیست فونت ساعت"),
+            ("لیست فونت", "لیست فونت"),
+            ("لیست فونت ساعت", "لیست فونت ساعت"),
         ],
     },
     "main": {
-        "title": "🏠 اصلی",
+        "title": "اصلی",
         "toggles": [],
         "actions": [
-            ("📊 وضعیت", "وضعیت"),
-            ("📖 راهنما", "راهنما"),
+            ("وضعیت", "وضعیت"),
+            ("راهنما", "راهنما"),
         ],
     },
     "lists": {
-        "title": "📋 لیست‌ها",
+        "title": "لیست‌ها",
         "toggles": [],
         "actions": [
-            ("🔴 نمایش لیست دشمن", "نمایش لیست دشمن"),
-            ("🗑️ پاک کردن لیست دشمن", "پاک کردن لیست دشمن"),
-            ("🟢 نمایش لیست دوست", "نمایش لیست دوست"),
-            ("🗑️ پاک کردن لیست دوست", "پاک کردن لیست دوست"),
-            ("🔇 لیست سکوت", "لیست سکوت"),
+            ("نمایش لیست دشمن", "نمایش لیست دشمن"),
+            ("پاک کردن لیست دشمن", "پاک کردن لیست دشمن"),
+            ("نمایش لیست دوست", "نمایش لیست دوست"),
+            ("پاک کردن لیست دوست", "پاک کردن لیست دوست"),
+            ("لیست سکوت", "لیست سکوت"),
         ],
     },
     "secretary": {
-        "title": "🤖 منشی",
+        "title": "منشی",
         "toggles": [
             ("secretary_active", "منشی", "منشی روشن", "منشی خاموش"),
         ],
         "actions": [],
     },
     "security": {
-        "title": "🛡️ امنیت",
+        "title": "امنیت",
         "toggles": [
             ("anti_delete_active", "ضد حذف", "ضد حذف روشن", "ضد حذف خاموش"),
             ("anti_link_active", "ضد لینک", "ضد لینک روشن", "ضد لینک خاموش"),
@@ -1780,35 +1781,35 @@ PANEL_CATEGORIES = {
         "actions": [],
     },
     "forced_join": {
-        "title": "📢 جوین اجباری",
+        "title": "جوین اجباری",
         "toggles": [
             ("force_join_active", "جوین اجباری", "جوین اجباری روشن", "جوین اجباری خاموش"),
         ],
         "actions": [
-            ("🗑️ حذف کانال اجباری", "حذف کانال اجباری"),
+            ("حذف کانال اجباری", "حذف کانال اجباری"),
         ],
     },
     "tools": {
-        "title": "🧰 ابزار",
+        "title": "ابزار",
         "toggles": [],
         "actions": [
-            ("💱 قیمت ارز", "ارز"),
+            ("قیمت ارز", "ارز"),
         ],
     },
     "spam": {
-        "title": "🚀 اسپم",
+        "title": "اسپم",
         "toggles": [],
         "actions": [
-            ("🛑 توقف اسپم", "توقف اسپم"),
+            ("توقف اسپم", "توقف اسپم"),
         ],
     },
     "message": {
-        "title": "✉️ پیام",
+        "title": "پیام",
         "toggles": [
             ("auto_save_media", "ذخیره مدیا", "ذخیره مدیا روشن", "ذخیره مدیا خاموش"),
         ],
         "actions": [
-            ("🛑 توقف سیو کانال", "توقف سیو"),
+            ("توقف سیو کانال", "توقف سیو"),
         ],
     },
 }
@@ -1822,10 +1823,11 @@ PANEL_CATEGORY_ORDER = [
 
 def build_category_commands(owner_id: int, category_key: str):
     """
-    برای یک دسته‌ی مشخص، آیتم‌های toggle (رنگی، بر اساس وضعیت لحظه‌ای owner)
-    و آیتم‌های action (ساده، بدون رنگ) رو با هم به‌صورت یک لیست واحد
-    (key, label, command_text) برمی‌گردونه - دقیقاً فرمتی که get_all_commands_buttons
-    نیاز داره.
+    برای یک دسته‌ی مشخص، آیتم‌های toggle (بر اساس وضعیت لحظه‌ای owner)
+    و آیتم‌های action رو با هم به‌صورت یک لیست واحد
+    (key, label, command_text, style) برمی‌گردونه - دقیقاً فرمتی که
+    get_all_commands_buttons نیاز داره. style رنگ واقعیِ دکمه رو مشخص
+    می‌کنه (success/danger/primary)، بدون هیچ ایموجی‌ای توی متن دکمه.
     """
     cat = PANEL_CATEGORIES.get(category_key)
     if not cat:
@@ -1835,18 +1837,18 @@ def build_category_commands(owner_id: int, category_key: str):
     for key, label, on_cmd, off_cmd in cat["toggles"]:
         is_on = db.get_setting(owner_id, key) == "1"
         if is_on:
-            items.append((key, f"🟢 {label}: روشن", off_cmd))
+            items.append((key, f"{label}: روشن", off_cmd, "success"))
         else:
-            items.append((key, f"🔴 {label}: خاموش", on_cmd))
+            items.append((key, f"{label}: خاموش", on_cmd, "danger"))
 
     for label, cmd in cat["actions"]:
-        items.append((label, label, cmd))
+        items.append((label, label, cmd, "primary"))
 
     return items
 
 
 def build_category_menu():
-    """لیست دکمه‌های منوی اصلی پنل (فقط عنوان دسته‌ها، بدون رنگ)."""
+    """لیست دکمه‌های منوی اصلی پنل (فقط عنوان دسته‌ها)."""
     return [(key, PANEL_CATEGORIES[key]["title"], None) for key in PANEL_CATEGORY_ORDER]
 
 

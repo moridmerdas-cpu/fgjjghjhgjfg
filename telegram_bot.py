@@ -39,14 +39,20 @@ PANEL_PAGE_SIZE = 8
 
 def get_all_commands_buttons(panel_commands, page: int = 0, prefix: str = "panel_cmd_", page_prefix: str = "panel_page_", owner_suffix: str = ""):
     """
-    از روی یک لیست از آیتم‌ها (هر آیتم: (key, label, command_text)) یک صفحه
-    از دکمه‌های اینلاین Telethon می‌سازه، به‌همراه دکمه‌های ناوبری بعدی/قبلی.
+    از روی یک لیست از آیتم‌ها (هر آیتم: (key, label, command_text) یا
+    (key, label, command_text, style)) یک صفحه از دکمه‌های اینلاین Telethon
+    می‌سازه، به‌همراه دکمه‌های ناوبری بعدی/قبلی.
     prefix: پیشوند callback_data دکمه‌های آیتم (مثلاً "panel_cmd_" یا
             "panel_item_automation_"). هر دکمه callback_data معادل
             f"{prefix}{index}{owner_suffix}" می‌گیره.
     page_prefix: پیشوند callback_data دکمه‌های صفحه‌بندی (بعدی/قبلی).
     owner_suffix: پسوندی مثل "_123456" که آیدی تلگرام صاحبِ پنل رو به
                   callback_data می‌چسبونه تا فقط خودش بتونه دکمه‌ها رو بزنه.
+
+    رنگ دکمه (style): از نسخه‌های جدید Bot API/Telethon، دکمه‌های شیشه‌ای
+    می‌تونن رنگ واقعی (success=سبز، danger=قرمز، primary=آبی) داشته باشن؛
+    بدون هیچ ایموجی‌ای توی متن دکمه. اگه آیتم چهارمین مقدار (style) رو نداشته
+    باشه، پیش‌فرض "primary" استفاده می‌شه.
     """
     total = len(panel_commands)
     total_pages = max(1, (total + PANEL_PAGE_SIZE - 1) // PANEL_PAGE_SIZE)
@@ -57,16 +63,18 @@ def get_all_commands_buttons(panel_commands, page: int = 0, prefix: str = "panel
 
     rows = []
     for idx in range(start, end):
-        _, label, _cmd = panel_commands[idx]
-        rows.append([_TLButton.inline(label, data=f"{prefix}{idx}{owner_suffix}")])
+        item = panel_commands[idx]
+        _, label, _cmd = item[0], item[1], item[2]
+        style = item[3] if len(item) > 3 else "primary"
+        rows.append([_TLButton.inline(label, data=f"{prefix}{idx}{owner_suffix}", style=style)])
 
     if total_pages > 1:
         nav_row = []
         if page > 0:
-            nav_row.append(_TLButton.inline("⬅️ قبلی", data=f"{page_prefix}{page - 1}{owner_suffix}"))
-        nav_row.append(_TLButton.inline(f"📄 {page + 1}/{total_pages}", data="panel_noop"))
+            nav_row.append(_TLButton.inline("قبلی", data=f"{page_prefix}{page - 1}{owner_suffix}", style="primary"))
+        nav_row.append(_TLButton.inline(f"{page + 1}/{total_pages}", data="panel_noop"))
         if page < total_pages - 1:
-            nav_row.append(_TLButton.inline("بعدی ➡️", data=f"{page_prefix}{page + 1}{owner_suffix}"))
+            nav_row.append(_TLButton.inline("بعدی", data=f"{page_prefix}{page + 1}{owner_suffix}", style="primary"))
         rows.append(nav_row)
 
     return rows
