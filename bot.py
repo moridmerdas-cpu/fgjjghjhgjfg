@@ -61,6 +61,12 @@ def _apply_font(owner_id, text):
 
 
 # ─── فونت‌های مخصوص ساعت (فقط روی ارقام اعمال می‌شود) ──────────────────────────
+# ایموجی‌های ساعت آنالوگ برای حالت «ساعت پرمیوم» (ایندکس = ساعت به‌صورت ۱۲ ساعته)
+_CLOCK_FACE_EMOJIS = [
+    "🕛", "🕐", "🕑", "🕒", "🕓", "🕔",
+    "🕕", "🕖", "🕗", "🕘", "🕙", "🕚",
+]
+
 CLOCK_FONTS = {
     "0": "0123456789",
     "1": "⓿❶❷❸❹❺❻❼❽❾",
@@ -577,6 +583,48 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
+        # قفل یوزرنیم (پیامی که داخلش منشن @username باشه)
+        if db.get_setting(owner_id, "lock_username_active") == "1" and event.is_private and re.search(r"@\w{4,32}", text):
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+        # قفل ریپلای (پیامی که روی پیام دیگه‌ای ریپلای شده)
+        if db.get_setting(owner_id, "lock_reply_active") == "1" and event.is_private and msg.is_reply:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+        # قفل گیف
+        if db.get_setting(owner_id, "lock_gif_active") == "1" and event.is_private and msg.gif:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+        # قفل عکس
+        if db.get_setting(owner_id, "lock_photo_active") == "1" and event.is_private and msg.photo:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+        # قفل استیکر
+        if db.get_setting(owner_id, "lock_sticker_active") == "1" and event.is_private and msg.sticker:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
+        # قفل فوروارد (پیامِ فوروارد شده از یک چت دیگه)
+        if db.get_setting(owner_id, "lock_forward_active") == "1" and event.is_private and msg.forward:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
         text = event.raw_text.strip()
@@ -670,6 +718,43 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
+# ─── دستورهای روشن/خاموش جدید پنل (قفل‌ها، ساعت پرمیوم، حالت‌های متن) ─────────
+# اینا فقط یک تنظیم ساده در دیتابیس رو ست/ری‌ست می‌کنن (بدون منطق اجراییِ
+# جداگانه)، برای این‌که دکمه‌های پنل واقعاً وضعیت روشن/خاموش رو نگه دارن.
+_EXTRA_TOGGLE_COMMANDS = {
+    "قفل یوزرنیم روشن": ("lock_username_active", "1"),
+    "قفل یوزرنیم خاموش": ("lock_username_active", "0"),
+    "قفل ریپلای روشن": ("lock_reply_active", "1"),
+    "قفل ریپلای خاموش": ("lock_reply_active", "0"),
+    "قفل گیف روشن": ("lock_gif_active", "1"),
+    "قفل گیف خاموش": ("lock_gif_active", "0"),
+    "قفل عکس روشن": ("lock_photo_active", "1"),
+    "قفل عکس خاموش": ("lock_photo_active", "0"),
+    "قفل استیکر روشن": ("lock_sticker_active", "1"),
+    "قفل استیکر خاموش": ("lock_sticker_active", "0"),
+    "قفل فوروارد روشن": ("lock_forward_active", "1"),
+    "قفل فوروارد خاموش": ("lock_forward_active", "0"),
+    "ساعت پرمیوم روشن": ("clock_premium_active", "1"),
+    "ساعت پرمیوم خاموش": ("clock_premium_active", "0"),
+    "حالت بولد روشن": ("text_style_bold_active", "1"),
+    "حالت بولد خاموش": ("text_style_bold_active", "0"),
+    "حالت ایتالیک روشن": ("text_style_italic_active", "1"),
+    "حالت ایتالیک خاموش": ("text_style_italic_active", "0"),
+    "حالت نقل قول روشن": ("text_style_quote_active", "1"),
+    "حالت نقل قول خاموش": ("text_style_quote_active", "0"),
+    "حالت زیرخط روشن": ("text_style_underline_active", "1"),
+    "حالت زیرخط خاموش": ("text_style_underline_active", "0"),
+    "حالت اسپویلر روشن": ("text_style_spoiler_active", "1"),
+    "حالت اسپویلر خاموش": ("text_style_spoiler_active", "0"),
+    "حالت خط‌خورده روشن": ("text_style_strike_active", "1"),
+    "حالت خط‌خورده خاموش": ("text_style_strike_active", "0"),
+    "حالت تدریجی روشن": ("text_style_gradual_active", "1"),
+    "حالت تدریجی خاموش": ("text_style_gradual_active", "0"),
+    "حالت تک‌فاصله روشن": ("text_style_single_space_active", "1"),
+    "حالت تک‌فاصله خاموش": ("text_style_single_space_active", "0"),
+}
+
+
 async def _handle_command(cl, event, text, owner_id, entry):
     msg = event.message
 
@@ -718,6 +803,39 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 await cl.send_message(event.chat_id, "❗ نتیجه‌ای از بات کمکی دریافت نشد.")
         except Exception as e:
             await cl.send_message(event.chat_id, f"❗ خطا در باز کردن پنل: {e}")
+
+    # ─── دستورهای روشن/خاموش جدید پنل (قفل‌ها، ساعت پرمیوم، حالت‌های متن) ─────
+    elif text in _EXTRA_TOGGLE_COMMANDS:
+        key, val = _EXTRA_TOGGLE_COMMANDS[text]
+        ss(key, val)
+        label = text.rsplit(" ", 1)[0]
+        state = "روشن" if val == "1" else "خاموش"
+        await edit(f"{label} {state} شد.")
+
+    # ─── ماشین حساب ──────────────────────────────────────────────────────────
+    elif text.startswith("محاسبه "):
+        expr = text[len("محاسبه "):].strip()
+        try:
+            import ast, operator as _op
+            _ops = {
+                ast.Add: _op.add, ast.Sub: _op.sub, ast.Mult: _op.mul,
+                ast.Div: _op.truediv, ast.Pow: _op.pow, ast.Mod: _op.mod,
+                ast.USub: _op.neg, ast.UAdd: _op.pos,
+            }
+
+            def _safe_eval(node):
+                if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                    return node.value
+                if isinstance(node, ast.BinOp) and type(node.op) in _ops:
+                    return _ops[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+                if isinstance(node, ast.UnaryOp) and type(node.op) in _ops:
+                    return _ops[type(node.op)](_safe_eval(node.operand))
+                raise ValueError("عبارت نامعتبر")
+
+            result = _safe_eval(ast.parse(expr, mode="eval").body)
+            await edit(f"نتیجه: {result}")
+        except Exception:
+            await edit("❗ عبارت ریاضی نامعتبر است.\nفرمت درست: `محاسبه 2+2*3`")
 
     # ─── دشمن ────────────────────────────────────────────────────────────────
     elif text.startswith("تنظیم دشمن"):
@@ -1197,46 +1315,24 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
-        # ⚠️ همون ۱۰ دسته‌ی پنل دکمه‌ای (PANEL_CATEGORIES) اینجا هم رعایت شده
-        status_sections = [
-            ("🔄 اتوماسیون", [
-                ("clock_name_active", "ساعت نام"),
-                ("clock_bio_active", "ساعت بیو"),
-                ("auto_seen_active", "سین خودکار"),
-                ("auto_reaction_active", "ری‌اکشن"),
-            ]),
-            ("🤖 منشی", [
-                ("secretary_active", "منشی"),
-            ]),
-            ("🛡️ امنیت", [
-                ("anti_delete_active", "ضد حذف"),
-                ("anti_link_active", "ضد لینک"),
-                ("private_lock_active", "قفل پیوی"),
-                ("enemy_reply_active", "پاسخ دشمن"),
-            ]),
-            ("📢 جوین اجباری", [
-                ("force_join_active", "جوین اجباری"),
-            ]),
-            ("✉️ پیام", [
-                ("auto_save_media", "ذخیره مدیا"),
-            ]),
-        ]
+        status_map = {
+            "self_bot_active": "سلف‌بات", "secretary_active": "منشی",
+            "anti_delete_active": "ضد حذف", "anti_link_active": "ضد لینک",
+            "auto_seen_active": "سین خودکار", "auto_reaction_active": "ری‌اکشن",
+            "private_lock_active": "قفل پیوی", "enemy_reply_active": "پاسخ دشمن",
+            "auto_save_media": "ذخیره مدیا", "clock_name_active": "ساعت نام",
+            "clock_bio_active": "ساعت بیو", "force_join_active": "جوین اجباری",
+        }
         lines = [f"📊 وضعیت {config.BOT_NAME} v{config.BOT_VERSION}\n"]
-        lines.append(f"{'✅' if gs('self_bot_active') == '1' else '❌'} سلف‌بات\n")
-        for title, keys in status_sections:
-            lines.append(title)
-            for key, label in keys:
-                icon = "✅" if gs(key) == "1" else "❌"
-                lines.append(f"{icon} {label}")
-            lines.append("")
-        lines.append("🔤 فونت و قالب‌بندی")
-        lines.append(f"🔤 فونت: {gs('selected_font', '0')}")
+        for key, label in status_map.items():
+            icon = "✅" if gs(key) == "1" else "❌"
+            lines.append(f"{icon} {label}")
+        lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
         lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto','0')=='1' else '❌ خاموش'}")
         lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
         fj_ch = gs("force_join_channel", "")
         if fj_ch:
-            lines.append(f"\n📢 کانال جوین اجباری: {fj_ch}")
-        lines.append(f"\n📋 لیست‌ها")
+            lines.append(f"📢 کانال جوین اجباری: {fj_ch}")
         lines.append(f"👥 دشمن: {len(db.get_enemies(owner_id))} نفر")
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
@@ -1270,6 +1366,69 @@ async def _handle_command(cl, event, text, owner_id, entry):
                     await asyncio.sleep(e.seconds + 1)
                 except Exception:
                     pass
+
+        # ─── حالت متن (سطح ۲ پنل): اعمال خودکار سبک‌های نوشتاری روی پیام ────
+        style_on = {
+            "quote": gs("text_style_quote_active", "0") == "1",
+            "underline": gs("text_style_underline_active", "0") == "1",
+            "spoiler": gs("text_style_spoiler_active", "0") == "1",
+            "bold": gs("text_style_bold_active", "0") == "1",
+            "italic": gs("text_style_italic_active", "0") == "1",
+            "strike": gs("text_style_strike_active", "0") == "1",
+            "single_space": gs("text_style_single_space_active", "0") == "1",
+            "gradual": gs("text_style_gradual_active", "0") == "1",
+        }
+        if text and any(style_on.values()):
+            from telethon.tl.types import (
+                MessageEntityBold, MessageEntityItalic, MessageEntityUnderline,
+                MessageEntityStrike, MessageEntitySpoiler, MessageEntityBlockquote,
+            )
+
+            body = " ".join(list(text.replace(" ", ""))) if style_on["single_space"] else text
+
+            def _entities_for(length):
+                ents = []
+                if style_on["bold"]:
+                    ents.append(MessageEntityBold(0, length))
+                if style_on["italic"]:
+                    ents.append(MessageEntityItalic(0, length))
+                if style_on["underline"]:
+                    ents.append(MessageEntityUnderline(0, length))
+                if style_on["strike"]:
+                    ents.append(MessageEntityStrike(0, length))
+                if style_on["spoiler"]:
+                    ents.append(MessageEntitySpoiler(0, length))
+                if style_on["quote"]:
+                    try:
+                        ents.append(MessageEntityBlockquote(0, length, collapsed=False))
+                    except Exception:
+                        pass
+                return ents
+
+            try:
+                if style_on["gradual"]:
+                    # افکت تایپ تدریجی: پیام رو در چند مرحله کامل نشون می‌ده
+                    steps = 5
+                    n = len(body)
+                    for i in range(1, steps + 1):
+                        cut = max(1, (n * i) // steps)
+                        partial = body[:cut]
+                        try:
+                            await event.edit(partial, formatting_entities=_entities_for(len(partial)) or None)
+                        except FloodWaitError as e:
+                            await asyncio.sleep(e.seconds + 1)
+                        except Exception:
+                            break
+                        if cut < n:
+                            await asyncio.sleep(0.35)
+                else:
+                    entities = _entities_for(len(body))
+                    if body != text or entities:
+                        await event.edit(body, formatting_entities=entities or None)
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds + 1)
+            except Exception:
+                pass
 
 
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
@@ -1620,11 +1779,52 @@ async def _get_currency_text(target: str = None) -> str:
 
 def _help_text():
     # هر دستور در یک بلوک quote + mono جداگانه
-    # ⚠️ ترتیب و اسم دسته‌ها دقیقاً هماهنگ با پنل دکمه‌ای (PANEL_CATEGORIES) است:
-    # ۱-اتوماسیون ۲-فونت و قالب‌بندی ۳-اصلی ۴-لیست‌ها ۵-منشی
-    # ۶-امنیت ۷-جوین اجباری ۸-ابزار ۹-اسپم ۱۰-پیام
     sections = [
-        ("🔄 ۱. اتوماسیون", [
+        ("🔹 اصلی", [
+            "سلف روشن",
+            "سلف خاموش",
+            "وضعیت",
+            "راهنما",
+        ]),
+        ("🔹 لیست‌ها", [
+            "تنظیم دشمن  ← ریپلای روی پیام",
+            "حذف دشمن  ← ریپلای یا آیدی",
+            "نمایش لیست دشمن",
+            "پاک کردن لیست دشمن",
+            "تنظیم دوست  ← ریپلای روی پیام",
+            "حذف دوست  ← ریپلای یا آیدی",
+            "نمایش لیست دوست",
+            "پاک کردن لیست دوست",
+        ]),
+        ("🔹 منشی", [
+            "منشی روشن",
+            "منشی خاموش",
+            "پیام منشی [متن]",
+            "💡 هر کاربر هر ۲۴ ساعت یک بار پاسخ می‌گیرد",
+        ]),
+        ("🔹 امنیت", [
+            "ضد حذف روشن",
+            "ضد حذف خاموش",
+            "ضد لینک روشن",
+            "ضد لینک خاموش",
+            "قفل پیوی روشن",
+            "قفل پیوی خاموش",
+            "پاسخ دشمن روشن",
+            "پاسخ دشمن خاموش",
+            "سکوت [آیدی یا یوزرنیم]  ← ریپلای یا آیدی/یوزرنیم",
+            "لغو سکوت [آیدی یا یوزرنیم]",
+            "لیست سکوت",
+            "💡 پیام‌های پیوی کاربر سکوت‌شده به‌صورت خودکار و دوطرفه پاک می‌شود",
+        ]),
+        ("🔹 جوین اجباری", [
+            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
+            "لینک کانال جوین [لینک]  ← لینک دکمه رنگی جوین",
+            "پیام جوین [متن]  ← تغییر متن پیام هشدار",
+            "جوین اجباری روشن / خاموش",
+            "حذف کانال اجباری",
+            "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
+        ]),
+        ("🔹 اتوماسیون", [
             "سین خودکار روشن",
             "سین خودکار خاموش",
             "ری‌اکشن روشن",
@@ -1637,16 +1837,29 @@ def _help_text():
             "ساعت بیو روشن",
             "ساعت بیو خاموش",
         ]),
-        ("🔤 ۲. فونت و قالب‌بندی", [
-            "فونت [0-8]  ← انتخاب فونت",
-            "فونت [متن] [0-8]  ← نوشتن یه کلمه با فونت",
-            "لیست فونت  ← نمایش همه فونت‌ها",
-            "فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
-            "فونت متن خاموش  ← خاموش کردن حالت خودکار",
-            "بنویس [متن]  ← نوشتن با فونت فعلی (بدون روشن کردن خودکار)",
-            "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
-            "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
-            "──────────────────",
+        ("🔹 ابزار", [
+            "ترجمه [متن]",
+            "هوا [شهر]",
+            "ارز  ← دلار، تتر، یورو، پوند",
+            "ارز دلار / ارز تتر / ارز یورو / ارز پوند / ارز بیت کوین",
+        ]),
+        ("🔹 اسپم", [
+            "اسپم [تعداد] [متن]  ← مثال: اسپم 100 سلام",
+            "توقف اسپم",
+            "💡 تعداد نامحدود — فرمت باید دقیق باشه",
+        ]),
+        ("🔹 پیام", [
+            "ذخیره [1-10]  ← ریپلای",
+            "ارسال ذخیره [1-10]",
+            "حذف بعد [ثانیه]",
+            "ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن",
+        ]),
+        ("🔹 سیو مدیا", [
+            "سیو کانال [لینک پست]  ← ذخیره یک پست",
+            "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
+            "توقف سیو",
+        ]),
+        ("🔹 قالب‌بندی (فارسی/انگلیسی)", [
             "بولد [متن]  ← متن ضخیم",
             "ایتالیک [متن]  ← متن کج",
             "مونو [متن]  ← متن کد",
@@ -1656,73 +1869,21 @@ def _help_text():
             "زیرخط [متن]  ← متن زیرخط",
             "💡 روی متن فارسی هم کار می‌کند",
         ]),
-        ("🏠 ۳. اصلی", [
-            "سلف روشن",
-            "سلف خاموش",
-            "وضعیت",
-            "راهنما",
-            "پنل  ← باز کردن پنل دکمه‌ای",
-            "🎲 تاس [1-6]  ← ارسال تاس با عدد دلخواه",
-            "roll [1-6]  ← همان دستور به انگلیسی",
-        ]),
-        ("📋 ۴. لیست‌ها", [
-            "تنظیم دشمن  ← ریپلای روی پیام",
-            "حذف دشمن  ← ریپلای یا آیدی",
-            "نمایش لیست دشمن",
-            "پاک کردن لیست دشمن",
-            "تنظیم دوست  ← ریپلای روی پیام",
-            "حذف دوست  ← ریپلای یا آیدی",
-            "نمایش لیست دوست",
-            "پاک کردن لیست دوست",
-            "سکوت [آیدی یا یوزرنیم]  ← ریپلای یا آیدی/یوزرنیم",
-            "لغو سکوت [آیدی یا یوزرنیم]",
-            "لیست سکوت",
-        ]),
-        ("🤖 ۵. منشی", [
-            "منشی روشن",
-            "منشی خاموش",
-            "پیام منشی [متن]",
-            "💡 هر کاربر هر ۲۴ ساعت یک بار پاسخ می‌گیرد",
-        ]),
-        ("🛡️ ۶. امنیت", [
-            "ضد حذف روشن",
-            "ضد حذف خاموش",
-            "ضد لینک روشن",
-            "ضد لینک خاموش",
-            "قفل پیوی روشن",
-            "قفل پیوی خاموش",
-            "پاسخ دشمن روشن",
-            "پاسخ دشمن خاموش",
-            "💡 پیام‌های پیوی کاربر سکوت‌شده به‌صورت خودکار و دوطرفه پاک می‌شود",
-        ]),
-        ("📢 ۷. جوین اجباری", [
-            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
-            "لینک کانال جوین [لینک]  ← لینک دکمه رنگی جوین",
-            "پیام جوین [متن]  ← تغییر متن پیام هشدار",
-            "جوین اجباری روشن / خاموش",
-            "حذف کانال اجباری",
-            "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
-        ]),
-        ("🧰 ۸. ابزار", [
-            "ترجمه [متن]",
-            "هوا [شهر]",
-            "ارز  ← دلار، تتر، یورو، پوند",
-            "ارز دلار / ارز تتر / ارز یورو / ارز پوند / ارز بیت کوین",
-        ]),
-        ("🚀 ۹. اسپم", [
-            "اسپم [تعداد] [متن]  ← مثال: اسپم 100 سلام",
-            "توقف اسپم",
-            "💡 تعداد نامحدود — فرمت باید دقیق باشه",
-        ]),
-        ("✉️ ۱۰. پیام", [
-            "ذخیره [1-10]  ← ریپلای",
-            "ارسال ذخیره [1-10]",
-            "حذف بعد [ثانیه]",
-            "ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن",
+        ("🔹 فونت", [
+            "فونت [0-8]  ← انتخاب فونت",
+            "فونت [متن] [0-8]  ← نوشتن یه کلمه با فونت",
+            "لیست فونت  ← نمایش همه فونت‌ها",
             "──────────────────",
-            "سیو کانال [لینک پست]  ← ذخیره یک پست",
-            "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
-            "توقف سیو",
+            "فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
+            "فونت متن خاموش  ← خاموش کردن حالت خودکار",
+            "بنویس [متن]  ← نوشتن با فونت فعلی (بدون روشن کردن خودکار)",
+            "──────────────────",
+            "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
+            "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
+        ]),
+        ("🎲 تاس", [
+            "تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
+            "roll [1-6]  ← همان دستور به انگلیسی",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -1738,115 +1899,158 @@ def _help_text():
 
 
 # ─── پنل دکمه‌ای مدیریت سلف — دسته‌بندی‌شده (برای بات کمکی / helper_bot.py) ─────
-# هر دسته یک "title" داره، یک لیست "toggles" (سوییچ‌های روشن/خاموش رنگی) و یک
-# لیست "actions" (دستورهای ساده‌ی بدون رنگ که فقط اجرا می‌شن، مثل نمایش لیست‌ها).
-# toggles: (کلید تنظیم در دیتابیس، برچسب پایه، دستور روشن‌کردن، دستور خاموش‌کردن)
-# actions: (برچسب دکمه، متن دستور)
+# هر دسته یک "title" داره، یک لیست "toggles" (سوییچ‌های روشن/خاموش، رنگشون از
+# طریق style واقعی دکمه مشخص می‌شه نه ایموجی)، یک لیست "actions" (دکمه‌های
+# ساده‌ی اجرایی یا فقط اطلاع‌رسانی) و به‌صورت اختیاری:
+#   "children": [(برچسب دکمه, کلید زیرمنو), ...] → دکمه‌هایی که به یک دسته‌ی
+#                دیگه (زیرمنو) می‌رن، مثلاً «فونت ساعت» یا «دوست»/«دشمن».
+#   "parent": کلید دسته‌ی والد → دکمه‌ی «بازگشت» این دسته به‌جای منوی اصلی،
+#             به همون دسته‌ی والد برمی‌گرده.
+# actions: (برچسب دکمه، متن دستور، ...) — اگه متن دستور با "INFO::" شروع بشه،
+# یعنی این دکمه فقط یک پیام کوتاه (toast) نشون می‌ده و هیچ دستوری روی سلف
+# اجرا نمی‌شه (برای مواردی مثل ماشین‌حساب/ترجمه که نیاز به ورودی متنی دارن).
 PANEL_CATEGORIES = {
-    "automation": {
-        "title": "🔄 اتوماسیون",
+    # ─── سطح ۱: منوی اصلی ───────────────────────────────────────────────────
+    "clock": {
+        "title": "ساعت",
         "toggles": [
             ("clock_name_active", "ساعت نام", "ساعت نام روشن", "ساعت نام خاموش"),
             ("clock_bio_active", "ساعت بیو", "ساعت بیو روشن", "ساعت بیو خاموش"),
-            ("auto_seen_active", "سین خودکار", "سین خودکار روشن", "سین خودکار خاموش"),
-            ("auto_reaction_active", "ری‌اکشن خودکار", "ری‌اکشن روشن", "ری‌اکشن خاموش"),
+            ("clock_premium_active", "ساعت پرمیوم", "ساعت پرمیوم روشن", "ساعت پرمیوم خاموش"),
+        ],
+        "actions": [],
+        "children": [("فونت ساعت", "clock_font")],
+    },
+    "text_mode": {
+        "title": "حالت متن",
+        "toggles": [
+            ("text_style_quote_active", "نقل قول", "حالت نقل قول روشن", "حالت نقل قول خاموش"),
+            ("text_style_underline_active", "زیر خط", "حالت زیرخط روشن", "حالت زیرخط خاموش"),
+            ("text_style_spoiler_active", "اسپویلر", "حالت اسپویلر روشن", "حالت اسپویلر خاموش"),
+            ("text_style_gradual_active", "تدریجی", "حالت تدریجی روشن", "حالت تدریجی خاموش"),
+            ("text_style_bold_active", "بولد", "حالت بولد روشن", "حالت بولد خاموش"),
+            ("text_style_italic_active", "ایتالیک", "حالت ایتالیک روشن", "حالت ایتالیک خاموش"),
+            ("text_style_strike_active", "خط خورده", "حالت خط‌خورده روشن", "حالت خط‌خورده خاموش"),
+            ("text_style_single_space_active", "تک فاصله", "حالت تک‌فاصله روشن", "حالت تک‌فاصله خاموش"),
         ],
         "actions": [],
     },
-    "font": {
-        "title": "🔤 فونت و قالب‌بندی",
+    "locks": {
+        "title": "قفل ها",
         "toggles": [
-            ("text_font_auto", "فونت متن خودکار", "فونت متن روشن", "فونت متن خاموش"),
+            ("lock_username_active", "قفل یوزرنیم", "قفل یوزرنیم روشن", "قفل یوزرنیم خاموش"),
+            ("lock_reply_active", "قفل ریپلای", "قفل ریپلای روشن", "قفل ریپلای خاموش"),
+            ("lock_gif_active", "قفل گیف", "قفل گیف روشن", "قفل گیف خاموش"),
+            ("private_lock_active", "قفل پیوی", "قفل پیوی روشن", "قفل پیوی خاموش"),
+            ("anti_link_active", "قفل لینک", "ضد لینک روشن", "ضد لینک خاموش"),
+            ("lock_photo_active", "قفل عکس", "قفل عکس روشن", "قفل عکس خاموش"),
+            ("lock_sticker_active", "قفل استیکر", "قفل استیکر روشن", "قفل استیکر خاموش"),
+            ("lock_forward_active", "قفل فوروارد", "قفل فوروارد روشن", "قفل فوروارد خاموش"),
+            ("anti_delete_active", "قفل ضد حذف", "ضد حذف روشن", "ضد حذف خاموش"),
         ],
-        "actions": [
-            ("🔠 لیست فونت", "لیست فونت"),
-            ("🕐 لیست فونت ساعت", "لیست فونت ساعت"),
-        ],
-    },
-    "main": {
-        "title": "🏠 اصلی",
-        "toggles": [],
-        "actions": [
-            ("📊 وضعیت", "وضعیت"),
-            ("📖 راهنما", "راهنما"),
-        ],
-    },
-    "lists": {
-        "title": "📋 لیست‌ها",
-        "toggles": [],
-        "actions": [
-            ("🔴 نمایش لیست دشمن", "نمایش لیست دشمن"),
-            ("🗑️ پاک کردن لیست دشمن", "پاک کردن لیست دشمن"),
-            ("🟢 نمایش لیست دوست", "نمایش لیست دوست"),
-            ("🗑️ پاک کردن لیست دوست", "پاک کردن لیست دوست"),
-            ("🔇 لیست سکوت", "لیست سکوت"),
-        ],
+        "actions": [],
     },
     "secretary": {
-        "title": "🤖 منشی",
+        "title": "منشی",
         "toggles": [
             ("secretary_active", "منشی", "منشی روشن", "منشی خاموش"),
         ],
-        "actions": [],
-    },
-    "security": {
-        "title": "🛡️ امنیت",
-        "toggles": [
-            ("anti_delete_active", "ضد حذف", "ضد حذف روشن", "ضد حذف خاموش"),
-            ("anti_link_active", "ضد لینک", "ضد لینک روشن", "ضد لینک خاموش"),
-            ("private_lock_active", "قفل پیوی", "قفل پیوی روشن", "قفل پیوی خاموش"),
-            ("enemy_reply_active", "پاسخ دشمن", "پاسخ دشمن روشن", "پاسخ دشمن خاموش"),
+        "actions": [
+            ("نمایش متن دستورات منشی", "INFO::دستورات منشی:\nمنشی روشن / منشی خاموش\nپیام منشی [متن دلخواه]"),
         ],
-        "actions": [],
     },
     "forced_join": {
-        "title": "📢 جوین اجباری",
+        "title": "عضویت اجباری",
         "toggles": [
-            ("force_join_active", "جوین اجباری", "جوین اجباری روشن", "جوین اجباری خاموش"),
+            ("force_join_active", "عضویت اجباری", "جوین اجباری روشن", "جوین اجباری خاموش"),
         ],
         "actions": [
-            ("🗑️ حذف کانال اجباری", "حذف کانال اجباری"),
+            ("نمایش متن دستورات", "INFO::دستورات عضویت اجباری:\nتنظیم کانال [آیدی/لینک]\nحذف کانال اجباری\nجوین اجباری روشن / جوین اجباری خاموش"),
+            ("حذف کانال اجباری", "حذف کانال اجباری"),
         ],
     },
-    "tools": {
-        "title": "🧰 ابزار",
-        "toggles": [],
-        "actions": [
-            ("💱 قیمت ارز", "ارز"),
-        ],
-    },
-    "spam": {
-        "title": "🚀 اسپم",
-        "toggles": [],
-        "actions": [
-            ("🛑 توقف اسپم", "توقف اسپم"),
-        ],
-    },
-    "message": {
-        "title": "✉️ پیام",
+    "automation": {
+        "title": "اتوماسیون",
         "toggles": [
+            ("auto_seen_active", "سین خودکار", "سین خودکار روشن", "سین خودکار خاموش"),
+            ("auto_reaction_active", "ری‌اکشن خودکار", "ری‌اکشن روشن", "ری‌اکشن خاموش"),
             ("auto_save_media", "ذخیره مدیا", "ذخیره مدیا روشن", "ذخیره مدیا خاموش"),
         ],
         "actions": [
-            ("🛑 توقف سیو کانال", "توقف سیو"),
+            ("توقف اسپم", "توقف اسپم"),
+            ("توقف سیو کانال", "توقف سیو"),
         ],
+    },
+    "friend_enemy": {
+        "title": "دوست و دشمن",
+        "toggles": [],
+        "actions": [],
+        "children": [("دوست", "friend_enemy_friend"), ("دشمن", "friend_enemy_enemy")],
+    },
+    "tools": {
+        "title": "ابزار",
+        "toggles": [],
+        "actions": [
+            ("ماشین حساب", "INFO::برای استفاده تایپ کن: محاسبه [عبارت] — مثال: محاسبه 2+2*3"),
+            ("ترجمه", "INFO::برای استفاده تایپ کن: ترجمه [متن]"),
+            ("ارز", "ارز"),
+            ("آب و هوا", "INFO::برای استفاده تایپ کن: هوا [نام شهر]"),
+            ("وضعیت", "وضعیت"),
+            ("راهنما", "راهنما"),
+        ],
+    },
+    "premium_emoji": {
+        # این دسته توی helper_bot.py به‌طور خاص هندل می‌شه: با کلیک، فقط یک
+        # پیام کوتاه نشون داده می‌شه و هیچ زیرمنویی باز نمی‌شه.
+        "title": "ایموجی پرمیوم",
+        "toggles": [],
+        "actions": [],
+        "stub_message": "این بخش هنوز در دسترس نیست",
+    },
+
+    # ─── زیرمنوها (توی منوی اصلی نشون داده نمی‌شن، فقط از طریق children) ────
+    "clock_font": {
+        "title": "فونت ساعت",
+        "toggles": [],
+        "actions": [(f"فونت {k}", f"فونت ساعت {k}") for k in "0123456789"],
+        "parent": "clock",
+    },
+    "friend_enemy_friend": {
+        "title": "دوست",
+        "toggles": [],
+        "actions": [
+            ("نمایش لیست دوست", "نمایش لیست دوست"),
+            ("پاک کردن لیست دوست", "پاک کردن لیست دوست"),
+        ],
+        "parent": "friend_enemy",
+    },
+    "friend_enemy_enemy": {
+        "title": "دشمن",
+        "toggles": [
+            ("enemy_reply_active", "پاسخ دشمن", "پاسخ دشمن روشن", "پاسخ دشمن خاموش"),
+        ],
+        "actions": [
+            ("نمایش لیست دشمن", "نمایش لیست دشمن"),
+            ("پاک کردن لیست دشمن", "پاک کردن لیست دشمن"),
+        ],
+        "parent": "friend_enemy",
     },
 }
 
-# ترتیب نمایش دسته‌ها در منوی اصلی پنل
+# ترتیب نمایش دسته‌ها در منوی اصلی پنل (فقط سطح ۱، زیرمنوها اینجا نیستن)
 PANEL_CATEGORY_ORDER = [
-    "automation", "font", "main", "lists", "secretary",
-    "security", "forced_join", "tools", "spam", "message",
+    "clock", "text_mode", "locks", "secretary", "forced_join",
+    "automation", "friend_enemy", "tools", "premium_emoji",
 ]
 
 
 def build_category_commands(owner_id: int, category_key: str):
     """
-    برای یک دسته‌ی مشخص، آیتم‌های toggle (رنگی بر اساس وضعیت لحظه‌ای owner) و
-    آیتم‌های action رو با هم به‌صورت یک لیست واحد (key, label, command_text, style)
-    برمی‌گردونه - دقیقاً فرمتی که get_all_commands_buttons/styled_button نیاز
-    داره. style همون قرارداد telegram_bot.py هست: "success" (سبز) یعنی روشنه،
-    "danger" (قرمز) یعنی خاموشه، "primary" (آبی) برای اکشن‌های ساده.
+    برای یک دسته‌ی مشخص، آیتم‌های toggle (بر اساس وضعیت لحظه‌ای owner)
+    و آیتم‌های action رو با هم به‌صورت یک لیست واحد
+    (key, label, command_text, style) برمی‌گردونه - دقیقاً فرمتی که
+    get_all_commands_buttons نیاز داره. style رنگ واقعیِ دکمه رو مشخص
+    می‌کنه (success/danger/primary)، بدون هیچ ایموجی‌ای توی متن دکمه.
     """
     cat = PANEL_CATEGORIES.get(category_key)
     if not cat:
@@ -1867,7 +2071,7 @@ def build_category_commands(owner_id: int, category_key: str):
 
 
 def build_category_menu():
-    """لیست دکمه‌های منوی اصلی پنل (فقط عنوان دسته‌ها، بدون رنگ)."""
+    """لیست دکمه‌های منوی اصلی پنل (فقط عنوان دسته‌ها)."""
     return [(key, PANEL_CATEGORIES[key]["title"], None) for key in PANEL_CATEGORY_ORDER]
 
 
@@ -1924,6 +2128,11 @@ async def _clock_loop(cl, owner_id):
                 
                 # اعمال فونت مخصوص ساعت
                 styled_time = _apply_clock_font(owner_id, time_str)
+
+                # ساعت پرمیوم: یک ایموجی ساعتِ آنالوگ (مطابق ساعت لحظه‌ای) جلوی زمان
+                if db.get_setting(owner_id, "clock_premium_active") == "1":
+                    clock_face = _CLOCK_FACE_EMOJIS[now.hour % 12]
+                    styled_time = f"{clock_face} {styled_time}"
                 
                 # به‌روزرسانی نام
                 if db.get_setting(owner_id, "clock_name_active") == "1":

@@ -16,23 +16,27 @@
 # اگه نبود، با یک alert رد می‌شه و هیچ دستوری اجرا نمی‌شه. یعنی پنلِ هرکس
 # فقط برای خودش کار می‌کنه، حتی اگه در یک گروه مشترک ارسال شده باشه.
 #
-# ساختار پنل دو سطحیه:
-#   سطح ۱: منوی دسته‌ها (اتوماسیون، فونت و قالب‌بندی، اصلی، لیست‌ها، منشی،
-#           امنیت، جوین اجباری، ابزار، اسپم، پیام)
+# ساختار پنل چند سطحیه:
+#   سطح ۱: منوی اصلی (ساعت، حالت متن، قفل‌ها، منشی، عضویت اجباری، اتوماسیون،
+#           دوست و دشمن، ابزار، ایموجی پرمیوم)
 #   سطح ۲: آیتم‌های همون دسته (سوییچ‌های رنگی روشن/خاموش + دکمه‌های اکشن ساده)
+#           و/یا دکمه‌هایی به زیرمنوهای دیگه (مثل «فونت ساعت» یا «دوست»/«دشمن»)
+
+import io
 
 from telethon import TelegramClient, events
+from telethon.tl.custom import Button
 from telethon.sessions import StringSession
 import config
 
 _helper_client = None  # سینگلتون - فقط یک بار در کل پروسس بالا میاد
 
-MAIN_TEXT = "🎛️ **پنل مدیریت سلف**\nیک دسته را انتخاب کن 👇"
-DENIED_TEXT = "⛔ این پنل مخصوص کسی است که آن را باز کرده. دکمه‌ها برای شما فعال نیست."
+MAIN_TEXT = "پنل مدیریت سلف\nیک دسته را انتخاب کن"
+DENIED_TEXT = "این پنل مخصوص کسی است که آن را باز کرده. دکمه‌ها برای شما فعال نیست."
 
 
 def _category_text(title):
-    return f"🎛️ **{title}**\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه یا اجرا شه 👇"
+    return f"{title}\nیکی از دکمه‌ها رو بزن تا روشن/خاموش بشه یا اجرا شه"
 
 
 def get_helper_client():
@@ -69,7 +73,7 @@ async def start_helper_bot():
         build_category_commands,
         _execute_panel_command,
     )
-    from telegram_bot import get_all_commands_buttons, styled_button
+    from telegram_bot import get_all_commands_buttons
 
     cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
     await cl.start(bot_token=config.HELPER_BOT_TOKEN)
@@ -78,14 +82,25 @@ async def start_helper_bot():
     print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
 
     def _menu_buttons(owner_tg_id):
-        """دکمه‌های سطح ۱ (لیست دسته‌ها) - style='primary' (آبی)، مثل خودِ telegram_bot.py."""
-        return [
-            [styled_button(title, f"panel_cat_{key}_{owner_tg_id}", style="primary")]
-            for key, title, _ in build_category_menu()
-        ]
+        """دکمه‌های سطح ۱ (لیست دسته‌ها)، رنگی از طریق style واقعی، بدون ایموجی."""
+        rows = []
+        for key, title, _ in build_category_menu():
+            rows.append([Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}", style="primary")])
+        return rows
+
+    def _back_target(category_key, owner_tg_id):
+        """دکمه‌ی بازگشتِ یک دسته: اگه دسته یک parent داشته باشه به همون
+        دسته‌ی والد برمی‌گرده، وگرنه به منوی اصلی."""
+        cat = PANEL_CATEGORIES.get(category_key, {})
+        parent = cat.get("parent")
+        if parent:
+            return f"panel_cat_{parent}_{owner_tg_id}"
+        return f"panel_menu_{owner_tg_id}"
 
     def _category_buttons(owner_id, owner_tg_id, category_key, page=0):
-        """دکمه‌های سطح ۲ (آیتم‌های داخل یک دسته) + بازگشت به منو، همه با پسوند مالک."""
+        """دکمه‌های سطح ۲ (آیتم‌های داخل یک دسته) + دکمه‌های زیرمنو (children)
+        + بازگشت، همه با پسوند مالک."""
+        cat = PANEL_CATEGORIES.get(category_key, {})
         items = build_category_commands(owner_id, category_key)
         buttons = get_all_commands_buttons(
             items,
@@ -94,7 +109,9 @@ async def start_helper_bot():
             page_prefix=f"panel_item_page_{category_key}_",
             owner_suffix=f"_{owner_tg_id}",
         )
-        buttons.append([styled_button("🔙 بازگشت به منو", f"panel_menu_{owner_tg_id}", style="danger")])
+        for label, child_key in cat.get("children", []):
+            buttons.append([Button.inline(label, data=f"panel_cat_{child_key}_{owner_tg_id}", style="primary")])
+        buttons.append([Button.inline("بازگشت", data=_back_target(category_key, owner_tg_id), style="primary")])
         return buttons
 
     # ─── پاسخ به inline query (وقتی سلف داره نتیجه رو می‌گیره تا کلیک کنه) ───
@@ -104,54 +121,61 @@ async def start_helper_bot():
         if owner_id is None:
             await event.answer(
                 [event.builder.article(
-                    title="⛔ غیرمجاز",
+                    title="غیرمجاز",
                     description="این اکانت به هیچ سلف فعالی متصل نیست.",
-                    text="⛔ این پنل فقط برای سلف‌های فعال نکسو سلف در دسترسه.",
+                    text="این پنل فقط برای سلف‌های فعال نکسو سلف در دسترسه.",
                 )],
                 cache_time=0,
             )
             return
 
         owner_tg_id = event.query.user_id  # همون کسی که inline query زده = صاحب پنل
-        self_client = entry["client"]
+        buttons = _menu_buttons(owner_tg_id)
 
-        # ─── جمع‌آوری مشخصات صاحب پنل (نام، آیدی عددی، یوزرنیم) ────────────
-        try:
-            me = await self_client.get_me()
-        except Exception:
-            me = None
+        # ─── ساخت متن مشخصات (اسم + آیدی عددی + یوزرنیم) از روی خودِ سلف ───
+        self_client = entry.get("client") if entry else None
+        display_name = "کاربر"
+        username_line = ""
+        photo_bytes = None
 
-        full_name = " ".join(filter(None, [getattr(me, "first_name", None), getattr(me, "last_name", None)])) or "بدون نام"
-        username = f"@{me.username}" if getattr(me, "username", None) else "ندارد"
-        numeric_id = getattr(me, "id", owner_tg_id)
+        if self_client is not None:
+            try:
+                me = await self_client.get_me()
+                full_name = " ".join(p for p in [me.first_name, me.last_name] if p)
+                display_name = full_name or "بدون نام"
+                if me.username:
+                    username_line = f"یوزرنیم: @{me.username}\n"
+                try:
+                    buf = io.BytesIO()
+                    photo = await self_client.download_profile_photo(me, file=buf)
+                    if photo:
+                        buf.seek(0)
+                        buf.name = "profile.jpg"
+                        photo_bytes = buf
+                except Exception:
+                    photo_bytes = None
+            except Exception:
+                pass
 
         caption = (
-            f"👤 **نام:** {full_name}\n"
-            f"🆔 **آیدی عددی:** `{numeric_id}`\n"
-            f"🔗 **یوزرنیم:** {username}\n\n"
-            f"{MAIN_TEXT}"
+            f"نام: {display_name}\n"
+            f"آیدی عددی: {owner_tg_id}\n"
+            f"{username_line}"
+            f"\n{MAIN_TEXT}"
         )
 
-        # ─── دانلود عکس پروفایل (اگه داشته باشه) تا با همون یک پیام ارسال بشه ─
-        photo_bytes = None
-        if me is not None:
-            try:
-                photo_bytes = await self_client.download_profile_photo(me, file=bytes)
-            except Exception:
-                photo_bytes = None
-
-        if photo_bytes:
-            result = event.builder.photo(
+        if photo_bytes is not None:
+            result = await event.builder.photo(
                 file=photo_bytes,
                 text=caption,
-                buttons=_menu_buttons(owner_tg_id),
+                buttons=buttons,
             )
         else:
             result = event.builder.article(
-                title="🎛️ پنل مدیریت سلف",
+                title="پنل مدیریت سلف",
                 description="برای نمایش پنل دکمه‌ای لمس کن",
                 text=caption,
-                buttons=_menu_buttons(owner_tg_id),
+                buttons=buttons,
             )
         # cache_time=0 تا این پنل هیچ‌وقت به‌جای کاربر دیگه از کش تلگرام serve نشه
         await event.answer([result], cache_time=0)
@@ -167,7 +191,7 @@ async def start_helper_bot():
 
         body, owner_tg_id = _split_owner_tag(data)
         if owner_tg_id is None:
-            await event.answer("❗ دکمه نامعتبر است.", alert=True)
+            await event.answer("دکمه نامعتبر است.", alert=True)
             return
 
         # 🔒 قفل مالکیت: فقط همون کسی که پنل رو باز کرده اجازه‌ی کلیک داره
@@ -177,7 +201,7 @@ async def start_helper_bot():
 
         owner_id, entry = bot_manager.get_owner_by_tg_id(event.sender_id)
         if owner_id is None or not entry or not entry.get("client"):
-            await event.answer("⛔ سلف فعالی برای این اکانت پیدا نشد.", alert=True)
+            await event.answer("سلف فعالی برای این اکانت پیدا نشد.", alert=True)
             return
 
         self_client = entry["client"]
@@ -192,7 +216,10 @@ async def start_helper_bot():
             category_key = body.replace("panel_cat_", "")
             cat = PANEL_CATEGORIES.get(category_key)
             if not cat:
-                await event.answer("❗ دسته نامعتبر است.", alert=True)
+                await event.answer("دسته نامعتبر است.", alert=True)
+                return
+            if cat.get("stub_message"):
+                await event.answer(cat["stub_message"], alert=True)
                 return
             await event.edit(
                 _category_text(cat["title"]),
@@ -207,7 +234,7 @@ async def start_helper_bot():
             category_key, _, page_str = rest.rpartition("_")
             cat = PANEL_CATEGORIES.get(category_key)
             if not cat:
-                await event.answer("❗ دسته نامعتبر است.", alert=True)
+                await event.answer("دسته نامعتبر است.", alert=True)
                 return
             await event.edit(
                 _category_text(cat["title"]),
@@ -222,17 +249,25 @@ async def start_helper_bot():
             category_key, _, idx_str = rest.rpartition("_")
             cat = PANEL_CATEGORIES.get(category_key)
             if not cat:
-                await event.answer("❗ دسته نامعتبر است.", alert=True)
+                await event.answer("دسته نامعتبر است.", alert=True)
                 return
 
             items = build_category_commands(owner_id, category_key)
             idx = int(idx_str)
             if not (0 <= idx < len(items)):
-                await event.answer("❗ دستور نامعتبر است.", alert=True)
+                await event.answer("دستور نامعتبر است.", alert=True)
                 return
 
-            _, label, command_text = items[idx]
-            await event.answer(f"⏳ در حال اجرا: {label}")
+            _, label, command_text, _style = items[idx]
+
+            # ─── دکمه‌های فقط-اطلاع‌رسانی (مثل ماشین‌حساب/ترجمه) ────────────
+            # این‌ها نیاز به ورودی متنی دارن، پس به‌جای اجرا روی سلف، فقط یک
+            # توضیح کوتاه (toast) نشون داده می‌شه.
+            if command_text.startswith("INFO::"):
+                await event.answer(command_text[len("INFO::"):], alert=True)
+                return
+
+            await event.answer(f"در حال اجرا: {label}")
             await _execute_panel_command(self_client, owner_id, command_text)
 
             # بعد از اجرا، همون دسته رو با وضعیت/رنگ تازه دوباره رسم می‌کنیم
@@ -246,6 +281,6 @@ async def start_helper_bot():
                 pass
             return
 
-        await event.answer("❗ دکمه نامعتبر است.", alert=True)
+        await event.answer("دکمه نامعتبر است.", alert=True)
 
     return cl
