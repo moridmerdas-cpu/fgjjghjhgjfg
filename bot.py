@@ -542,15 +542,16 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     pass
             return
 
-        # ✅ دستیار هوش مصنوعی (دیپ‌سیک) — فقط وقتی کاربر پیوی و آفلاین/غایب باشه
+        # ✅ دستیار هوش مصنوعی (دیپ‌سیک) — یا فقط وقتی غایب باشی، یا به همه پیام‌ها
         if (
             db.get_setting(owner_id, "ai_assistant_active") == "1"
             and event.is_private
             and sender_id != owner_id
         ):
+            always_mode = db.get_setting(owner_id, "ai_reply_always_active") == "1"
             last_active = _last_outgoing_activity.get(owner_id, 0)
             is_away = (time.time() - last_active) >= AI_AWAY_SECONDS
-            if is_away and text.strip():
+            if (always_mode or is_away) and text.strip():
                 now = time.time()
                 last_ai_reply = _last_ai_reply.get(chat_id, 0)
                 if now - last_ai_reply >= AI_REPLY_COOLDOWN:
@@ -899,6 +900,13 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "دیپ سیک خاموش":
         ss("ai_assistant_active", "0")
         await edit("دستیار هوش مصنوعی خاموش شد.")
+
+    elif text == "هوش مصنوعی پاسخ همه روشن":
+        ss("ai_reply_always_active", "1")
+        await edit("از این به بعد هوش مصنوعی به همه پیام‌های پیوی جواب می‌ده (نه فقط وقتی غایبی)، با همون اطلاعاتی که آموزش داده‌ای.")
+    elif text == "هوش مصنوعی پاسخ همه خاموش":
+        ss("ai_reply_always_active", "0")
+        await edit("هوش مصنوعی دوباره فقط وقتی غایب باشی جواب می‌ده.")
 
     elif text.startswith("آموزش هوش مصنوعی "):
         info = text[len("آموزش هوش مصنوعی "):].strip()
@@ -2340,6 +2348,7 @@ PANEL_CATEGORIES = {
         "title": "هوش مصنوعی",
         "toggles": [
             ("ai_assistant_active", "دیپ سیک", "دیپ سیک روشن", "دیپ سیک خاموش"),
+            ("ai_reply_always_active", "پاسخ به همه پیام‌ها", "هوش مصنوعی پاسخ همه روشن", "هوش مصنوعی پاسخ همه خاموش"),
         ],
         "actions": [
             ("افزودن اطلاعات", "INFO::برای اضافه‌کردن اطلاعات تایپ کن: آموزش هوش مصنوعی [متن] — مثال: آموزش هوش مصنوعی قیمت گوشی X ۱۰ میلیون تومان است"),
