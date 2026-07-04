@@ -1,34 +1,121 @@
 # redis_cache.py
-# لایه کش Redis با Upstash — جایگزین کش RAM و SQLite موقت
+# لایه کش Redis — حالا با پشتیبانی از چند اکانت/سرویس Redis همزمان (Sharding)
+# تا هم حجم رمِ در دسترس بیشتر شه (هر اکانت رایگان معمولاً چند مگابایت/ده‌ها
+# مگابایت محدودیت داره) و هم بار روی چند سرور تقسیم شه (سرعت بیشتر، تک‌نقطه
+# شکست کمتر).
+#
+# تنظیم چند اکانت Redis:
+#   یکی از این دو روش رو استفاده کن (هر دو با هم هم کار می‌کنن):
+#   ۱) REDIS_URLS="redis://user:pass@host1:port/0,redis://user:pass@host2:port/0,..."
+#      (چند URL با کاما جدا شده، توی یک متغیر محیطی)
+#   ۲) REDIS_URL_1, REDIS_URL_2, REDIS_URL_3, ... (هر کدوم یک اکانت/سرویس جدا،
+#      مثلاً یکی از Upstash، یکی از Redis Cloud، یکی از Aiven و ...)
+#   متغیر قدیمی UPSTASH_REDIS_URL هم برای عقب‌گرد (backward-compat) هنوز کار
+#   می‌کنه و به‌عنوان یکی از شارد‌ها اضافه می‌شه.
+#
+# هر کلید بر اساس هش خودش (consistent hashing با ثابت‌ماندنِ نسبیِ توزیع)
+# همیشه به یک شارد ثابت می‌ره، پس خوندن/نوشتن یک کلید همیشه سراغ همون
+# اتصال می‌ره. اگه یک شارد قطع باشه، فقط کلیدهای همون شارد کش نمی‌شن
+# (بدون کش ادامه می‌دن) و بقیه‌ی شاردها بی‌تاثیر می‌مونن.
+
 import os
 import json
+import time
+import hashlib
 import redis
-from typing import Any, Optional
+from typing import Any, Optional, List
 
-# ─── اتصال به Upstash Redis ────────────────────────────────────────────────────
-_redis: Optional[redis.Redis] = None
+# ─── ساخت لیست URL شاردها از متغیرهای محیطی ───────────────────────────────────
+def _collect_redis_urls() -> List[str]:
+    urls = []
+
+    combined = os.environ.get("REDIS_URLS", "")
+    if combined:
+        urls.extend([u.strip() for u in combined.split(",") if u.strip()])
+
+    i = 1
+    while True:
+        u = os.environ.get(f"REDIS_URL_{i}", "")
+        if not u:
+            break
+        urls.append(u.strip())
+        i += 1
+
+    legacy = os.environ.get("UPSTASH_REDIS_URL", "")
+    if legacy:
+        urls.append(legacy.strip())
+
+    # حذف موارد تکراری با حفظ ترتیب
+    seen = set()
+    unique_urls = []
+    for u in urls:
+        if u and u not in seen:
+            seen.add(u)
+            unique_urls.append(u)
+    return unique_urls
+
+
+# ─── اتصال به همه‌ی شاردهای Redis ───────────────────────────────────────────────
+_shards: List[Optional[redis.Redis]] = []
+_shards_ready = False
+
+
+def _ensure_shards():
+    """اتصال به همه‌ی شاردها رو یک‌بار برقرار می‌کنه (lazy init)."""
+    global _shards, _shards_ready
+    if _shards_ready:
+        return
+    _shards_ready = True
+
+    urls = _collect_redis_urls()
+    if not urls:
+        print("⚠️ هیچ REDIS_URL/REDIS_URLS/UPSTASH_REDIS_URL تنظیم نشده — بدون کش ادامه می‌دهیم")
+        return
+
+    for idx, url in enumerate(urls):
+        try:
+            conn = redis.from_url(url, decode_responses=True, socket_timeout=2)
+            conn.ping()
+            _shards.append(conn)
+            print(f"✅ شارد Redis #{idx + 1} متصل شد")
+        except Exception as e:
+            print(f"⚠️ اتصال شارد Redis #{idx + 1} ناموفق: {e}")
+            _shards.append(None)
+
+
+def _shard_for(key: str) -> Optional[redis.Redis]:
+    """بر اساس هش کلید، همیشه همون شارد ثابت رو برمی‌گردونه (consistent hashing)."""
+    _ensure_shards()
+    if not _shards:
+        return None
+    idx = int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16) % len(_shards)
+    return _shards[idx]
+
 
 def get_redis() -> Optional[redis.Redis]:
-    """دریافت اتصال Redis — اگه UPSTASH_REDIS_URL نباشه None برمی‌گردونه"""
-    global _redis
-    if _redis is not None:
-        return _redis
-    url = os.environ.get("UPSTASH_REDIS_URL", "")
-    if not url:
-        return None
-    try:
-        _redis = redis.from_url(url, decode_responses=True, socket_timeout=2)
-        _redis.ping()
-        print("✅ Upstash Redis متصل شد!")
-        return _redis
-    except Exception as e:
-        print(f"⚠️ Redis اتصال ناموفق: {e} — بدون کش ادامه می‌دهیم")
-        _redis = None
-        return None
+    """
+    برای عقب‌گرد با کدهای قدیمی: اولین شاردِ سالم رو برمی‌گردونه.
+    برای عملیات جدید بهتره از rget/rset (که خودشون شاردبندی می‌کنن) استفاده شه.
+    """
+    _ensure_shards()
+    for conn in _shards:
+        if conn is not None:
+            return conn
+    return None
 
-# ─── توابع پایه ────────────────────────────────────────────────────────────────
+
+def shards_status() -> dict:
+    """برای دیباگ/وضعیت: چند شارد تنظیم شده و چند تاشون سالم وصل هستن."""
+    _ensure_shards()
+    return {
+        "total": len(_shards),
+        "connected": sum(1 for c in _shards if c is not None),
+    }
+
+
+# ─── توابع پایه (حالا شاردبندی‌شده) ─────────────────────────────────────────────
 def rget(key: str) -> Optional[str]:
-    r = get_redis()
+    r = _shard_for(key)
     if not r:
         return None
     try:
@@ -37,8 +124,8 @@ def rget(key: str) -> Optional[str]:
         return None
 
 def rset(key: str, value: str, ttl: int = 300):
-    """ذخیره در Redis با TTL ثانیه (پیش‌فرض ۵ دقیقه)"""
-    r = get_redis()
+    """ذخیره در Redis با TTL ثانیه (پیش‌فرض ۵ دقیقه) — روی شارد متناظر با خودِ کلید"""
+    r = _shard_for(key)
     if not r:
         return
     try:
@@ -47,7 +134,7 @@ def rset(key: str, value: str, ttl: int = 300):
         pass
 
 def rdel(key: str):
-    r = get_redis()
+    r = _shard_for(key)
     if not r:
         return
     try:
@@ -56,16 +143,17 @@ def rdel(key: str):
         pass
 
 def rdel_pattern(pattern: str):
-    """حذف همه کلیدهایی که با pattern مطابقت دارن"""
-    r = get_redis()
-    if not r:
-        return
-    try:
-        keys = r.keys(pattern)
-        if keys:
-            r.delete(*keys)
-    except Exception:
-        pass
+    """حذف همه کلیدهایی که با pattern مطابقت دارن — روی همه‌ی شاردها (چون pattern به یک شارد خاص مقید نیست)"""
+    _ensure_shards()
+    for r in _shards:
+        if not r:
+            continue
+        try:
+            keys = r.keys(pattern)
+            if keys:
+                r.delete(*keys)
+        except Exception:
+            pass
 
 def rget_json(key: str) -> Optional[Any]:
     raw = rget(key)
