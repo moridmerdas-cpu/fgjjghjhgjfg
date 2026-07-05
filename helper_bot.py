@@ -82,10 +82,18 @@ async def start_helper_bot():
     print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
 
     def _menu_buttons(owner_tg_id):
-        """دکمه‌های سطح ۱ (لیست دسته‌ها)، رنگی از طریق style واقعی، بدون ایموجی."""
+        """دکمه‌های سطح ۱ به‌صورت شبکه‌ای (۳ ستونه)، رنگی از طریق style واقعی،
+        بدون ایموجی، + یک دکمه «بستن» در انتها."""
         rows = []
-        for key, title, _ in build_category_menu():
-            rows.append([Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}", style="primary")])
+        row = []
+        for key, title, style in build_category_menu():
+            row.append(Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}", style=style or "primary"))
+            if len(row) == 3:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.append([Button.inline("بستن", data=f"panel_close_{owner_tg_id}", style="danger")])
         return rows
 
     def _back_target(category_key, owner_tg_id):
@@ -146,11 +154,14 @@ async def start_helper_bot():
                 if me.username:
                     username_line = f"یوزرنیم: @{me.username}\n"
                 try:
-                    buf = io.BytesIO()
-                    photo = await self_client.download_profile_photo(me, file=buf)
+                    raw_buf = io.BytesIO()
+                    photo = await self_client.download_profile_photo(me, file=raw_buf)
                     if photo:
-                        buf.seek(0)
-                        buf.name = "profile.jpg"
+                        raw_buf.seek(0)
+                        from banner import generate_banner
+                        banner_bytes = generate_banner(raw_buf.read(), bottom_text="self panel", bottom_sub=f"@{me.username}" if me.username else "")
+                        buf = io.BytesIO(banner_bytes)
+                        buf.name = "panel.png"
                         photo_bytes = buf
                 except Exception:
                     photo_bytes = None
@@ -211,6 +222,14 @@ async def start_helper_bot():
             await event.edit(MAIN_TEXT, buttons=_menu_buttons(owner_tg_id))
             return
 
+        # ─── بستن پنل ───────────────────────────────────────────────────────
+        if body == "panel_close":
+            try:
+                await event.delete()
+            except Exception:
+                await event.answer("پنل بسته شد.")
+            return
+
         # ─── انتخاب یک دسته از منوی اصلی ───────────────────────────────────
         if body.startswith("panel_cat_"):
             category_key = body.replace("panel_cat_", "")
@@ -220,6 +239,15 @@ async def start_helper_bot():
                 return
             if cat.get("stub_message"):
                 await event.answer(cat["stub_message"], alert=True)
+                return
+            # دکمه‌های تک‌عملی که مستقیم اجرا می‌شن (زیرمنو ندارن)
+            direct = cat.get("direct_command")
+            if direct is not None:
+                if direct.startswith("INFO::"):
+                    await event.answer(direct[len("INFO::"):], alert=True)
+                else:
+                    await event.answer(f"در حال اجرا: {cat['title']}")
+                    await _execute_panel_command(self_client, owner_id, direct)
                 return
             await event.edit(
                 _category_text(cat["title"]),

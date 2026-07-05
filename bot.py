@@ -50,6 +50,14 @@ _last_outgoing_activity = {}  # {owner_id: timestamp} — آخرین باری ک
 AI_AWAY_SECONDS = 300  # اگه ۵ دقیقه از آخرین پیامِ خودِ کاربر گذشته باشه، "غایب" در نظر گرفته می‌شه
 AI_REPLY_COOLDOWN = 60  # حداقل فاصله بین دو پاسخ هوش مصنوعی در یک چت
 
+# ─── نگهبان چت: کش موقتِ متنِ پیام‌ها برای تشخیصِ حذف/ویرایش ──────────────────
+_msg_cache = {}  # {(chat_id, msg_id): text}
+_MSG_CACHE_MAX = 2000
+
+# ─── پاسخ خودکار ثابت به همه‌ی پیام‌ها ─────────────────────────────────────────
+_last_auto_reply = {}  # {chat_id: timestamp}
+AUTO_REPLY_COOLDOWN = 30  # ثانیه
+
 def _convert_font(text, chars):
     result = []
     for ch in text:
@@ -402,6 +410,13 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         chat_id = getattr(chat, "id", 0)
         text = msg.text or ""
 
+        # نگهبان چت: کش کردن متن پیام برای تشخیص بعدیِ حذف/ویرایش
+        if sender_id != owner_id:
+            _msg_cache[(chat_id, msg.id)] = text
+            if len(_msg_cache) > _MSG_CACHE_MAX:
+                for k in list(_msg_cache.keys())[:200]:
+                    _msg_cache.pop(k, None)
+
         # ✅ سکوت: اگه فرستنده توی لیست سکوت باشه و پیوی باشه، پیام دوطرفه پاک می‌شه
         if event.is_private and sender_id and _is_silence_user(owner_id, sender_id):
             try:
@@ -672,9 +687,85 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
+        # فیلتر کلمات (پیوی): اگه پیام حاوی یکی از کلمات فیلترشده باشه حذف می‌شه
+        if db.get_setting(owner_id, "word_filter_active") == "1" and event.is_private and text:
+            words = _get_filtered_words(owner_id)
+            if any(w and w in text for w in words):
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+
+        # نگهبان چت: ذخیره عکس‌های تایمی (view-once/self-destruct) قبل از پاک‌شدن
+        if db.get_setting(owner_id, "guard_view_once_active") == "1" and sender_id != owner_id:
+            ttl = getattr(getattr(msg, "media", None), "ttl_seconds", None)
+            if ttl and msg.photo:
+                try:
+                    path = await cl.download_media(msg)
+                    if path:
+                        await cl.send_file("me", path, caption="عکس تایمی ذخیره‌شده")
+                        os.remove(path)
+                except Exception:
+                    pass
+
+        # پاسخ خودکار ثابت به همه‌ی پیام‌ها (با کول‌داون مستقل از منشی/هوش‌مصنوعی)
+        if db.get_setting(owner_id, "auto_reply_active") == "1" and sender_id != owner_id and text.strip():
+            now = time.time()
+            last = _last_auto_reply.get(chat_id, 0)
+            if now - last >= AUTO_REPLY_COOLDOWN:
+                msg_text = db.get_setting(owner_id, "auto_reply_message", "در حال حاضر در دسترس نیستم.")
+                try:
+                    await event.reply(msg_text)
+                    _last_auto_reply[chat_id] = now
+                except Exception:
+                    pass
+
+    @cl.on(events.MessageEdited())
+    async def on_edited(event):
+        """نگهبان چت: اگه پیامِ یک نفر دیگه ویرایش شد، نسخه‌ی قبل/بعد رو برای خودت (Saved Messages) بفرست."""
+        try:
+            if event.out:
+                return
+            if db.get_setting(owner_id, "guard_edit_active") != "1":
+                return
+            key = (event.chat_id, event.id)
+            old_text = _msg_cache.get(key)
+            new_text = event.raw_text
+            if old_text is not None and old_text != new_text:
+                sender = await event.get_sender()
+                who = getattr(sender, "first_name", None) or getattr(sender, "username", None) or event.sender_id
+                await cl.send_message(
+                    "me",
+                    f"پیام ویرایش شد — از طرف {who}\nقبل: {old_text}\nبعد: {new_text}"
+                )
+            _msg_cache[key] = new_text
+        except Exception:
+            pass
+
+    @cl.on(events.MessageDeleted())
+    async def on_deleted(event):
+        """نگهبان چت: اگه پیامِ یک نفر دیگه حذف شد و توی کش بود، برای خودت بفرست."""
+        try:
+            if db.get_setting(owner_id, "guard_delete_active") != "1":
+                return
+            chat_id_del = event.chat_id
+            for msg_id in event.deleted_ids:
+                key = (chat_id_del, msg_id)
+                cached = _msg_cache.pop(key, None)
+                if cached:
+                    try:
+                        await cl.send_message("me", f"پیام حذف شد:\n{cached}")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
         text = event.raw_text.strip()
+        # قبول کردن پیشوند نقطه («.دستور» هم مثل «دستور» کار کند)
+        if text.startswith(".") and len(text) > 1:
+            text = text[1:].strip()
 
         # ثبت آخرین فعالیتِ خودِ کاربر — برای تشخیص «غایب/آفلاین» دستیار هوش مصنوعی
         _last_outgoing_activity[owner_id] = time.time()
@@ -740,15 +831,21 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
 
     # ─── تاس (send_dice) ─────────────────────────────────────────────────────────
-    async def send_dice(ev, dice_type, target=None):
+    async def send_dice(ev, dice_type, target=None, max_tries=80):
         reply_to = ev.reply_to_msg_id
+        tries = 0
         while True:
-            if reply_to:
-                msg = await ev.reply(file=InputMediaDice(dice_type))
-            else:
-                msg = await ev.respond(file=InputMediaDice(dice_type))
+            tries += 1
+            try:
+                if reply_to:
+                    msg = await ev.reply(file=InputMediaDice(dice_type))
+                else:
+                    msg = await ev.respond(file=InputMediaDice(dice_type))
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds + 1)
+                continue
 
-            if target is None or (msg.media and msg.media.value == target):
+            if target is None or (msg.media and msg.media.value == target) or tries >= max_tries:
                 break
 
             await asyncio.sleep(0.5)
@@ -757,14 +854,79 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^(?:تاس|roll) (\d)$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^(?:تاس|roll) (\d)$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
     async def dice(event):
         if entry.get("paused"):
             return
         await event.delete()
-        target = int(event.pattern_match.group(1))
+        g = event.pattern_match.group(1)
+        target = int(g) if g else 6  # پیش‌فرض بهترین نتیجه (۶)
         await send_dice(event, "🎲", target=target)
+
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
+    async def dart(event):
+        if entry.get("paused"):
+            return
+        await event.delete()
+        g = event.pattern_match.group(1)
+        target = int(g) if g else 6  # ۶ = وسط دقیقِ دارت (بولزآی)
+        await send_dice(event, "🎯", target=target)
+
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
+    async def football(event):
+        if entry.get("paused"):
+            return
+        await event.delete()
+        g = event.pattern_match.group(1)
+        target = int(g) if g else 5  # ۳،۴،۵ = گل؛ ۵ تمیزترین حالت
+        await send_dice(event, "⚽", target=target)
+
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
+    async def basketball(event):
+        if entry.get("paused"):
+            return
+        await event.delete()
+        g = event.pattern_match.group(1)
+        target = int(g) if g else 5  # ۴،۵ = توپ توی سبد
+        await send_dice(event, "🏀", target=target)
+
+    # ─── کازینو (اسلات ماشین) — با اسم میوه/نماد، مثل «کازینو انگور» ──────────
+    # فرمول رسمی تلگرام برای مقدار اسلات: value = 1 + r1 + r2*4 + r3*16
+    # (r1,r2,r3 اندیس هر رول از چپ به راست هستن؛ ۰=میله، ۱=انگور، ۲=لیمو، ۳=هفت)
+    _SLOT_SYMBOLS = {
+        "میله": 0, "بار": 0,
+        "انگور": 1,
+        "لیمو": 2,
+        "هفت": 3, "سون": 3, "جکپات": 3,
+    }
+
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
+    async def casino(event):
+        if entry.get("paused"):
+            return
+        await event.delete()
+        raw = event.pattern_match.group(1)
+        names = raw.split() if raw else []
+        if not names:
+            await event.respond("فرمت: کازینو [نماد] — مثال: کازینو انگور\nنمادها: میله، انگور، لیمو، هفت")
+            return
+        if len(names) == 1:
+            names = names * 3
+        elif len(names) == 2:
+            names = names + [names[-1]]
+        indices = []
+        for n in names[:3]:
+            if n not in _SLOT_SYMBOLS:
+                await event.respond(f"نماد «{n}» شناخته‌شده نیست. نمادها: میله، انگور، لیمو، هفت")
+                return
+            indices.append(_SLOT_SYMBOLS[n])
+        target = 1 + indices[0] + indices[1] * 4 + indices[2] * 16
+        await send_dice(event, "🎰", target=target)
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -888,6 +1050,150 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit("❗ عبارت ریاضی نامعتبر است.\nفرمت درست: `محاسبه 2+2*3`")
 
     # ─── دستیار هوش مصنوعی (دیپ‌سیک) ───────────────────────────────────────
+    # ─── پینگ ────────────────────────────────────────────────────────────────
+    elif text == "پینگ":
+        t0 = time.time()
+        await edit("در حال محاسبه پینگ...")
+        ms = int((time.time() - t0) * 1000)
+        await edit(f"پینگ: {ms} میلی‌ثانیه")
+
+    # ─── حذف (پیامی که روش ریپلای شده رو حذف می‌کنه) ────────────────────────
+    elif text == "حذف":
+        if not event.is_reply:
+            await event.delete()
+        else:
+            reply = await event.get_reply_message()
+            try:
+                await reply.delete()
+                await event.delete()
+            except Exception as e:
+                await edit(f"نمی‌توانم این پیام را حذف کنم: {e}")
+
+    # ─── تگ (منشن همه اعضای گروه) ────────────────────────────────────────────
+    elif text.startswith("تگ"):
+        if event.is_private:
+            await edit("این دستور فقط توی گروه کار می‌کند.")
+        else:
+            msg_part = text[len("تگ"):].strip() or "."
+            await edit("در حال تگ کردن اعضا...")
+            mentions = []
+            try:
+                async for user in cl.iter_participants(event.chat_id):
+                    if user.bot or user.deleted:
+                        continue
+                    mentions.append(user)
+            except Exception as e:
+                await edit(f"خطا در دریافت اعضا: {e}")
+                mentions = []
+            chunk = []
+            for user in mentions:
+                chunk.append(user)
+                if len(chunk) == 5:
+                    text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
+                    try:
+                        await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
+                    except Exception:
+                        pass
+                    chunk = []
+                    await asyncio.sleep(1)
+            if chunk:
+                text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
+                try:
+                    await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
+                except Exception:
+                    pass
+            try:
+                await event.delete()
+            except Exception:
+                pass
+
+    # ─── لوگو (ارسال بنر تزئینی سلف) ─────────────────────────────────────────
+    elif text == "لوگو":
+        try:
+            me = await cl.get_me()
+            photo_bytes = await cl.download_profile_photo(me, file=bytes)
+            if not photo_bytes:
+                await edit("عکس پروفایل پیدا نشد.")
+            else:
+                from banner import generate_banner
+                banner_bytes = generate_banner(
+                    photo_bytes,
+                    bottom_text="self panel",
+                    bottom_sub=f"@{me.username}" if me.username else "",
+                )
+                await cl.send_file(event.chat_id, banner_bytes, force_document=False)
+                await event.delete()
+        except Exception as e:
+            await edit(f"خطا در ساخت لوگو: {e}")
+
+    # ─── فیلتر کلمات ─────────────────────────────────────────────────────────
+    elif text.startswith("فیلتر کلمه "):
+        word = text[len("فیلتر کلمه "):].strip()
+        if not word:
+            await edit("فرمت: فیلتر کلمه [کلمه]")
+        else:
+            words = _get_filtered_words(owner_id)
+            if word not in words:
+                words.append(word)
+                _save_filtered_words(owner_id, words)
+            await edit(f"کلمه «{word}» به فیلتر اضافه شد.")
+
+    elif text.startswith("حذف فیلتر کلمه "):
+        word = text[len("حذف فیلتر کلمه "):].strip()
+        words = _get_filtered_words(owner_id)
+        if word in words:
+            words.remove(word)
+            _save_filtered_words(owner_id, words)
+            await edit(f"کلمه «{word}» از فیلتر حذف شد.")
+        else:
+            await edit("این کلمه توی لیست فیلتر نیست.")
+
+    elif text == "لیست فیلتر کلمات":
+        words = _get_filtered_words(owner_id)
+        await edit("لیست فیلتر کلمات:\n" + "\n".join(words) if words else "لیست فیلتر کلمات خالی است.")
+
+    elif text == "فیلترکلمات روشن":
+        ss("word_filter_active", "1")
+        await edit("فیلتر کلمات روشن شد. پیام‌های پیویِ حاوی کلمات فیلترشده حذف می‌شوند.")
+    elif text == "فیلترکلمات خاموش":
+        ss("word_filter_active", "0")
+        await edit("فیلتر کلمات خاموش شد.")
+
+    # ─── پاسخ خودکار به همه (پیام ثابت برای هر پیامی که بیاد) ────────────────
+    elif text == "پاسخ خودکار روشن":
+        ss("auto_reply_active", "1")
+        await edit("پاسخ خودکار روشن شد.")
+    elif text == "پاسخ خودکار خاموش":
+        ss("auto_reply_active", "0")
+        await edit("پاسخ خودکار خاموش شد.")
+    elif text.startswith("متن پاسخ خودکار "):
+        msg = text[len("متن پاسخ خودکار "):].strip()
+        if not msg:
+            await edit("فرمت: متن پاسخ خودکار [متن دلخواه]")
+        else:
+            ss("auto_reply_message", msg)
+            await edit("متن پاسخ خودکار ذخیره شد.")
+
+    # ─── نگهبان چت (ذخیره پیام حذف‌شده/ویرایش‌شده/عکس تایمی) ─────────────────
+    elif text == "ذخیره پیام حذف‌شده روشن":
+        ss("guard_delete_active", "1")
+        await edit("ذخیره پیام حذف‌شده روشن شد؛ پیام‌های حذف‌شده به پیام‌های ذخیره‌شده فرستاده می‌شوند.")
+    elif text == "ذخیره پیام حذف‌شده خاموش":
+        ss("guard_delete_active", "0")
+        await edit("ذخیره پیام حذف‌شده خاموش شد.")
+    elif text == "ذخیره پیام ویرایش‌شده روشن":
+        ss("guard_edit_active", "1")
+        await edit("ذخیره پیام ویرایش‌شده روشن شد.")
+    elif text == "ذخیره پیام ویرایش‌شده خاموش":
+        ss("guard_edit_active", "0")
+        await edit("ذخیره پیام ویرایش‌شده خاموش شد.")
+    elif text == "ذخیره عکس تایمی روشن":
+        ss("guard_view_once_active", "1")
+        await edit("ذخیره عکس تایمی روشن شد.")
+    elif text == "ذخیره عکس تایمی خاموش":
+        ss("guard_view_once_active", "0")
+        await edit("ذخیره عکس تایمی خاموش شد.")
+
     elif text == "دیپ سیک روشن":
         if not getattr(config, "DEEPSEEK_API_KEY", ""):
             await edit("کلید API دیپ‌سیک تنظیم نشده است.")
@@ -1804,6 +2110,24 @@ def _save_react_map(owner_id: int, mapping: dict):
     db.set_setting(owner_id, _REACT_MAP_KEY, json.dumps(mapping))
 
 
+# ─── فیلتر کلمات: لیست کلماتی که پیام حاوی‌شون در پیوی حذف می‌شه ───────────────
+_FILTER_WORDS_KEY = "filtered_words"
+
+
+def _get_filtered_words(owner_id: int) -> list:
+    raw = db.get_setting(owner_id, _FILTER_WORDS_KEY, "")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+def _save_filtered_words(owner_id: int, words: list):
+    db.set_setting(owner_id, _FILTER_WORDS_KEY, json.dumps(words))
+
+
 async def _do_spam(cl, owner_id, chat_id, text, count):
     # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
     delay = float(db.get_setting(owner_id, "spam_delay", "1"))
@@ -2243,19 +2567,10 @@ def _help_text():
 # یعنی این دکمه فقط یک پیام کوتاه (toast) نشون می‌ده و هیچ دستوری روی سلف
 # اجرا نمی‌شه (برای مواردی مثل ماشین‌حساب/ترجمه که نیاز به ورودی متنی دارن).
 PANEL_CATEGORIES = {
-    # ─── سطح ۱: منوی اصلی ───────────────────────────────────────────────────
-    "clock": {
-        "title": "ساعت",
-        "toggles": [
-            ("clock_name_active", "ساعت نام", "ساعت نام روشن", "ساعت نام خاموش"),
-            ("clock_bio_active", "ساعت بیو", "ساعت بیو روشن", "ساعت بیو خاموش"),
-            ("clock_premium_active", "ساعت پرمیوم", "ساعت پرمیوم روشن", "ساعت پرمیوم خاموش"),
-        ],
-        "actions": [],
-        "children": [("فونت ساعت", "clock_font")],
-    },
+    # ─── سطح ۱: منوی اصلی (چیدمانِ شبکه‌ای، مطابق طرح درخواستی) ───────────────
     "text_mode": {
         "title": "حالت متن",
+        "menu_style": "primary",
         "toggles": [
             ("text_style_quote_active", "نقل قول", "حالت نقل قول روشن", "حالت نقل قول خاموش"),
             ("text_style_underline_active", "زیر خط", "حالت زیرخط روشن", "حالت زیرخط خاموش"),
@@ -2268,8 +2583,40 @@ PANEL_CATEGORIES = {
         ],
         "actions": [],
     },
+    "clock": {
+        "title": "ساعت",
+        "menu_style": "primary",
+        "toggles": [
+            ("clock_name_active", "ساعت نام", "ساعت نام روشن", "ساعت نام خاموش"),
+            ("clock_bio_active", "ساعت بیو", "ساعت بیو روشن", "ساعت بیو خاموش"),
+            ("clock_premium_active", "ساعت پرمیوم", "ساعت پرمیوم روشن", "ساعت پرمیوم خاموش"),
+        ],
+        "actions": [],
+        "children": [("فونت ساعت", "clock_font")],
+    },
+    "chat_guard": {
+        "title": "نگهبان چت",
+        "menu_style": "primary",
+        "toggles": [
+            ("guard_delete_active", "ذخیره پیام حذف‌شده", "ذخیره پیام حذف‌شده روشن", "ذخیره پیام حذف‌شده خاموش"),
+            ("guard_edit_active", "ذخیره پیام ویرایش‌شده", "ذخیره پیام ویرایش‌شده روشن", "ذخیره پیام ویرایش‌شده خاموش"),
+            ("guard_view_once_active", "ذخیره عکس تایمی", "ذخیره عکس تایمی روشن", "ذخیره عکس تایمی خاموش"),
+        ],
+        "actions": [],
+    },
+    "ping": {
+        "title": "پینگ",
+        "menu_style": "primary",
+        "direct_command": "پینگ",
+    },
+    "logo": {
+        "title": "لوگو",
+        "menu_style": "primary",
+        "direct_command": "لوگو",
+    },
     "locks": {
         "title": "قفل ها",
+        "menu_style": "primary",
         "toggles": [
             ("lock_username_active", "قفل یوزرنیم", "قفل یوزرنیم روشن", "قفل یوزرنیم خاموش"),
             ("lock_reply_active", "قفل ریپلای", "قفل ریپلای روشن", "قفل ریپلای خاموش"),
@@ -2283,8 +2630,27 @@ PANEL_CATEGORIES = {
         ],
         "actions": [],
     },
+    "actions": {
+        "title": "اکشن",
+        "menu_style": "primary",
+        "toggles": [
+            ("typing_action_active", "اکشن تایپینگ 24 ساعته", "تایپینگ روشن", "تایپینگ خاموش"),
+            ("gaming_action_active", "اکشن گیمینگ 24 ساعته", "گیمینگ روشن", "گیمینگ خاموش"),
+            ("voice_action_active", "اکشن ویس 24 ساعته", "ویس روشن", "ویس خاموش"),
+            ("video_action_active", "اکشن ارسال ویدیو 24 ساعته", "ارسال ویدیو روشن", "ارسال ویدیو خاموش"),
+        ],
+        "actions": [],
+    },
+    "friend_enemy": {
+        "title": "دوست و دشمن",
+        "menu_style": "success",
+        "toggles": [],
+        "actions": [],
+        "children": [("دوست", "friend_enemy_friend"), ("دشمن", "friend_enemy_enemy")],
+    },
     "secretary": {
         "title": "منشی",
+        "menu_style": "success",
         "toggles": [
             ("secretary_active", "منشی", "منشی روشن", "منشی خاموش"),
         ],
@@ -2292,8 +2658,31 @@ PANEL_CATEGORIES = {
             ("نمایش متن دستورات منشی", "INFO::دستورات منشی:\nمنشی روشن / منشی خاموش\nپیام منشی [متن دلخواه]"),
         ],
     },
+    "word_filter": {
+        "title": "فیلترکلمات",
+        "menu_style": "success",
+        "toggles": [
+            ("word_filter_active", "فیلتر کلمات", "فیلترکلمات روشن", "فیلترکلمات خاموش"),
+        ],
+        "actions": [
+            ("افزودن کلمه", "INFO::برای افزودن تایپ کن: فیلتر کلمه [کلمه]"),
+            ("حذف کلمه", "INFO::برای حذف تایپ کن: حذف فیلتر کلمه [کلمه]"),
+            ("لیست فیلتر کلمات", "لیست فیلتر کلمات"),
+        ],
+    },
+    "auto_reply": {
+        "title": "پاسخ خودکار",
+        "menu_style": "success",
+        "toggles": [
+            ("auto_reply_active", "پاسخ خودکار", "پاسخ خودکار روشن", "پاسخ خودکار خاموش"),
+        ],
+        "actions": [
+            ("تنظیم متن پاسخ", "INFO::برای تنظیم متن تایپ کن: متن پاسخ خودکار [متن دلخواه]"),
+        ],
+    },
     "forced_join": {
-        "title": "عضویت اجباری",
+        "title": "عضویت اجباری پیوی",
+        "menu_style": "success",
         "toggles": [
             ("force_join_active", "عضویت اجباری", "جوین اجباری روشن", "جوین اجباری خاموش"),
         ],
@@ -2302,50 +2691,49 @@ PANEL_CATEGORIES = {
             ("حذف کانال اجباری", "حذف کانال اجباری"),
         ],
     },
-    "automation": {
-        "title": "اتوماسیون",
-        "toggles": [
-            ("auto_seen_active", "سین خودکار", "سین خودکار روشن", "سین خودکار خاموش"),
-            ("auto_reaction_active", "ری‌اکشن خودکار", "ری‌اکشن روشن", "ری‌اکشن خاموش"),
-            ("auto_save_media", "ذخیره مدیا", "ذخیره مدیا روشن", "ذخیره مدیا خاموش"),
-            ("typing_action_active", "اکشن تایپینگ 24 ساعته", "تایپینگ روشن", "تایپینگ خاموش"),
-            ("gaming_action_active", "اکشن گیمینگ 24 ساعته", "گیمینگ روشن", "گیمینگ خاموش"),
-            ("voice_action_active", "اکشن ویس 24 ساعته", "ویس روشن", "ویس خاموش"),
-            ("video_action_active", "اکشن ارسال ویدیو 24 ساعته", "ارسال ویدیو روشن", "ارسال ویدیو خاموش"),
-        ],
-        "actions": [
-            ("توقف اسپم", "توقف اسپم"),
-            ("توقف سیو کانال", "توقف سیو"),
-        ],
+    "downloader": {
+        "title": "دانلودر",
+        "menu_style": "primary",
+        "direct_command": "INFO::روی یک عکس/ویدیو/فایل ریپلای کن و تایپ کن: تبدیل به گیف (برای ویدیو) یا مستقیم فوروارد کن به پیام‌های ذخیره‌شده",
     },
-    "friend_enemy": {
-        "title": "دوست و دشمن",
-        "toggles": [],
-        "actions": [],
-        "children": [("دوست", "friend_enemy_friend"), ("دشمن", "friend_enemy_enemy")],
+    "user_react": {
+        "title": "ریکت",
+        "menu_style": "primary",
+        "direct_command": "INFO::روی پیام کاربر ریپلای کن و تایپ کن: تنظیم ری‌اکت [ایموجی] — برای حذف: حذف ری‌اکت",
     },
-    "tools": {
-        "title": "ابزار",
-        "toggles": [],
-        "actions": [
-            ("ماشین حساب", "INFO::برای استفاده تایپ کن: محاسبه [عبارت] — مثال: محاسبه 2+2*3"),
-            ("ترجمه", "INFO::برای استفاده تایپ کن: ترجمه [متن]"),
-            ("ارز", "ارز"),
-            ("آب و هوا", "INFO::برای استفاده تایپ کن: هوا [نام شهر]"),
-            ("وضعیت", "وضعیت"),
-            ("راهنما", "راهنما"),
-            ("لیست بلاک", "لیست بلاک"),
-            ("پاکسازی لیست بلاک", "پاکسازی لیست بلاک"),
-            ("ترک همگانی گروه", "ترک همگانی گروه"),
-            ("ترک همگانی کانال", "ترک همگانی کانال"),
-            ("تبدیل به گیف", "INFO::روی یک ویدیو ریپلای کن و تایپ کن: تبدیل به گیف"),
-            ("ترجمه متن ریپلای‌شده", "INFO::روی یک پیام متنی ریپلای کن و تایپ کن: ترجمه متن"),
-            ("بلاک کاربر", "INFO::روی پیام کاربر ریپلای کن و تایپ کن: بلاک کاربر"),
-            ("تنظیم ری‌اکت اختصاصی", "INFO::روی پیام کاربر ریپلای کن و تایپ کن: تنظیم ری‌اکت [ایموجی]"),
-        ],
+    "spam": {
+        "title": "اسپم",
+        "menu_style": "primary",
+        "direct_command": "INFO::برای شروع تایپ کن: اسپم [تعداد] [متن] — برای توقف: توقف اسپم",
+    },
+    "pm_silence": {
+        "title": "سکوت",
+        "menu_style": "primary",
+        "direct_command": "INFO::روی پیام کاربر ریپلای کن و تایپ کن: سکوت — برای لغو: لغو سکوت — برای دیدن لیست: لیست سکوت",
+    },
+    "user_info": {
+        "title": "اطلاعات",
+        "menu_style": "primary",
+        "direct_command": "وضعیت",
+    },
+    "tag_all": {
+        "title": "تگ",
+        "menu_style": "primary",
+        "direct_command": "INFO::این دستور فقط توی گروه کار می‌کند. تایپ کن: تگ [متن دلخواه]",
+    },
+    "block_user": {
+        "title": "بلاک",
+        "menu_style": "primary",
+        "direct_command": "INFO::روی پیام کاربر ریپلای کن و تایپ کن: بلاک کاربر — لیست: لیست بلاک",
+    },
+    "delete_msg": {
+        "title": "حذف",
+        "menu_style": "primary",
+        "direct_command": "INFO::روی پیامی که می‌خوای حذف شه ریپلای کن و تایپ کن: حذف",
     },
     "ai_assistant": {
         "title": "هوش مصنوعی",
+        "menu_style": "success",
         "toggles": [
             ("ai_assistant_active", "دیپ سیک", "دیپ سیک روشن", "دیپ سیک خاموش"),
             ("ai_reply_always_active", "پاسخ به همه پیام‌ها", "هوش مصنوعی پاسخ همه روشن", "هوش مصنوعی پاسخ همه خاموش"),
@@ -2356,10 +2744,94 @@ PANEL_CATEGORIES = {
             ("پاک کردن دانش هوش مصنوعی", "پاک کردن دانش هوش مصنوعی"),
         ],
     },
+    "translate_tool": {
+        "title": "ترجمه",
+        "menu_style": "primary",
+        "direct_command": "INFO::برای استفاده تایپ کن: ترجمه [متن] — یا روی پیام ریپلای کن و بنویس: ترجمه متن",
+    },
+    "animation": {
+        "title": "انیمیشن",
+        "menu_style": "primary",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "cheat": {
+        "title": "تقلب",
+        "menu_style": "success",
+        "direct_command": (
+            "INFO::تقلب تاس/دارت/فوتبال/بسکتبال/کازینو — همیشه بهترین نتیجه می‌گیری:\n"
+            "تاس یا تاس 6\n"
+            "دارت یا دارت 6\n"
+            "فوتبال یا فوتبال 5\n"
+            "بسکتبال یا بسکتبال 5\n"
+            "کازینو انگور  (یا: کازینو میله/لیمو/هفت)"
+        ),
+    },
+    "calculator": {
+        "title": "× ÷",
+        "menu_style": "primary",
+        "direct_command": "INFO::برای استفاده تایپ کن: محاسبه [عبارت] — مثال: محاسبه 2+2*3",
+    },
+    "text_to_voice": {
+        "title": "تبدیل متن به ویس",
+        "menu_style": "primary",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "voice_search": {
+        "title": "سرچ ویس آماده",
+        "menu_style": "primary",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "music_search": {
+        "title": "سرچ آهنگ",
+        "menu_style": "primary",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "tabchi": {
+        "title": "تبچی",
+        "menu_style": "primary",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "profile_snoop": {
+        "title": "فضول پروفایل",
+        "menu_style": "primary",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "first_comment": {
+        "title": "کامنت اول",
+        "menu_style": "danger",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "currency": {
+        "title": "قیمت ارز",
+        "menu_style": "danger",
+        "direct_command": "ارز",
+    },
+    "screen_guard": {
+        "title": "اسکرین",
+        "menu_style": "danger",
+        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+    },
+    "tools": {
+        "title": "ابزار بیشتر",
+        "menu_style": "primary",
+        "toggles": [
+            ("auto_seen_active", "سین خودکار", "سین خودکار روشن", "سین خودکار خاموش"),
+            ("auto_reaction_active", "ری‌اکشن خودکار", "ری‌اکشن روشن", "ری‌اکشن خاموش"),
+            ("auto_save_media", "ذخیره مدیا", "ذخیره مدیا روشن", "ذخیره مدیا خاموش"),
+        ],
+        "actions": [
+            ("آب و هوا", "INFO::برای استفاده تایپ کن: هوا [نام شهر]"),
+            ("راهنما", "راهنما"),
+            ("پاکسازی لیست بلاک", "پاکسازی لیست بلاک"),
+            ("ترک همگانی گروه", "ترک همگانی گروه"),
+            ("ترک همگانی کانال", "ترک همگانی کانال"),
+            ("تبدیل به گیف", "INFO::روی یک ویدیو ریپلای کن و تایپ کن: تبدیل به گیف"),
+            ("توقف سیو کانال", "توقف سیو"),
+        ],
+    },
     "premium_emoji": {
-        # این دسته توی helper_bot.py به‌طور خاص هندل می‌شه: با کلیک، فقط یک
-        # پیام کوتاه نشون داده می‌شه و هیچ زیرمنویی باز نمی‌شه.
         "title": "ایموجی پرمیوم",
+        "menu_style": "danger",
         "toggles": [],
         "actions": [],
         "stub_message": "این بخش هنوز در دسترس نیست",
@@ -2395,10 +2867,23 @@ PANEL_CATEGORIES = {
 }
 
 # ترتیب نمایش دسته‌ها در منوی اصلی پنل (فقط سطح ۱، زیرمنوها اینجا نیستن)
+# این ترتیب دقیقاً مطابق چیدمانِ درخواستی (شبکه‌ای، رنگی) هست.
 PANEL_CATEGORY_ORDER = [
-    "clock", "text_mode", "locks", "secretary", "forced_join",
-    "automation", "friend_enemy", "tools", "ai_assistant", "premium_emoji",
+    "text_mode", "clock", "chat_guard",
+    "ping", "logo", "locks",
+    "actions", "friend_enemy", "secretary",
+    "word_filter", "auto_reply", "forced_join",
+    "downloader", "user_react", "spam",
+    "pm_silence", "user_info", "tag_all",
+    "block_user", "delete_msg", "tools",
+    "ai_assistant", "translate_tool", "animation",
+    "cheat", "calculator", "text_to_voice",
+    "voice_search", "music_search", "tabchi",
+    "profile_snoop", "first_comment", "currency",
+    "screen_guard", "premium_emoji",
 ]
+
+
 
 
 def build_category_commands(owner_id: int, category_key: str):
@@ -2428,8 +2913,11 @@ def build_category_commands(owner_id: int, category_key: str):
 
 
 def build_category_menu():
-    """لیست دکمه‌های منوی اصلی پنل (فقط عنوان دسته‌ها)."""
-    return [(key, PANEL_CATEGORIES[key]["title"], None) for key in PANEL_CATEGORY_ORDER]
+    """لیست دکمه‌های منوی اصلی پنل: (کلید، عنوان، رنگ)."""
+    return [
+        (key, PANEL_CATEGORIES[key]["title"], PANEL_CATEGORIES[key].get("menu_style", "primary"))
+        for key in PANEL_CATEGORY_ORDER
+    ]
 
 
 

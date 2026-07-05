@@ -2645,7 +2645,7 @@ def start_token_bot():
                     sponsors_text = "🤝 <b>اسپانسرهای رسمی پروژه:</b>\n"
                     for sp in sponsors:
                         sponsors_text += f"🔸 @{sp['username']}\n"
-                    sponsors_text += f"\n👑 <b>مالک:</b> @{config.OWNER_USERNAME}\n🛟 <b>پشتیبانی:</b> @{getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')}"
+                    sponsors_text += f"\n👑 <b>مالک:</b> @{config.OWNER_USERNAME}"
                     _bot.send_message(message.chat.id, sponsors_text)
         except Exception as e:
             print(f"❌ خطا در cmd_start: {e}")
@@ -3038,7 +3038,7 @@ def start_token_bot():
                     try:
                         _bot.send_message(
                             payment["tg_id"],
-                            "❌ <b>پرداخت شما رد شد.</b>\n\nلطفاً با پشتیبانی تماس بگیرید: @" + getattr(config, 'SUPPORT_USERNAME', 'll_x_yasi')
+                            "❌ <b>پرداخت شما رد شد.</b>"
                         )
                     except Exception: pass
                     # 🔴 دکمه رد با رنگ danger (قرمز)

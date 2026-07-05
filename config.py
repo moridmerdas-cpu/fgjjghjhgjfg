@@ -19,7 +19,6 @@ SITE_URL = os.environ.get("SITE_URL", "")
 # ─── مالک ──────────────────────────────────────────────────────────────────
 OWNER_TG_ID = int(os.environ.get("OWNER_TG_ID", "8296865861"))
 OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "amele55")
-SUPPORT_USERNAME = os.environ.get("SUPPORT_USERNAME", "ll_x_yasi")
 OWNER_PHONE = os.environ.get("OWNER_PHONE", "").lstrip("+")
 
 # ─── دیتابیس پایدار (Supabase PostgreSQL) ──────────────────────────────────
