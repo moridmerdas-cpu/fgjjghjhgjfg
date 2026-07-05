@@ -349,6 +349,7 @@ class BotManager:
                 clock_task = asyncio.ensure_future(_clock_loop(cl, owner_id))
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
                 typing_task = asyncio.ensure_future(_typing_loop(cl, owner_id))
+                tabchi_task = asyncio.ensure_future(_tabchi_loop(cl, owner_id))
 
                 retry_delay = 5
                 await cl.run_until_disconnected()
@@ -1158,6 +1159,200 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "فیلترکلمات خاموش":
         ss("word_filter_active", "0")
         await edit("فیلتر کلمات خاموش شد.")
+
+    # ─── تبچی (مدیریت بنرها) ────────────────────────────────────────────────
+    elif text == "تبچی روشن":
+        ss("tabchi_active", "1")
+        await edit("تبچی روشن شد؛ بنرهای فعال طبق مقصدشان ارسال می‌شوند.")
+    elif text == "تبچی خاموش":
+        ss("tabchi_active", "0")
+        await edit("تبچی خاموش شد.")
+
+    elif text == "ثبت بنر با ریپلای" or re.match(r"^تنظیم بنر (\d+) با ریپلای$", text):
+        if not event.is_reply:
+            await edit("روی پیامِ بنر (متن/عکس/ویدیو) ریپلای کن و دوباره تایپ کن.")
+        else:
+            data = _get_tabchi(owner_id)
+            m = re.match(r"^تنظیم بنر (\d+) با ریپلای$", text)
+            if m:
+                slot = m.group(1)
+                if slot not in _TABCHI_SLOTS:
+                    await edit("شماره بنر باید بین ۱ تا ۱۰ باشد.")
+                    return
+            else:
+                slot = _tabchi_next_free_slot(data)
+                if not slot:
+                    await edit("همه‌ی ۱۰ اسلات بنر پر است. اول یکی را حذف کن.")
+                    return
+            reply = await event.get_reply_message()
+            existing = data.get(slot, {})
+            data[slot] = {
+                "chat_id": reply.chat_id,
+                "msg_id": reply.id,
+                "target_mode": existing.get("target_mode"),
+                "target_chat_id": existing.get("target_chat_id"),
+                "active": existing.get("active", False),
+            }
+            _save_tabchi(owner_id, data)
+            await edit(f"بنر {slot} ثبت شد.")
+
+    elif re.match(r"^تنظیم بنر (\d+) در این چت$", text):
+        m = re.match(r"^تنظیم بنر (\d+) در این چت$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot not in data:
+            await edit(f"اول باید بنر {slot} را با ریپلای ثبت کنی.")
+        else:
+            data[slot]["target_mode"] = "this_chat"
+            data[slot]["target_chat_id"] = event.chat_id
+            _save_tabchi(owner_id, data)
+            await edit(f"مقصد بنر {slot} روی این چت تنظیم شد.")
+
+    elif re.match(r"^تنظیم بنر (\d+) در همه گروه‌ها$", text):
+        m = re.match(r"^تنظیم بنر (\d+) در همه گروه‌ها$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot not in data:
+            await edit(f"اول باید بنر {slot} را با ریپلای ثبت کنی.")
+        else:
+            data[slot]["target_mode"] = "all_groups"
+            data[slot]["target_chat_id"] = None
+            _save_tabchi(owner_id, data)
+            await edit(f"مقصد بنر {slot} روی همه گروه‌ها تنظیم شد.")
+
+    elif re.match(r"^فعال کردن بنر (\d+)$", text):
+        m = re.match(r"^فعال کردن بنر (\d+)$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot not in data:
+            await edit(f"اول باید بنر {slot} را با ریپلای ثبت کنی.")
+        elif not data[slot].get("target_mode"):
+            await edit(f"اول مقصد بنر {slot} را تنظیم کن (در این چت / در همه گروه‌ها).")
+        else:
+            data[slot]["active"] = True
+            _save_tabchi(owner_id, data)
+            await edit(f"بنر {slot} فعال شد.")
+
+    elif re.match(r"^غیرفعال کردن بنر (\d+)$", text):
+        m = re.match(r"^غیرفعال کردن بنر (\d+)$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot in data:
+            data[slot]["active"] = False
+            _save_tabchi(owner_id, data)
+        await edit(f"بنر {slot} غیرفعال شد.")
+
+    elif text == "لیست بنرها":
+        data = _get_tabchi(owner_id)
+        if not data:
+            await edit("هیچ بنری ثبت نشده است.")
+        else:
+            lines = ["لیست بنرها:\n"]
+            for slot in _TABCHI_SLOTS:
+                b = data.get(slot)
+                if not b:
+                    continue
+                mode = b.get("target_mode") or "تنظیم‌نشده"
+                mode_fa = {"this_chat": "این چت", "all_groups": "همه گروه‌ها"}.get(mode, mode)
+                state = "فعال" if b.get("active") else "غیرفعال"
+                lines.append(f"بنر {slot} — مقصد: {mode_fa} — وضعیت: {state}")
+            await edit("\n".join(lines))
+
+    elif text == "پاکسازی لیست بنر":
+        _save_tabchi(owner_id, {})
+        await edit("همه‌ی بنرها حذف شدند.")
+
+    elif text == "پاکسازی بنر در این چت":
+        data = _get_tabchi(owner_id)
+        changed = False
+        for slot, b in data.items():
+            if b.get("target_mode") == "this_chat" and b.get("target_chat_id") == event.chat_id:
+                b["target_mode"] = None
+                b["target_chat_id"] = None
+                b["active"] = False
+                changed = True
+        if changed:
+            _save_tabchi(owner_id, data)
+            await edit("بنرهای مربوط به این چت پاکسازی شدند.")
+        else:
+            await edit("هیچ بنری برای این چت تنظیم نشده بود.")
+
+    elif re.match(r"^حذف بنر (\d+) در این چت$", text):
+        m = re.match(r"^حذف بنر (\d+) در این چت$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot in data and data[slot].get("target_mode") == "this_chat":
+            data[slot]["target_mode"] = None
+            data[slot]["target_chat_id"] = None
+            data[slot]["active"] = False
+            _save_tabchi(owner_id, data)
+            await edit(f"بنر {slot} از این چت حذف شد.")
+        else:
+            await edit(f"بنر {slot} برای این چت تنظیم نشده بود.")
+
+    elif re.match(r"^حذف بنر (\d+) از همه گروه‌ها$", text):
+        m = re.match(r"^حذف بنر (\d+) از همه گروه‌ها$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot in data and data[slot].get("target_mode") == "all_groups":
+            data[slot]["target_mode"] = None
+            data[slot]["active"] = False
+            _save_tabchi(owner_id, data)
+            await edit(f"بنر {slot} از حالت «همه گروه‌ها» خارج شد.")
+        else:
+            await edit(f"بنر {slot} روی «همه گروه‌ها» تنظیم نشده بود.")
+
+    elif text == "حذف بنرها از همه گروه‌ها":
+        data = _get_tabchi(owner_id)
+        changed = False
+        for slot, b in data.items():
+            if b.get("target_mode") == "all_groups":
+                b["target_mode"] = None
+                b["active"] = False
+                changed = True
+        if changed:
+            _save_tabchi(owner_id, data)
+        await edit("همه‌ی بنرهایی که روی «همه گروه‌ها» بودند غیرفعال شدند.")
+
+    elif re.match(r"^حذف بنر (\d+)$", text):
+        m = re.match(r"^حذف بنر (\d+)$", text)
+        slot = m.group(1)
+        data = _get_tabchi(owner_id)
+        if slot in data:
+            del data[slot]
+            _save_tabchi(owner_id, data)
+            await edit(f"بنر {slot} کاملاً حذف شد.")
+        else:
+            await edit(f"بنر {slot} وجود نداشت.")
+
+    elif re.match(r"^فور بنر (\d+) در (50|100) گروه اخیر$", text):
+        m = re.match(r"^فور بنر (\d+) در (50|100) گروه اخیر$", text)
+        slot, count = m.group(1), int(m.group(2))
+        data = _get_tabchi(owner_id)
+        if slot not in data:
+            await edit(f"اول باید بنر {slot} را با ریپلای ثبت کنی.")
+        else:
+            await edit(f"در حال ارسال فوری بنر {slot} به {count} گروه اخیر...")
+            banner = data[slot]
+            sent = 0
+            n = 0
+            async for dialog in cl.iter_dialogs():
+                if n >= count:
+                    break
+                if not dialog.is_group and not dialog.is_channel:
+                    continue
+                n += 1
+                ok = await _tabchi_deliver(cl, dialog.id, banner)
+                if ok:
+                    sent += 1
+                await asyncio.sleep(1.5)
+            await edit(f"بنر {slot} به {sent} گروه ارسال شد.")
+
+    elif re.match(r"^تایم بنرها (\d+)$", text):
+        m = re.match(r"^تایم بنرها (\d+)$", text)
+        minutes = m.group(1)
+        ss("tabchi_interval", minutes)
+        await edit(f"فاصله‌ی ارسال خودکار بنرها روی {minutes} دقیقه تنظیم شد.")
 
     # ─── پاسخ خودکار به همه (پیام ثابت برای هر پیامی که بیاد) ────────────────
     elif text == "پاسخ خودکار روشن":
@@ -2128,6 +2323,92 @@ def _save_filtered_words(owner_id: int, words: list):
     db.set_setting(owner_id, _FILTER_WORDS_KEY, json.dumps(words))
 
 
+# ─── تبچی: مدیریت بنرها (ثبت با ریپلای، فعال‌سازی، ارسال چرخشی/فوری) ──────────
+_TABCHI_KEY = "tabchi_banners"
+_TABCHI_SLOTS = [str(i) for i in range(1, 11)]  # شماره بنرها از ۱ تا ۱۰
+
+
+def _get_tabchi(owner_id: int) -> dict:
+    raw = db.get_setting(owner_id, _TABCHI_KEY, "")
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def _save_tabchi(owner_id: int, data: dict):
+    db.set_setting(owner_id, _TABCHI_KEY, json.dumps(data))
+
+
+def _tabchi_next_free_slot(data: dict) -> str:
+    for slot in _TABCHI_SLOTS:
+        if slot not in data:
+            return slot
+    return None
+
+
+async def _tabchi_deliver(cl, target_chat_id, banner: dict):
+    """محتوای یک بنر رو (بدون تگ Forwarded from) توی یک چت می‌فرسته."""
+    try:
+        src_msg = await cl.get_messages(banner["chat_id"], ids=banner["msg_id"])
+        if not src_msg:
+            return False
+        if src_msg.media:
+            await cl.send_file(target_chat_id, src_msg.media, caption=src_msg.text or "")
+        elif src_msg.text:
+            await cl.send_message(target_chat_id, src_msg.text)
+        else:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+async def _tabchi_loop(cl, owner_id):
+    """
+    چرخه‌ی پس‌زمینه‌ی ارسال خودکار بنرها: تا وقتی «تبچی روشن» باشه، هر بنرِ
+    فعال رو طبق مقصدش (این چت / همه گروه‌ها) با فاصله‌ی تنظیم‌شده می‌فرسته.
+    """
+    while True:
+        try:
+            if db.get_setting(owner_id, "tabchi_active") != "1":
+                await asyncio.sleep(5)
+                continue
+
+            data = _get_tabchi(owner_id)
+            active_banners = {k: v for k, v in data.items() if v.get("active")}
+            if not active_banners:
+                await asyncio.sleep(10)
+                continue
+
+            for slot, banner in active_banners.items():
+                if db.get_setting(owner_id, "tabchi_active") != "1":
+                    break
+                mode = banner.get("target_mode")
+                if mode == "this_chat" and banner.get("target_chat_id"):
+                    await _tabchi_deliver(cl, banner["target_chat_id"], banner)
+                    await asyncio.sleep(2)
+                elif mode == "all_groups":
+                    try:
+                        async for dialog in cl.iter_dialogs():
+                            if not dialog.is_group and not dialog.is_channel:
+                                continue
+                            if db.get_setting(owner_id, "tabchi_active") != "1":
+                                break
+                            await _tabchi_deliver(cl, dialog.id, banner)
+                            await asyncio.sleep(2)
+                    except Exception:
+                        pass
+
+            interval_min = int(db.get_setting(owner_id, "tabchi_interval", "30") or "30")
+            await asyncio.sleep(max(1, interval_min) * 60)
+        except Exception as e:
+            print(f"خطا در _tabchi_loop: {e}")
+            await asyncio.sleep(15)
+
+
 async def _do_spam(cl, owner_id, chat_id, text, count):
     # delay پیش‌فرض ۱ ثانیه (دو برابر سرعت نسبت به قبل که ۲ بود)
     delay = float(db.get_setting(owner_id, "spam_delay", "1"))
@@ -2789,7 +3070,25 @@ PANEL_CATEGORIES = {
     "tabchi": {
         "title": "تبچی",
         "menu_style": "primary",
-        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+        "toggles": [
+            ("tabchi_active", "تبچی", "تبچی روشن", "تبچی خاموش"),
+        ],
+        "actions": [
+            ("راهنمای دستورات تبچی", "INFO::"
+             "ثبت بنر با ریپلای  (یا: تنظیم بنر N با ریپلای)\n"
+             "تنظیم بنر N در این چت\n"
+             "تنظیم بنر N در همه گروه‌ها\n"
+             "فعال کردن بنر N  /  غیرفعال کردن بنر N\n"
+             "لیست بنرها\n"
+             "پاکسازی لیست بنر  /  پاکسازی بنر در این چت\n"
+             "حذف بنر N  /  حذف بنر N در این چت  /  حذف بنر N از همه گروه‌ها\n"
+             "حذف بنرها از همه گروه‌ها\n"
+             "فور بنر N در 50 گروه اخیر  /  فور بنر N در 100 گروه اخیر\n"
+             "تایم بنرها N   (فاصله‌ی ارسال خودکار به دقیقه)"
+             ),
+            ("لیست بنرها", "لیست بنرها"),
+            ("پاکسازی لیست بنر", "پاکسازی لیست بنر"),
+        ],
     },
     "profile_snoop": {
         "title": "فضول پروفایل",
