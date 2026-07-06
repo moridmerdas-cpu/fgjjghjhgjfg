@@ -31,6 +31,9 @@ services:
       # ─── Upstash Redis ──────────────────────────────────────────────────────
       - key: UPSTASH_REDIS_URL
         sync: false
+      # ─── DeepSeek (دستیار هوش مصنوعی) ────────────────────────────────────────
+      - key: DEEPSEEK_API_KEY
+        sync: false
         services:
   - type: web
     name: amel-self55

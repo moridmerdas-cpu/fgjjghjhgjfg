@@ -52,6 +52,7 @@ AI_REPLY_COOLDOWN = 60  # حداقل فاصله بین دو پاسخ هوش مص
 
 # ─── نگهبان چت: کش موقتِ متنِ پیام‌ها برای تشخیصِ حذف/ویرایش ──────────────────
 _msg_cache = {}  # {(chat_id, msg_id): text}
+_msg_sender_cache = {}  # {(chat_id, msg_id): sender display name}
 _MSG_CACHE_MAX = 2000
 
 # ─── پاسخ خودکار ثابت به همه‌ی پیام‌ها ─────────────────────────────────────────
@@ -410,13 +411,17 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         sender_id = getattr(sender, "id", 0)
         chat_id = getattr(chat, "id", 0)
         text = msg.text or ""
+        is_bot_sender = bool(getattr(sender, "bot", False))
 
         # نگهبان چت: کش کردن متن پیام برای تشخیص بعدیِ حذف/ویرایش
         if sender_id != owner_id:
+            who_name = getattr(sender, "first_name", None) or getattr(sender, "username", None) or str(sender_id)
             _msg_cache[(chat_id, msg.id)] = text
+            _msg_sender_cache[(chat_id, msg.id)] = who_name
             if len(_msg_cache) > _MSG_CACHE_MAX:
                 for k in list(_msg_cache.keys())[:200]:
                     _msg_cache.pop(k, None)
+                    _msg_sender_cache.pop(k, None)
 
         # ✅ سکوت: اگه فرستنده توی لیست سکوت باشه و پیوی باشه، پیام دوطرفه پاک می‌شه
         if event.is_private and sender_id and _is_silence_user(owner_id, sender_id):
@@ -492,8 +497,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-        # ✅ جوین اجباری (فقط پیوی)
-        if event.is_private and db.get_setting(owner_id, "force_join_active") == "1":
+        # ✅ جوین اجباری (فقط پیوی) — با بات‌ها کاری نداشته باش
+        if event.is_private and not is_bot_sender and db.get_setting(owner_id, "force_join_active") == "1":
             channel_id = db.get_setting(owner_id, "force_join_channel", "")
             if channel_id:
                 is_member = False
@@ -544,8 +549,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         pass
                     return
 
-        # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت)
-        if db.get_setting(owner_id, "secretary_active") == "1" and event.is_private:
+        # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت) — با بات‌ها کاری نداشته باش
+        if db.get_setting(owner_id, "secretary_active") == "1" and event.is_private and not is_bot_sender:
             now = time.time()
             last_reply = _last_secretary_reply.get(chat_id, 0)
             
@@ -563,6 +568,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             db.get_setting(owner_id, "ai_assistant_active") == "1"
             and event.is_private
             and sender_id != owner_id
+            and not is_bot_sender
         ):
             always_mode = db.get_setting(owner_id, "ai_reply_always_active") == "1"
             last_active = _last_outgoing_activity.get(owner_id, 0)
@@ -581,8 +587,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         print(f"خطا در پاسخ هوش مصنوعی: {e}")
 
 
-        # ✅ ری‌اکشن خودکار
-        if db.get_setting(owner_id, "auto_reaction_active") == "1":
+        # ✅ ری‌اکشن خودکار — با بات‌ها کاری نداشته باش
+        if not is_bot_sender and db.get_setting(owner_id, "auto_reaction_active") == "1":
             emoji = db.get_setting(owner_id, "auto_reaction_emoji", "❤️")
             try:
                 from telethon.tl.functions.messages import SendReactionRequest
@@ -597,9 +603,9 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception as e:
                 print(f"⚠️ خطا در ری‌اکشن: {e}")
 
-        # ✅ ری‌اکشن اختصاصی برای یک کاربر خاص
+        # ✅ ری‌اکشن اختصاصی برای یک کاربر خاص — با بات‌ها کاری نداشته باش
         react_map = _get_react_map(owner_id)
-        if str(sender_id) in react_map:
+        if not is_bot_sender and str(sender_id) in react_map:
             try:
                 from telethon.tl.functions.messages import SendReactionRequest
                 from telethon.tl.types import ReactionEmoji
@@ -613,8 +619,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-        # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت)
-        if event.is_private and db.is_friend(owner_id, sender_id):
+        # ✅ پاسخ خودکار محبت‌آمیز به دوستان (فقط در پیوی - با محدودیت 1 ساعت) — با بات‌ها کاری نداشته باش
+        if event.is_private and not is_bot_sender and db.is_friend(owner_id, sender_id):
             now = time.time()
             last_reply = _last_friend_reply.get(sender_id, 0)
             
@@ -625,8 +631,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 except Exception:
                     pass
 
-        # پاسخ به دشمن
-        if db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
+        # پاسخ به دشمن — با بات‌ها کاری نداشته باش
+        if not is_bot_sender and db.get_setting(owner_id, "enemy_reply_active") == "1" and db.is_enemy(owner_id, sender_id):
             try:
                 await event.reply(random.choice(ENEMY_REPLIES))
             except Exception:
@@ -709,8 +715,31 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 except Exception:
                     pass
 
-        # پاسخ خودکار ثابت به همه‌ی پیام‌ها (با کول‌داون مستقل از منشی/هوش‌مصنوعی)
-        if db.get_setting(owner_id, "auto_reply_active") == "1" and sender_id != owner_id and text.strip():
+        # پاسخ کلیدی: اگه توی متن پیام یکی از کلمه‌های تنظیم‌شده باشه، پاسخ اختصاصی
+        # همون کلمه ارسال میشه (مستقل از پاسخ ثابت پایین) — با بات‌ها کاری نداشته باش
+        if event.is_private and sender_id != owner_id and not is_bot_sender and text.strip():
+            keyword_rules = _get_keyword_replies(owner_id)
+            if keyword_rules:
+                matched_reply = None
+                lower_text = text.lower()
+                for rule in keyword_rules:
+                    kw = rule.get("keyword", "")
+                    if kw and kw.lower() in lower_text:
+                        matched_reply = rule.get("reply")
+                        break
+                if matched_reply:
+                    now = time.time()
+                    last = _last_auto_reply.get(chat_id, 0)
+                    if now - last >= AUTO_REPLY_COOLDOWN:
+                        try:
+                            await event.reply(matched_reply)
+                            _last_auto_reply[chat_id] = now
+                        except Exception:
+                            pass
+                    return
+
+        # پاسخ خودکار ثابت به همه‌ی پیام‌ها (با کول‌داون مستقل از منشی/هوش‌مصنوعی) — با بات‌ها کاری نداشته باش
+        if db.get_setting(owner_id, "auto_reply_active") == "1" and sender_id != owner_id and not is_bot_sender and text.strip():
             now = time.time()
             last = _last_auto_reply.get(chat_id, 0)
             if now - last >= AUTO_REPLY_COOLDOWN:
@@ -733,12 +762,27 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             old_text = _msg_cache.get(key)
             new_text = event.raw_text
             if old_text is not None and old_text != new_text:
-                sender = await event.get_sender()
-                who = getattr(sender, "first_name", None) or getattr(sender, "username", None) or event.sender_id
-                await cl.send_message(
-                    "me",
-                    f"پیام ویرایش شد — از طرف {who}\nقبل: {old_text}\nبعد: {new_text}"
-                )
+                who = _msg_sender_cache.get(key)
+                if not who:
+                    sender = await event.get_sender()
+                    who = getattr(sender, "first_name", None) or getattr(sender, "username", None) or event.sender_id
+                try:
+                    from telethon.tl.types import MessageEntityBlockquote
+                    header = f"پیام ویرایش شده\nاز طرف: {who}\nپیام قبلی\n"
+                    mid = f"\n\nپیام جدید\n"
+                    full = header + old_text + mid + new_text
+                    old_start = len(header)
+                    new_start = len(header) + len(old_text) + len(mid)
+                    await cl.send_message(
+                        "me", full,
+                        formatting_entities=[
+                            MessageEntityBlockquote(old_start, len(old_text), collapsed=False),
+                            MessageEntityBlockquote(new_start, len(new_text), collapsed=False),
+                        ]
+                    )
+                except Exception:
+                    pass
+                _msg_sender_cache[key] = who
             _msg_cache[key] = new_text
         except Exception:
             pass
@@ -754,8 +798,17 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 key = (chat_id_del, msg_id)
                 cached = _msg_cache.pop(key, None)
                 if cached:
+                    who = _msg_sender_cache.pop(key, None) or "نامشخص"
                     try:
-                        await cl.send_message("me", f"پیام حذف شد:\n{cached}")
+                        from telethon.tl.types import MessageEntityBlockquote
+                        header = f"پیام حذف شده\nاز طرف: {who}\nپیام قبلی\n"
+                        body = cached
+                        full = header + body
+                        entity_start = len(header)
+                        await cl.send_message(
+                            "me", full,
+                            formatting_entities=[MessageEntityBlockquote(entity_start, len(body), collapsed=False)]
+                        )
                     except Exception:
                         pass
         except Exception:
@@ -781,16 +834,12 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             await _safe_edit(event, owner_id, "❌ سلف‌بات خاموش شد.")
             return
 
-        # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن
+        # اگه پلن منقضی شده، فقط دستور وضعیت رو اجرا کن — بدون دست‌کاری بقیه‌ی پیام‌های خروجی
         if entry.get("paused"):
             if text in ("وضعیت", "راهنما", "help"):
                 pass  # اجازه بده ادامه پیدا کنه
             else:
-                await _safe_edit(event, owner_id,
-                    "⛔ اشتراک شما منقضی شده است.\n"
-                    "برای تمدید پلن با ادمین در تماس باشید.\n"
-                    "بعد از تمدید، سلف تا ۵ دقیقه دیگر خودکار فعال می‌شود."
-                )
+                # پیام معمولیه (نه دستور سلف) → اصلاً دست نمی‌زنیم، ادیت نمی‌کنیم
                 return
 
         # لیست دستورات تنظیماتی که همیشه فعال هستند
@@ -967,6 +1016,25 @@ _EXTRA_TOGGLE_COMMANDS = {
     "حالت تک‌فاصله خاموش": ("text_style_single_space_active", "0"),
 }
 
+# ─── گروه‌هایی که باید «انحصاری» (رادیویی) رفتار کنن: با روشن شدن یکی، بقیه
+# همون گروه خاموش می‌شن ──────────────────────────────────────────────────────
+_TEXT_STYLE_GROUP = [
+    "text_style_bold_active", "text_style_italic_active", "text_style_quote_active",
+    "text_style_underline_active", "text_style_spoiler_active", "text_style_strike_active",
+    "text_style_gradual_active", "text_style_single_space_active",
+]
+_ACTION_GROUP = [
+    "typing_action_active", "gaming_action_active",
+    "voice_action_active", "video_action_active",
+]
+
+
+def _enforce_exclusive_group(owner_id: int, group: list, active_key: str):
+    """توی یک گروه انحصاری، فقط active_key روشن می‌مونه و بقیه خاموش می‌شن."""
+    for k in group:
+        if k != active_key:
+            db.set_setting(owner_id, k, "0")
+
 
 async def _handle_command(cl, event, text, owner_id, entry):
     msg = event.message
@@ -1021,6 +1089,8 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text in _EXTRA_TOGGLE_COMMANDS:
         key, val = _EXTRA_TOGGLE_COMMANDS[text]
         ss(key, val)
+        if val == "1" and key in _TEXT_STYLE_GROUP:
+            _enforce_exclusive_group(owner_id, _TEXT_STYLE_GROUP, key)
         label = text.rsplit(" ", 1)[0]
         state = "روشن" if val == "1" else "خاموش"
         await edit(f"{label} {state} شد.")
@@ -1071,12 +1141,13 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 await edit(f"نمی‌توانم این پیام را حذف کنم: {e}")
 
     # ─── تگ (منشن همه اعضای گروه) ────────────────────────────────────────────
-    elif text.startswith("تگ"):
+    elif text.startswith("تگ") and text != "لغو تگ":
         if event.is_private:
             await edit("این دستور فقط توی گروه کار می‌کند.")
         else:
             msg_part = text[len("تگ"):].strip() or "."
-            await edit("در حال تگ کردن اعضا...")
+            entry["cancel_tag"] = False
+            await edit("در حال تگ کردن اعضا... (برای توقف: لغو تگ)")
             mentions = []
             try:
                 async for user in cl.iter_participants(event.chat_id):
@@ -1087,7 +1158,11 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 await edit(f"خطا در دریافت اعضا: {e}")
                 mentions = []
             chunk = []
+            cancelled = False
             for user in mentions:
+                if entry.get("cancel_tag"):
+                    cancelled = True
+                    break
                 chunk.append(user)
                 if len(chunk) == 5:
                     text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
@@ -1097,16 +1172,26 @@ async def _handle_command(cl, event, text, owner_id, entry):
                         pass
                     chunk = []
                     await asyncio.sleep(1)
-            if chunk:
+            if chunk and not entry.get("cancel_tag"):
                 text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
                 try:
                     await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
                 except Exception:
                     pass
+            if cancelled or entry.get("cancel_tag"):
+                try:
+                    await cl.send_message(event.chat_id, "⛔ تگ متوقف شد.")
+                except Exception:
+                    pass
+            entry["cancel_tag"] = False
             try:
                 await event.delete()
             except Exception:
                 pass
+
+    elif text == "لغو تگ":
+        entry["cancel_tag"] = True
+        await edit("درخواست توقف تگ ثبت شد.")
 
     # ─── لوگو (ارسال بنر تزئینی سلف) ─────────────────────────────────────────
     elif text == "لوگو":
@@ -1369,6 +1454,48 @@ async def _handle_command(cl, event, text, owner_id, entry):
             ss("auto_reply_message", msg)
             await edit("متن پاسخ خودکار ذخیره شد.")
 
+    # ─── پاسخ کلیدی (اگه توی پیام یه کلمه‌ی خاص بود، پاسخ اختصاصی همون بره) ──
+    elif text.startswith("پاسخ کلیدی "):
+        body = text[len("پاسخ کلیدی "):].strip()
+        if "=" not in body:
+            await edit("فرمت درست: پاسخ کلیدی [کلمه] = [پاسخ]\nمثال: پاسخ کلیدی قیمت = قیمت‌ها توی کانال هست.")
+        else:
+            keyword, reply_text = body.split("=", 1)
+            keyword = keyword.strip()
+            reply_text = reply_text.strip()
+            if not keyword or not reply_text:
+                await edit("فرمت درست: پاسخ کلیدی [کلمه] = [پاسخ]")
+            else:
+                rules = _get_keyword_replies(owner_id)
+                rules = [r for r in rules if r["keyword"].lower() != keyword.lower()]
+                rules.append({"keyword": keyword, "reply": reply_text})
+                _save_keyword_replies(owner_id, rules)
+                await edit(f"✅ پاسخ کلیدی ثبت شد.\nکلمه: {keyword}\nپاسخ: {reply_text}")
+
+    elif text.startswith("حذف پاسخ کلیدی "):
+        keyword = text[len("حذف پاسخ کلیدی "):].strip()
+        rules = _get_keyword_replies(owner_id)
+        new_rules = [r for r in rules if r["keyword"].lower() != keyword.lower()]
+        if len(new_rules) == len(rules):
+            await edit(f"کلمه‌ی «{keyword}» توی لیست پاسخ‌های کلیدی نبود.")
+        else:
+            _save_keyword_replies(owner_id, new_rules)
+            await edit(f"❌ پاسخ کلیدی «{keyword}» حذف شد.")
+
+    elif text == "لیست پاسخ کلیدی":
+        rules = _get_keyword_replies(owner_id)
+        if not rules:
+            await edit("هنوز هیچ پاسخ کلیدی‌ای ثبت نشده.")
+        else:
+            lines = [f"📋 پاسخ‌های کلیدی ({len(rules)} مورد):\n"]
+            for r in rules:
+                lines.append(f"• {r['keyword']} ← {r['reply']}")
+            await edit("\n".join(lines))
+
+    elif text == "پاک کردن پاسخ کلیدی":
+        _save_keyword_replies(owner_id, [])
+        await edit("همه‌ی پاسخ‌های کلیدی پاک شدند.")
+
     # ─── نگهبان چت (ذخیره پیام حذف‌شده/ویرایش‌شده/عکس تایمی) ─────────────────
     elif text == "ذخیره پیام حذف‌شده روشن":
         ss("guard_delete_active", "1")
@@ -1429,6 +1556,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     elif text == "تایپینگ روشن":
         ss("typing_action_active", "1")
+        _enforce_exclusive_group(owner_id, _ACTION_GROUP, "typing_action_active")
         await edit("اکشن تایپینگ ۲۴ ساعته روشن شد.")
     elif text == "تایپینگ خاموش":
         ss("typing_action_active", "0")
@@ -1436,6 +1564,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     elif text == "گیمینگ روشن":
         ss("gaming_action_active", "1")
+        _enforce_exclusive_group(owner_id, _ACTION_GROUP, "gaming_action_active")
         await edit("اکشن گیمینگ ۲۴ ساعته روشن شد.")
     elif text == "گیمینگ خاموش":
         ss("gaming_action_active", "0")
@@ -1443,6 +1572,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     elif text == "ویس روشن":
         ss("voice_action_active", "1")
+        _enforce_exclusive_group(owner_id, _ACTION_GROUP, "voice_action_active")
         await edit("اکشن ویس ۲۴ ساعته روشن شد.")
     elif text == "ویس خاموش":
         ss("voice_action_active", "0")
@@ -1450,6 +1580,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     elif text == "ارسال ویدیو روشن":
         ss("video_action_active", "1")
+        _enforce_exclusive_group(owner_id, _ACTION_GROUP, "video_action_active")
         await edit("اکشن ارسال ویدیو ۲۴ ساعته روشن شد.")
     elif text == "ارسال ویدیو خاموش":
         ss("video_action_active", "0")
@@ -1464,14 +1595,20 @@ async def _handle_command(cl, event, text, owner_id, entry):
             from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
             blocked = _get_block_list(owner_id)
             try:
+                # برای این‌که BlockRequest/UnblockRequest حتی روی آیدی‌های عددیِ
+                # کش‌نشده هم کار کنه، اول entity واقعی رو از تلگرام می‌گیریم
+                try:
+                    entity = await cl.get_entity(target["id"])
+                except Exception:
+                    entity = target["id"]
                 if text == "بلاک کاربر":
-                    await cl(BlockRequest(id=target["id"]))
+                    await cl(BlockRequest(id=entity))
                     if not any(u["id"] == target["id"] for u in blocked):
                         blocked.append(target)
                         _save_block_list(owner_id, blocked)
                     await edit(f"کاربر {target.get('name') or target['id']} بلاک شد.")
                 else:
-                    await cl(UnblockRequest(id=target["id"]))
+                    await cl(UnblockRequest(id=entity))
                     blocked = [u for u in blocked if u["id"] != target["id"]]
                     _save_block_list(owner_id, blocked)
                     await edit(f"کاربر {target.get('name') or target['id']} آنبلاک شد.")
@@ -1492,7 +1629,11 @@ async def _handle_command(cl, event, text, owner_id, entry):
         from telethon.tl.functions.contacts import UnblockRequest
         for u in _get_block_list(owner_id):
             try:
-                await cl(UnblockRequest(id=u["id"]))
+                try:
+                    entity = await cl.get_entity(u["id"])
+                except Exception:
+                    entity = u["id"]
+                await cl(UnblockRequest(id=entity))
             except Exception:
                 pass
         _save_block_list(owner_id, [])
@@ -2305,6 +2446,24 @@ def _save_react_map(owner_id: int, mapping: dict):
     db.set_setting(owner_id, _REACT_MAP_KEY, json.dumps(mapping))
 
 
+# ─── پاسخ کلیدی: لیستی از {کلمه ← پاسخ} که با پیدا شدن کلمه توی پیام فعال میشه ──
+_KEYWORD_REPLY_KEY = "keyword_replies"
+
+
+def _get_keyword_replies(owner_id: int) -> list:
+    raw = db.get_setting(owner_id, _KEYWORD_REPLY_KEY, "")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+def _save_keyword_replies(owner_id: int, rules: list):
+    db.set_setting(owner_id, _KEYWORD_REPLY_KEY, json.dumps(rules))
+
+
 # ─── فیلتر کلمات: لیست کلماتی که پیام حاوی‌شون در پیوی حذف می‌شه ───────────────
 _FILTER_WORDS_KEY = "filtered_words"
 
@@ -2959,6 +3118,10 @@ PANEL_CATEGORIES = {
         ],
         "actions": [
             ("تنظیم متن پاسخ", "INFO::برای تنظیم متن تایپ کن: متن پاسخ خودکار [متن دلخواه]"),
+            ("افزودن پاسخ کلیدی", "INFO::برای ثبت تایپ کن: پاسخ کلیدی [کلمه] = [پاسخ]\nمثال: پاسخ کلیدی قیمت = قیمت‌ها توی کانال هست."),
+            ("حذف پاسخ کلیدی", "INFO::برای حذف تایپ کن: حذف پاسخ کلیدی [کلمه]"),
+            ("لیست پاسخ کلیدی", "لیست پاسخ کلیدی"),
+            ("پاک کردن همه‌ی پاسخ کلیدی", "پاک کردن پاسخ کلیدی"),
         ],
     },
     "forced_join": {
@@ -3312,7 +3475,7 @@ async def _typing_loop(cl, owner_id):
         ("typing_action_active", "typing"),
         ("gaming_action_active", "game"),
         ("voice_action_active", "record-audio"),
-        ("video_action_active", "upload-video"),
+        ("video_action_active", "video"),
     ]
     while True:
         try:
@@ -3326,9 +3489,9 @@ async def _typing_loop(cl, owner_id):
                             if db.get_setting(owner_id, key) != "1":
                                 continue
                             try:
-                                await cl.send_chat_action(dialog.id, action)
-                            except Exception:
-                                pass
+                                await cl.send_chat_action(dialog.entity, action)
+                            except Exception as e:
+                                print(f"⚠️ خطا در ارسال اکشن ({action}) به {dialog.id}: {e}")
                             await asyncio.sleep(1)
                 except Exception as e:
                     print(f"خطا در اکشن‌های ۲۴ ساعته: {e}")
