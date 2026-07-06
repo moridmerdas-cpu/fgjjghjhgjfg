@@ -76,7 +76,7 @@ CACHE_TTL = 60
 # ─── سیستم جام جهانی ──────────────────────────────────────────────────────────
 FOOTBALL_API_KEY   = os.environ.get("FOOTBALL_API_KEY", "")   # کلید API از football-data.org
 WC_CHANNEL_ID      = os.environ.get("WC_CHANNEL_ID", "")      # آیدی کانال (مثال: @mychannel یا -1001234567)
-WC_MIN_BET         = int(os.environ.get("WC_MIN_BET", "10"))  # حداقل مبلغ شرط
-WC_MAX_BET         = int(os.environ.get("WC_MAX_BET", "5000")) # حداکثر مبلغ شرط
+WC_MIN_BET         = int(os.environ.get("WC_MIN_BET", "5"))  # حداقل مبلغ شرط
+WC_MAX_BET         = int(os.environ.get("WC_MAX_BET", "9999999")) # حداکثر مبلغ شرط
 WC_POLL_INTERVAL   = int(os.environ.get("WC_POLL_INTERVAL", "600"))  # هر چند ثانیه چک شود (پیش‌فرض: 10 دقیقه)
 WC_COMPETITION     = os.environ.get("WC_COMPETITION", "WC")   # کد مسابقه (WC = FIFA World Cup)
