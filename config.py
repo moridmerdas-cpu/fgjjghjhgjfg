@@ -17,8 +17,8 @@ PORT = int(os.environ.get("PORT", 5000))
 SITE_URL = os.environ.get("SITE_URL", "")
 
 # ─── مالک ──────────────────────────────────────────────────────────────────
-OWNER_TG_ID = int(os.environ.get("OWNER_TG_ID", "8296865861"))
-OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "amele55")
+OWNER_TG_ID = int(os.environ.get("OWNER_TG_ID", "8540004957"))
+OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "n_boy55")
 OWNER_PHONE = os.environ.get("OWNER_PHONE", "").lstrip("+")
 
 # ─── دیتابیس پایدار (Supabase PostgreSQL) ──────────────────────────────────
