@@ -524,29 +524,38 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         await msg.delete()
                     except Exception:
                         pass
-                    # پیام هشدار با دکمه رنگی جوین
                     join_msg = db.get_setting(owner_id, "force_join_message",
                         "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
+                    # پیام هشدار با دکمه‌ی لینک کانال — چون اکانتِ سلف یک اکانتِ
+                    # عادیِ کاربره (نه بات)، نمی‌تونه خودش دکمه‌ی اینلاین بفرسته؛
+                    # پس از طریق inline mode بات کمکی (helper_bot) پیام آماده با
+                    # دکمه رو می‌سازیم و فقط کلیکش می‌کنیم تا توی پیوی هدف بره.
+                    sent_via_helper = False
                     try:
-                        # ساخت دکمه لینک کانال
-                        channel_link = db.get_setting(owner_id, "force_join_link", "")
-                        from telethon.tl.types import (
-                            ReplyInlineMarkup, KeyboardButtonUrl, KeyboardButtonRow
-                        )
-                        if channel_link:
-                            buttons = ReplyInlineMarkup(rows=[
-                                KeyboardButtonRow(buttons=[
-                                    KeyboardButtonUrl(
-                                        text="📢 عضویت در کانال ✅",
-                                        url=channel_link
-                                    )
-                                ])
-                            ])
-                            await cl.send_message(sender_id, join_msg, buttons=buttons)
-                        else:
-                            await cl.send_message(sender_id, join_msg)
+                        if config.HELPER_BOT_TOKEN:
+                            from helper_bot import get_helper_client
+                            helper = get_helper_client()
+                            if helper:
+                                huname = None
+                                try:
+                                    hme = await helper.get_me()
+                                    huname = hme.username
+                                except Exception:
+                                    huname = None
+                                if huname:
+                                    fj_results = await cl.inline_query(huname, "forcejoin")
+                                    if fj_results:
+                                        await fj_results[0].click(sender_id)
+                                        sent_via_helper = True
                     except Exception:
-                        pass
+                        sent_via_helper = False
+
+                    if not sent_via_helper:
+                        # fallback: اگه بات کمکی در دسترس نبود، حداقل متن ساده بفرست
+                        try:
+                            await cl.send_message(sender_id, join_msg)
+                        except Exception:
+                            pass
                     return
 
         # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت) — با بات‌ها کاری نداشته باش
@@ -717,7 +726,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         # پاسخ کلیدی: اگه توی متن پیام یکی از کلمه‌های تنظیم‌شده باشه، پاسخ اختصاصی
         # همون کلمه ارسال میشه (مستقل از پاسخ ثابت پایین) — با بات‌ها کاری نداشته باش
-        if event.is_private and sender_id != owner_id and not is_bot_sender and text.strip():
+        if event.is_private and sender_id != owner_id and not is_bot_sender and text.strip() and db.get_setting(owner_id, "auto_reply_active") == "1":
             keyword_rules = _get_keyword_replies(owner_id)
             if keyword_rules:
                 matched_reply = None
@@ -738,17 +747,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                             pass
                     return
 
-        # پاسخ خودکار ثابت به همه‌ی پیام‌ها (با کول‌داون مستقل از منشی/هوش‌مصنوعی) — با بات‌ها کاری نداشته باش
-        if db.get_setting(owner_id, "auto_reply_active") == "1" and sender_id != owner_id and not is_bot_sender and text.strip():
-            now = time.time()
-            last = _last_auto_reply.get(chat_id, 0)
-            if now - last >= AUTO_REPLY_COOLDOWN:
-                msg_text = db.get_setting(owner_id, "auto_reply_message", "در حال حاضر در دسترس نیستم.")
-                try:
-                    await event.reply(msg_text)
-                    _last_auto_reply[chat_id] = now
-                except Exception:
-                    pass
+        # پاسخ خودکار: فقط وقتی حداقل یه «پاسخ کلیدی» تنظیم شده باشه و توی پیام
+        # پیدا بشه جواب میده — اگه هیچ کلمه‌ای تنظیم نشده باشه، کاری انجام نمیده.
 
     @cl.on(events.MessageEdited())
     async def on_edited(event):
@@ -904,8 +904,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
     async def dice(event):
         if entry.get("paused"):
             return
@@ -914,8 +914,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 6  # پیش‌فرض بهترین نتیجه (۶)
         await send_dice(event, "🎲", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.دارت(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.دارت(?:\s+(\d))?$"))
     async def dart(event):
         if entry.get("paused"):
             return
@@ -924,8 +924,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 6  # ۶ = وسط دقیقِ دارت (بولزآی)
         await send_dice(event, "🎯", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.فوتبال(?:\s+(\d))?$"))
     async def football(event):
         if entry.get("paused"):
             return
@@ -934,8 +934,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 5  # ۳،۴،۵ = گل؛ ۵ تمیزترین حالت
         await send_dice(event, "⚽", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.بسکتبال(?:\s+(\d))?$"))
     async def basketball(event):
         if entry.get("paused"):
             return
@@ -954,8 +954,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         "هفت": 3, "سون": 3, "جکپات": 3,
     }
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.کازینو(?:\s+(.+))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.کازینو(?:\s+(.+))?$"))
     async def casino(event):
         if entry.get("paused"):
             return
@@ -1452,15 +1452,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "پاسخ خودکار خاموش":
         ss("auto_reply_active", "0")
         await edit("پاسخ خودکار خاموش شد.")
-    elif text.startswith("متن پاسخ خودکار "):
-        msg = text[len("متن پاسخ خودکار "):].strip()
-        if not msg:
-            await edit("فرمت: متن پاسخ خودکار [متن دلخواه]")
-        else:
-            ss("auto_reply_message", msg)
-            await edit("متن پاسخ خودکار ذخیره شد.")
-
-    # ─── پاسخ کلیدی (اگه توی پیام یه کلمه‌ی خاص بود، پاسخ اختصاصی همون بره) ──
     elif text.startswith("پاسخ کلیدی "):
         body = text[len("پاسخ کلیدی "):].strip()
         if "=" not in body:
@@ -2984,9 +2975,9 @@ def _help_text():
             "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
-        ("🎲 تاس", [
-            "تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
-            "roll [1-6]  ← همان دستور به انگلیسی",
+        ("🎲 تاس (تقلب — حتماً با نقطه)", [
+            ".تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
+            ".roll [1-6]  ← همان دستور به انگلیسی",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -3123,7 +3114,6 @@ PANEL_CATEGORIES = {
             ("auto_reply_active", "پاسخ خودکار", "پاسخ خودکار روشن", "پاسخ خودکار خاموش"),
         ],
         "actions": [
-            ("تنظیم متن پاسخ", "INFO::برای تنظیم متن تایپ کن: متن پاسخ خودکار [متن دلخواه]"),
             ("افزودن پاسخ کلیدی", "INFO::برای ثبت تایپ کن: پاسخ کلیدی [کلمه] = [پاسخ]\nمثال: پاسخ کلیدی قیمت = قیمت‌ها توی کانال هست."),
             ("حذف پاسخ کلیدی", "INFO::برای حذف تایپ کن: حذف پاسخ کلیدی [کلمه]"),
             ("لیست پاسخ کلیدی", "لیست پاسخ کلیدی"),
@@ -3209,11 +3199,12 @@ PANEL_CATEGORIES = {
         "menu_style": "success",
         "direct_command": (
             "INFO::تقلب تاس/دارت/فوتبال/بسکتبال/کازینو — همیشه بهترین نتیجه می‌گیری:\n"
-            "تاس یا تاس 6\n"
-            "دارت یا دارت 6\n"
-            "فوتبال یا فوتبال 5\n"
-            "بسکتبال یا بسکتبال 5\n"
-            "کازینو انگور  (یا: کازینو میله/لیمو/هفت)"
+            "⚠️ حتماً باید اول یه نقطه (.) بذاری، وگرنه اجرا نمیشه.\n"
+            ".تاس یا .تاس 6\n"
+            ".دارت یا .دارت 6\n"
+            ".فوتبال یا .فوتبال 5\n"
+            ".بسکتبال یا .بسکتبال 5\n"
+            ".کازینو انگور  (یا: .کازینو میله/لیمو/هفت)"
         ),
     },
     "calculator": {

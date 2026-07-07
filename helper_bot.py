@@ -37,7 +37,7 @@ DENIED_TEXT = "این پنل مخصوص کسی است که آن را باز کر
 
 # ─── بستن خودکار پنل بعد از بیکار موندن ──────────────────────────────────────
 PANEL_IDLE_SECONDS = 180  # ۳ دقیقه
-IDLE_CLOSED_TEXT = "⏰ این پنل به‌خاطر ۳ دقیقه بیکار موندن بسته شد.\nبرای باز کردن دوباره، توی سلف بنویس: پنل"
+IDLE_CLOSED_TEXT = "پنل بعد از ۳ دقیقه بیکار موندن بسته شد."
 _panel_timers = {}  # {(chat_id, message_id): asyncio.Task}
 _schedule_panel_timeout_impl = None  # موقع start_helper_bot ست میشه
 
@@ -100,7 +100,7 @@ async def start_helper_bot():
         try:
             await asyncio.sleep(PANEL_IDLE_SECONDS)
             try:
-                await cl.edit_message(chat_id, message_id, IDLE_CLOSED_TEXT, buttons=None)
+                await cl.edit_message(chat_id, message_id, IDLE_CLOSED_TEXT, buttons=[])
             except Exception:
                 try:
                     await cl.delete_messages(chat_id, message_id)
@@ -176,6 +176,28 @@ async def start_helper_bot():
             return
 
         owner_tg_id = event.query.user_id  # همون کسی که inline query زده = صاحب پنل
+
+        # ─── پیام «جوین اجباری پیوی» با دکمه‌ی لینک کانال ──────────────────────
+        # سلف با فرستادن این کوئری اینلاین (به‌جای send_message مستقیم که دکمه
+        # نداره چون اکانتِ کاربر عادیه نه بات)، از خودِ بات کمکی می‌خواد پیام
+        # آماده با دکمه بسازه؛ بعد سلف فقط نتیجه رو توی پیوی هدف کلیک می‌کنه.
+        if event.query.text.startswith("forcejoin"):
+            import database as _db
+            join_msg = _db.get_setting(owner_id, "force_join_message",
+                "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
+            channel_link = _db.get_setting(owner_id, "force_join_link", "")
+            fj_buttons = None
+            if channel_link:
+                fj_buttons = [[Button.url("📢 عضویت در کانال ✅", channel_link)]]
+            result = event.builder.article(
+                title="پیام جوین اجباری",
+                description="ارسال پیام جوین اجباری با دکمه‌ی کانال",
+                text=join_msg,
+                buttons=fj_buttons,
+            )
+            await event.answer([result], cache_time=0)
+            return
+
         buttons = _menu_buttons(owner_tg_id)
 
         # ─── ساخت متن مشخصات (اسم + آیدی عددی + یوزرنیم) از روی خودِ سلف ───
