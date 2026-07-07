@@ -19,6 +19,7 @@ from bot import bot_manager
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+app.config["PERMANENT_SESSION_LIFETIME"] = 180  # ۳ دقیقه بی‌کاری → لاگ‌اوت خودکار
 
 
 @app.errorhandler(500)
@@ -135,6 +136,7 @@ def api_register():
                 return jsonify({"ok": False, "error": "این یوزرنیم قبلاً ثبت شده"}), 409
             return jsonify({"ok": False, "error": "خطا در ایجاد حساب — لطفاً مجدداً تلاش کنید"}), 500
         db.init_user_settings(new_id)
+        session.permanent = True
         session["owner_id"] = new_id
         return jsonify({"ok": True})
     except Exception as e:

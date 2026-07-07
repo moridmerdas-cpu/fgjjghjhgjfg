@@ -140,7 +140,8 @@ def remove_forced_channel(username: str) -> bool:
     return c.rowcount > 0
 
 def check_user_membership(bot, user_id: int) -> tuple:
-    channels = get_forced_channels()
+    from database_supabase import get_forced_channels as _supa_get_forced_channels
+    channels = _supa_get_forced_channels()
     if not channels:
         return True, []
     missing = []

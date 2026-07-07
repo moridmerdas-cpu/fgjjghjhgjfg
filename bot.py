@@ -1079,7 +1079,13 @@ async def _handle_command(cl, event, text, owner_id, entry):
         try:
             results = await cl.inline_query(uname, "پنل")
             if results:
-                await results[0].click(event.chat_id)
+                sent = await results[0].click(event.chat_id)
+                if sent is not None:
+                    try:
+                        from helper_bot import schedule_panel_timeout
+                        schedule_panel_timeout(sent.chat_id, sent.id)
+                    except Exception:
+                        pass
             else:
                 await cl.send_message(event.chat_id, "❗ نتیجه‌ای از بات کمکی دریافت نشد.")
         except Exception as e:

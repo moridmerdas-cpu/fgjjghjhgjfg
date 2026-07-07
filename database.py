@@ -34,6 +34,9 @@ from database_supabase import (
     mark_scheduled_sent as supa_mark_scheduled_sent,
     log_deleted_message as supa_log_deleted_message,
     get_deleted_messages as supa_get_deleted_messages,
+    get_forced_channels as supa_get_forced_channels,
+    add_forced_channel as supa_add_forced_channel,
+    remove_forced_channel as supa_remove_forced_channel,
     create_world_cup_challenge as supa_create_world_cup_challenge,
     update_challenge_message as supa_update_challenge_message,
     join_world_cup_challenge as supa_join_world_cup_challenge,
@@ -227,15 +230,15 @@ def remove_silent_user(owner_id: int, user_id: int):
 def is_silent_user(owner_id: int, user_id: int) -> bool:
     return cache.is_silent_user(owner_id, user_id)
 
-# ─── ✅ توابع چنل‌های اجباری (دیتابیس کش) ─────────────────────────────────────
+# ─── ✅ توابع چنل‌های اجباری (دیتابیس دائمی Supabase) ─────────────────────────
 def get_forced_channels():
-    return cache.get_forced_channels()
+    return supa_get_forced_channels()
 
 def add_forced_channel(username: str) -> bool:
-    return cache.add_forced_channel(username)
+    return supa_add_forced_channel(username)
 
 def remove_forced_channel(username: str) -> bool:
-    return cache.remove_forced_channel(username)
+    return supa_remove_forced_channel(username)
 
 def check_user_membership(bot, user_id: int) -> tuple:
     return cache.check_user_membership(bot, user_id)

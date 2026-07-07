@@ -139,6 +139,14 @@ def init_tables():
             media_type TEXT,
             deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+        """,
+        # جدول چنل‌های اجباری (دائمی — قبلاً فقط توی SQLite محلی/موقت بود)
+        """
+        CREATE TABLE IF NOT EXISTS amel_forced_channels (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
         """
     ]
     
@@ -324,6 +332,57 @@ def set_setting(owner_id: int, key: str, value):
         rc.rset(rc.k_setting(owner_id, key), str_val, rc.TTL_SETTING)
     except Exception as e:
         print(f"❌ set_setting error: {e}")
+
+# ─── چنل‌های اجباری (دائمی — Supabase) ────────────────────────────────────────
+_FORCED_CHANNELS_RKEY = "forced_channels:list"
+
+
+def get_forced_channels() -> list:
+    cached = rc.rget_json(_FORCED_CHANNELS_RKEY)
+    if cached is not None:
+        return cached
+    try:
+        rows = execute_query(
+            "SELECT username FROM amel_forced_channels ORDER BY added_at DESC",
+            fetch_all=True,
+        ) or []
+        result = [r["username"] for r in rows]
+        rc.rset_json(_FORCED_CHANNELS_RKEY, result, rc.TTL_CHANNELS)
+        return result
+    except Exception as e:
+        print(f"⚠️ get_forced_channels خطا: {e}")
+        return []
+
+
+def add_forced_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    try:
+        execute_query(
+            "INSERT INTO amel_forced_channels (username) VALUES (%s) ON CONFLICT (username) DO NOTHING",
+            (username,),
+        )
+        rc.rdel(_FORCED_CHANNELS_RKEY)
+        return True
+    except Exception as e:
+        print(f"❌ add_forced_channel خطا: {e}")
+        return False
+
+
+def remove_forced_channel(username: str) -> bool:
+    if not username.startswith("@"):
+        username = "@" + username
+    try:
+        execute_query(
+            "DELETE FROM amel_forced_channels WHERE username = %s",
+            (username,),
+        )
+        rc.rdel(_FORCED_CHANNELS_RKEY)
+        return True
+    except Exception as e:
+        print(f"❌ remove_forced_channel خطا: {e}")
+        return False
+
 
 def toggle_setting(owner_id: int, key: str) -> bool:
     current = get_setting(owner_id, key, "0")
