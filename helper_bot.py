@@ -171,6 +171,26 @@ async def start_helper_bot():
     # ─── پاسخ به inline query (وقتی سلف داره نتیجه رو می‌گیره تا کلیک کنه) ───
     @cl.on(events.InlineQuery())
     async def on_inline(event):
+        try:
+            await _handle_inline_query(event)
+        except Exception as e:
+            # ‼️ هر خطای پیش‌بینی‌نشده‌ای که اینجا رخ بده، اگه answer نشه، سلف با
+            # خطای "did not answer to the callback query in time" مواجه میشه.
+            # پس در هر شرایطی، حتی موقع خطا، یه جواب حداقلی و فوری می‌فرستیم.
+            print(f"❌ خطای پیش‌بینی‌نشده در on_inline: {e}")
+            try:
+                await event.answer(
+                    [event.builder.article(
+                        title="خطا در بارگذاری پنل",
+                        description="لطفاً دوباره تلاش کنید",
+                        text="⚠️ خطایی رخ داد. لطفاً دوباره «پنل» را بفرستید.",
+                    )],
+                    cache_time=0,
+                )
+            except Exception:
+                pass
+
+    async def _handle_inline_query(event):
         owner_id, entry = bot_manager.get_owner_by_tg_id(event.query.user_id)
         if owner_id is None:
             await event.answer(
