@@ -114,20 +114,6 @@ def get_telegram_id_by_owner(owner_id: int) -> Optional[int]:
 def get_setting(owner_id: int, key: str, default=None) -> str:
     return supa_get_setting(owner_id, key, default)
 
-
-def get_force_join_channels(owner_id: int) -> list:
-    """لیست کانال‌های جوین اجباریِ پیوی (چندکاناله) — روی همون amel_settings
-    ذخیره میشه که bot.py هم می‌نویسه، فقط اینجا برای استفاده‌ی helper_bot.py
-    export شده."""
-    import json as _json
-    raw = supa_get_setting(owner_id, "force_join_channels", "")
-    if not raw:
-        return []
-    try:
-        return _json.loads(raw)
-    except Exception:
-        return []
-
 def set_setting(owner_id: int, key: str, value):
     supa_set_setting(owner_id, key, value)
 

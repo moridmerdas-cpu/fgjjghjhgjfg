@@ -53,59 +53,6 @@ AI_REPLY_COOLDOWN = 60  # حداقل فاصله بین دو پاسخ هوش مص
 # ─── نگهبان چت: کش موقتِ متنِ پیام‌ها برای تشخیصِ حذف/ویرایش ──────────────────
 _msg_cache = {}  # {(chat_id, msg_id): text}
 _msg_sender_cache = {}  # {(chat_id, msg_id): sender display name}
-
-
-def _utf16len(s: str) -> int:
-    """طول رشته بر حسب واحدهای UTF-16 — همون واحدی که تلگرام برای offset/length
-    توی formatting_entities استفاده می‌کنه (مهم برای ایموجی/فارسی که چندبایتی‌ان)."""
-    return len(s.encode("utf-16-le")) // 2
-
-
-def _describe_message(msg) -> str:
-    """توصیف کامل یه پیام برای نگهبان چت — قبلاً فقط msg.text/caption ذخیره می‌شد
-    و برای پیام‌های مدیا (عکس/ویدیو/ویس/استیکر/فایل/...) بدون کپشن، متن ذخیره‌شده
-    کاملاً خالی/ناقص می‌موند. الان همیشه یه توضیح کامل ساخته میشه."""
-    parts = []
-    try:
-        if getattr(msg, "photo", None):
-            parts.append("🖼 عکس")
-        elif getattr(msg, "sticker", None):
-            alt = getattr(msg.sticker, "alt", "") or ""
-            parts.append(f"🎭 استیکر {alt}".strip())
-        elif getattr(msg, "gif", None):
-            parts.append("🎞 گیف")
-        elif getattr(msg, "voice", None):
-            parts.append("🎙 پیام صوتی")
-        elif getattr(msg, "audio", None):
-            parts.append("🎵 موزیک")
-        elif getattr(msg, "video_note", None):
-            parts.append("⭕️ ویدیو-پیام دایره‌ای")
-        elif getattr(msg, "video", None):
-            parts.append("🎥 ویدیو")
-        elif getattr(msg, "document", None):
-            fname = None
-            try:
-                for attr in msg.document.attributes:
-                    if hasattr(attr, "file_name") and attr.file_name:
-                        fname = attr.file_name
-                        break
-            except Exception:
-                fname = None
-            parts.append(f"📄 فایل {fname}".strip() if fname else "📄 فایل")
-        elif getattr(msg, "contact", None):
-            parts.append("👤 مخاطب")
-        elif getattr(msg, "geo", None):
-            parts.append("📍 لوکیشن")
-        elif getattr(msg, "poll", None):
-            parts.append("📊 نظرسنجی")
-    except Exception:
-        pass
-
-    text = (getattr(msg, "text", None) or getattr(msg, "raw_text", None) or "").strip()
-    if text:
-        parts.append(text)
-
-    return "\n".join(parts) if parts else "(بدون متن/محتوا)"
 _MSG_CACHE_MAX = 2000
 
 # ─── پاسخ خودکار ثابت به همه‌ی پیام‌ها ─────────────────────────────────────────
@@ -181,26 +128,17 @@ class BotManager:
         """
         از روی آیدی تلگرام کاربر (همان آیدی‌ای که به بات کمکی پنل وصل شده)
         owner_id و entry مربوط به سلف در حال اجرای او را پیدا می‌کند.
-
-        قبلاً این تابع روی همه‌ی سلف‌های در حال اجرا حلقه می‌زد و برای هرکدوم
-        یک کوئری جدا به دیتابیس می‌زد (O(n) کوئری روی هر باز کردن پنل) — با
-        زیاد شدن تعداد کاربرها همین کندی باعث می‌شد جواب دادن به inline query
-        بیشتر از زمان مجاز تلگرام طول بکشه و پنل با خطای timeout باز نشه.
-        الان یک کوئری ایندکس‌شده مستقیم (tg_id → account) استفاده می‌شه.
+        فقط بین سلف‌های در حال اجرا جستجو می‌کند.
         """
-        try:
-            account = db.get_account_by_tg_id(tg_id)
-        except Exception:
-            account = None
-        if not account:
-            return None, None
-        owner_id = account.get("id")
-        if owner_id is None:
-            return None, None
-        entry = self._bots.get(owner_id)
-        if not entry or not entry.get("client"):
-            return None, None
-        return owner_id, entry
+        for owner_id, entry in self._bots.items():
+            if not entry or not entry.get("client"):
+                continue
+            try:
+                if db.get_telegram_id_by_owner(owner_id) == tg_id:
+                    return owner_id, entry
+            except Exception:
+                continue
+        return None, None
 
     def _cancel_timer(self, owner_id: int):
         t = self._timers.pop(owner_id, None)
@@ -478,7 +416,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         # نگهبان چت: کش کردن متن پیام برای تشخیص بعدیِ حذف/ویرایش
         if sender_id != owner_id:
             who_name = getattr(sender, "first_name", None) or getattr(sender, "username", None) or str(sender_id)
-            _msg_cache[(chat_id, msg.id)] = _describe_message(msg)
+            _msg_cache[(chat_id, msg.id)] = text
             _msg_sender_cache[(chat_id, msg.id)] = who_name
             if len(_msg_cache) > _MSG_CACHE_MAX:
                 for k in list(_msg_cache.keys())[:200]:
@@ -507,64 +445,6 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 is_tagged = True
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
-
-        # ✅ دستور عمومیِ «تگ {تعداد}» — هر عضو گروه می‌تونه بنویسه، ولی فقط اگه
-        # مالک یا مدیر گروه باشه اجرا میشه؛ نیازی به منشن/تگ کردن خودِ سلف نداره
-        if not event.is_private:
-            tag_count_match = re.match(r"^تگ\s+(\d+)$", text.strip())
-            if tag_count_match:
-                is_allowed = (sender_id == owner_id)
-                if not is_allowed:
-                    try:
-                        perms = await cl.get_permissions(chat_id, sender_id)
-                        is_allowed = bool(getattr(perms, "is_admin", False) or getattr(perms, "is_creator", False))
-                    except Exception:
-                        is_allowed = False
-
-                if not is_allowed:
-                    try:
-                        await event.reply("⛔ فقط مالک یا مدیرهای گروه می‌تونن از این دستور استفاده کنن.")
-                    except Exception:
-                        pass
-                    return
-
-                count = int(tag_count_match.group(1))
-                try:
-                    members = []
-                    async for u in cl.iter_participants(chat_id):
-                        if u.bot or u.deleted or u.id == sender_id:
-                            continue
-                        members.append(u)
-                except Exception:
-                    members = []
-
-                if not members:
-                    try:
-                        await event.reply("عضوی برای تگ کردن پیدا نشد.")
-                    except Exception:
-                        pass
-                    return
-
-                count = max(1, min(count, len(members)))
-                picked = random.sample(members, count)
-                mentions_out = []
-                for u in picked:
-                    if u.username:
-                        mentions_out.append(f"@{u.username}")
-                    else:
-                        display = u.first_name or "کاربر"
-                        mentions_out.append(f"[{display}](tg://user?id={u.id})")
-
-                chunk_size = 5
-                for i in range(0, len(mentions_out), chunk_size):
-                    chunk = mentions_out[i:i + chunk_size]
-                    try:
-                        await cl.send_message(chat_id, " ".join(chunk))
-                    except Exception:
-                        pass
-                    if i + chunk_size < len(mentions_out):
-                        await asyncio.sleep(1)
-                return
 
         # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
@@ -619,15 +499,13 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         # ✅ جوین اجباری (فقط پیوی) — با بات‌ها کاری نداشته باش
         if event.is_private and not is_bot_sender and db.get_setting(owner_id, "force_join_active") == "1":
-            channels = _get_force_join_channels(owner_id)
-            if channels:
-                from telethon.tl.functions.channels import GetParticipantRequest
-                from telethon.errors import UserNotParticipantError, ChannelPrivateError
-                not_joined = []
-                for ch in channels:
-                    is_member = True
+            channel_id = db.get_setting(owner_id, "force_join_channel", "")
+            if channel_id:
+                is_member = False
+                try:
+                    from telethon.tl.functions.channels import GetParticipantRequest
+                    from telethon.errors import UserNotParticipantError, ChannelPrivateError
                     try:
-                        channel_id = ch["id"]
                         channel_entity = await cl.get_entity(int(channel_id) if channel_id.lstrip("-").isdigit() else channel_id)
                         await cl(GetParticipantRequest(channel_entity, sender_id))
                         is_member = True
@@ -637,48 +515,38 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         is_member = True  # کانال خصوصی — نمی‌تونیم چک کنیم، رد می‌کنیم
                     except Exception:
                         is_member = True  # خطای ناشناخته — رد می‌کنیم تا اشتباهاً بلاک نشه
-                    if not is_member:
-                        not_joined.append(ch)
+                except Exception:
+                    is_member = True
 
-                if not_joined:
+                if not is_member:
                     # پیام رو حذف کن
                     try:
                         await msg.delete()
                     except Exception:
                         pass
+                    # پیام هشدار با دکمه رنگی جوین
                     join_msg = db.get_setting(owner_id, "force_join_message",
-                        "⛔ برای ارسال پیام ابتدا باید در کانال‌های زیر عضو شوید.")
-                    # پیام هشدار با دکمه‌ی لینک کانال‌ها — چون اکانتِ سلف یک اکانتِ
-                    # عادیِ کاربره (نه بات)، نمی‌تونه خودش دکمه‌ی اینلاین بفرسته؛
-                    # پس از طریق inline mode بات کمکی (helper_bot) پیام آماده با
-                    # دکمه رو می‌سازیم و فقط کلیکش می‌کنیم تا توی پیوی هدف بره.
-                    sent_via_helper = False
+                        "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
                     try:
-                        if config.HELPER_BOT_TOKEN:
-                            from helper_bot import get_helper_client
-                            helper = get_helper_client()
-                            if helper:
-                                huname = None
-                                try:
-                                    hme = await helper.get_me()
-                                    huname = hme.username
-                                except Exception:
-                                    huname = None
-                                if huname:
-                                    fj_results = await cl.inline_query(huname, "forcejoin")
-                                    if fj_results:
-                                        await fj_results[0].click(sender_id)
-                                        sent_via_helper = True
+                        # ساخت دکمه لینک کانال
+                        channel_link = db.get_setting(owner_id, "force_join_link", "")
+                        from telethon.tl.types import (
+                            ReplyInlineMarkup, KeyboardButtonUrl, KeyboardButtonRow
+                        )
+                        if channel_link:
+                            buttons = ReplyInlineMarkup(rows=[
+                                KeyboardButtonRow(buttons=[
+                                    KeyboardButtonUrl(
+                                        text="📢 عضویت در کانال ✅",
+                                        url=channel_link
+                                    )
+                                ])
+                            ])
+                            await cl.send_message(sender_id, join_msg, buttons=buttons)
+                        else:
+                            await cl.send_message(sender_id, join_msg)
                     except Exception:
-                        sent_via_helper = False
-
-                    if not sent_via_helper:
-                        # fallback: اگه بات کمکی در دسترس نبود، حداقل متن ساده بفرست
-                        try:
-                            links_text = "\n".join(f"📢 {c.get('title')}: {c.get('link')}" for c in not_joined)
-                            await cl.send_message(sender_id, f"{join_msg}\n\n{links_text}")
-                        except Exception:
-                            pass
+                        pass
                     return
 
         # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت) — با بات‌ها کاری نداشته باش
@@ -849,7 +717,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         # پاسخ کلیدی: اگه توی متن پیام یکی از کلمه‌های تنظیم‌شده باشه، پاسخ اختصاصی
         # همون کلمه ارسال میشه (مستقل از پاسخ ثابت پایین) — با بات‌ها کاری نداشته باش
-        if event.is_private and sender_id != owner_id and not is_bot_sender and text.strip() and db.get_setting(owner_id, "auto_reply_active") == "1":
+        if event.is_private and sender_id != owner_id and not is_bot_sender and text.strip():
             keyword_rules = _get_keyword_replies(owner_id)
             if keyword_rules:
                 matched_reply = None
@@ -870,8 +738,17 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                             pass
                     return
 
-        # پاسخ خودکار: فقط وقتی حداقل یه «پاسخ کلیدی» تنظیم شده باشه و توی پیام
-        # پیدا بشه جواب میده — اگه هیچ کلمه‌ای تنظیم نشده باشه، کاری انجام نمیده.
+        # پاسخ خودکار ثابت به همه‌ی پیام‌ها (با کول‌داون مستقل از منشی/هوش‌مصنوعی) — با بات‌ها کاری نداشته باش
+        if db.get_setting(owner_id, "auto_reply_active") == "1" and sender_id != owner_id and not is_bot_sender and text.strip():
+            now = time.time()
+            last = _last_auto_reply.get(chat_id, 0)
+            if now - last >= AUTO_REPLY_COOLDOWN:
+                msg_text = db.get_setting(owner_id, "auto_reply_message", "در حال حاضر در دسترس نیستم.")
+                try:
+                    await event.reply(msg_text)
+                    _last_auto_reply[chat_id] = now
+                except Exception:
+                    pass
 
     @cl.on(events.MessageEdited())
     async def on_edited(event):
@@ -883,7 +760,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 return
             key = (event.chat_id, event.id)
             old_text = _msg_cache.get(key)
-            new_text = _describe_message(event.message)
+            new_text = event.raw_text
             if old_text is not None and old_text != new_text:
                 who = _msg_sender_cache.get(key)
                 if not who:
@@ -894,24 +771,17 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     header = f"پیام ویرایش شده\nاز طرف: {who}\nپیام قبلی\n"
                     mid = f"\n\nپیام جدید\n"
                     full = header + old_text + mid + new_text
-                    old_start = _utf16len(header)
-                    new_start = _utf16len(header) + _utf16len(old_text) + _utf16len(mid)
+                    old_start = len(header)
+                    new_start = len(header) + len(old_text) + len(mid)
                     await cl.send_message(
                         "me", full,
                         formatting_entities=[
-                            MessageEntityBlockquote(old_start, _utf16len(old_text), collapsed=False),
-                            MessageEntityBlockquote(new_start, _utf16len(new_text), collapsed=False),
+                            MessageEntityBlockquote(old_start, len(old_text), collapsed=False),
+                            MessageEntityBlockquote(new_start, len(new_text), collapsed=False),
                         ]
                     )
-                except Exception as e:
-                    print(f"⚠️ خطا در ارسال پیام ویرایش‌شده به نگهبان چت: {e}")
-                    try:
-                        await cl.send_message(
-                            "me",
-                            f"پیام ویرایش شده\nاز طرف: {who}\nپیام قبلی\n{old_text}\n\nپیام جدید\n{new_text}"
-                        )
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
                 _msg_sender_cache[key] = who
             _msg_cache[key] = new_text
         except Exception:
@@ -934,18 +804,13 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         header = f"پیام حذف شده\nاز طرف: {who}\nپیام قبلی\n"
                         body = cached
                         full = header + body
-                        entity_start = _utf16len(header)
-                        entity_len = _utf16len(body)
+                        entity_start = len(header)
                         await cl.send_message(
                             "me", full,
-                            formatting_entities=[MessageEntityBlockquote(entity_start, entity_len, collapsed=False)]
+                            formatting_entities=[MessageEntityBlockquote(entity_start, len(body), collapsed=False)]
                         )
-                    except Exception as e:
-                        print(f"⚠️ خطا در ارسال پیام حذف‌شده به نگهبان چت: {e}")
-                        try:
-                            await cl.send_message("me", f"پیام حذف شده\nاز طرف: {who}\nپیام قبلی\n{body}")
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1000,9 +865,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "وضعیت", "راهنما", "help",
             "حذف بعد ",
             "سیو کانال", "توقف سیو",
-            "تنظیم کانال ", "افزودن کانال جوین ", "حذف کانال جوین ", "لیست کانال‌های جوین",
-            "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
-            "پیام جوین ",
+            "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
+            "پیام جوین ", "لینک کانال جوین ",
             "پنل", "panel",
         ]
 
@@ -1040,8 +904,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
     async def dice(event):
         if entry.get("paused"):
             return
@@ -1050,8 +914,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 6  # پیش‌فرض بهترین نتیجه (۶)
         await send_dice(event, "🎲", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.دارت(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.دارت(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
     async def dart(event):
         if entry.get("paused"):
             return
@@ -1060,8 +924,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 6  # ۶ = وسط دقیقِ دارت (بولزآی)
         await send_dice(event, "🎯", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.فوتبال(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
     async def football(event):
         if entry.get("paused"):
             return
@@ -1070,8 +934,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 5  # ۳،۴،۵ = گل؛ ۵ تمیزترین حالت
         await send_dice(event, "⚽", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.بسکتبال(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
     async def basketball(event):
         if entry.get("paused"):
             return
@@ -1090,8 +954,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         "هفت": 3, "سون": 3, "جکپات": 3,
     }
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.کازینو(?:\s+(.+))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.کازینو(?:\s+(.+))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
     async def casino(event):
         if entry.get("paused"):
             return
@@ -1588,6 +1452,15 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "پاسخ خودکار خاموش":
         ss("auto_reply_active", "0")
         await edit("پاسخ خودکار خاموش شد.")
+    elif text.startswith("متن پاسخ خودکار "):
+        msg = text[len("متن پاسخ خودکار "):].strip()
+        if not msg:
+            await edit("فرمت: متن پاسخ خودکار [متن دلخواه]")
+        else:
+            ss("auto_reply_message", msg)
+            await edit("متن پاسخ خودکار ذخیره شد.")
+
+    # ─── پاسخ کلیدی (اگه توی پیام یه کلمه‌ی خاص بود، پاسخ اختصاصی همون بره) ──
     elif text.startswith("پاسخ کلیدی "):
         body = text[len("پاسخ کلیدی "):].strip()
         if "=" not in body:
@@ -2270,90 +2143,43 @@ async def _handle_command(cl, event, text, owner_id, entry):
             target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
         await edit(await _get_currency_text(target))
 
-    # ─── جوین اجباری پیوی (چند کانالی) ─────────────────────────────────────────
-    elif text.startswith("افزودن کانال جوین ") or text.startswith("تنظیم کانال "):
-        is_legacy_set = text.startswith("تنظیم کانال ")
-        prefix_len = len("تنظیم کانال ") if is_legacy_set else len("افزودن کانال جوین ")
-        raw = text[prefix_len:].strip()
-        if not raw:
-            await edit("❗ فرمت: افزودن کانال جوین [آیدی یا @یوزرنیم] [لینک اختیاری برای کانال خصوصی]")
+    # ─── جوین اجباری ─────────────────────────────────────────────────────────
+    elif text.startswith("تنظیم کانال "):
+        channel_raw = text[len("تنظیم کانال "):].strip()
+        if not channel_raw:
+            await edit("❗ فرمت: تنظیم کانال [آیدی یا @یوزرنیم]")
         else:
-            parts_in = raw.split()
-            channel_input = parts_in[0]
-            explicit_link = parts_in[1] if len(parts_in) > 1 else None
+            # نرمال‌سازی: آیدی عددی یا @username
+            channel_input = channel_raw
             try:
                 entity = await cl.get_entity(
                     int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
                     if channel_input.lstrip("-").isdigit() else channel_input
                 )
+                # ذخیره آیدی عددی برای دقت بیشتر
                 real_id = str(entity.id)
                 title = getattr(entity, "title", channel_input)
-                username = getattr(entity, "username", None)
-                link = explicit_link or (f"https://t.me/{username}" if username else None)
-                if not link:
-                    await edit("❗ این کانال یوزرنیم عمومی نداره — لینک دعوتش رو هم بده:\n"
-                               "افزودن کانال جوین [آیدی/یوزرنیم] [لینک]")
-                else:
-                    channels = _get_force_join_channels(owner_id)
-                    channels = [c for c in channels if c["id"] != real_id]
-                    if is_legacy_set:
-                        channels = []  # سازگاری با رفتار قدیمی: جایگزینی کل لیست
-                    channels.append({"id": real_id, "title": title, "link": link})
-                    _save_force_join_channels(owner_id, channels)
-                    ss("force_join_active", "1")
-                    await edit(
-                        f"✅ کانال جوین اجباری اضافه شد:\n"
-                        f"📢 {title} (ID: {real_id})\n"
-                        f"🔗 {link}\n\n"
-                        f"📋 تعداد کل کانال‌ها: {len(channels)}\n\n"
-                        f"💡 دستورات:\n"
-                        f"> `لیست کانال‌های جوین`\n"
-                        f"> `حذف کانال جوین [آیدی/یوزرنیم]`\n"
-                        f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
-                        f"> `پیام جوین [متن]` — تغییر پیام هشدار"
-                    )
+                ss("force_join_channel", real_id)
+                ss("force_join_active", "1")
+                await edit(
+                    f"✅ کانال جوین اجباری تنظیم شد:\n"
+                    f"📢 {title} (ID: {real_id})\n\n"
+                    f"💡 دستورات:\n"
+                    f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
+                    f"> `پیام جوین [متن]` — تغییر پیام هشدار"
+                )
             except Exception as e:
                 await edit(f"❌ کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
 
-    elif text.startswith("حذف کانال جوین "):
-        channel_input = text[len("حذف کانال جوین "):].strip()
-        channels = _get_force_join_channels(owner_id)
-        try:
-            entity = await cl.get_entity(
-                int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
-                if channel_input.lstrip("-").isdigit() else channel_input
-            )
-            target_id = str(entity.id)
-        except Exception:
-            target_id = channel_input.lstrip("@")
-        new_channels = [c for c in channels if c["id"] != target_id and c.get("title") != channel_input]
-        if len(new_channels) == len(channels):
-            await edit("❗ همچین کانالی توی لیست جوین اجباری نبود.")
-        else:
-            _save_force_join_channels(owner_id, new_channels)
-            if not new_channels:
-                ss("force_join_active", "0")
-            await edit(f"🗑️ کانال حذف شد.\nتعداد باقی‌مانده: {len(new_channels)}")
-
-    elif text == "لیست کانال‌های جوین":
-        channels = _get_force_join_channels(owner_id)
-        if not channels:
-            await edit("هیچ کانالی برای جوین اجباری تنظیم نشده.")
-        else:
-            lines = [f"📋 کانال‌های جوین اجباری ({len(channels)} مورد):\n"]
-            for c in channels:
-                lines.append(f"• {c.get('title')} — ID: {c['id']}\n  🔗 {c.get('link')}")
-            await edit("\n".join(lines))
-
     elif text == "حذف کانال اجباری":
-        _save_force_join_channels(owner_id, [])
+        ss("force_join_channel", "")
         ss("force_join_active", "0")
-        await edit("🗑️ همه‌ی کانال‌های جوین اجباری حذف شدند.")
+        await edit("🗑️ کانال جوین اجباری حذف شد.")
 
     elif text == "جوین اجباری روشن":
-        channels = _get_force_join_channels(owner_id)
-        if not channels:
-            await edit("❗ اول حداقل یه کانال اضافه کن: `افزودن کانال جوین [آیدی/یوزرنیم]`")
+        channel_id = gs("force_join_channel", "")
+        if not channel_id:
+            await edit("❗ اول کانال رو تنظیم کن: `تنظیم کانال [آیدی]`")
         else:
             ss("force_join_active", "1")
             await edit("✅ جوین اجباری روشن شد.")
@@ -2369,6 +2195,17 @@ async def _handle_command(cl, event, text, owner_id, entry):
         else:
             ss("force_join_message", new_msg)
             await edit(f"✅ پیام جوین اجباری تنظیم شد:\n\n{new_msg}")
+
+    elif text.startswith("لینک کانال جوین "):
+        link = text[len("لینک کانال جوین "):].strip()
+        if not link:
+            await edit("❗ فرمت: لینک کانال جوین [لینک]\nمثال: لینک کانال جوین https://t.me/mychannel")
+        else:
+            # اطمینان از فرمت لینک
+            if not link.startswith("http"):
+                link = "https://t.me/" + link.lstrip("@")
+            ss("force_join_link", link)
+            await edit(f"✅ لینک دکمه جوین تنظیم شد:\n{link}")
 
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
@@ -2613,24 +2450,6 @@ def _get_react_map(owner_id: int) -> dict:
 
 def _save_react_map(owner_id: int, mapping: dict):
     db.set_setting(owner_id, _REACT_MAP_KEY, json.dumps(mapping))
-
-
-# ─── جوین اجباری پیوی: لیست کانال‌ها (دائمی — روی همون amel_settings) ────────
-_FORCE_JOIN_CHANNELS_KEY = "force_join_channels"
-
-
-def _get_force_join_channels(owner_id: int) -> list:
-    raw = db.get_setting(owner_id, _FORCE_JOIN_CHANNELS_KEY, "")
-    if not raw:
-        return []
-    try:
-        return json.loads(raw)
-    except Exception:
-        return []
-
-
-def _save_force_join_channels(owner_id: int, channels: list):
-    db.set_setting(owner_id, _FORCE_JOIN_CHANNELS_KEY, json.dumps(channels))
 
 
 # ─── پاسخ کلیدی: لیستی از {کلمه ← پاسخ} که با پیدا شدن کلمه توی پیام فعال میشه ──
@@ -3100,14 +2919,13 @@ def _help_text():
             "لیست سکوت",
             "💡 پیام‌های پیوی کاربر سکوت‌شده به‌صورت خودکار و دوطرفه پاک می‌شود",
         ]),
-        ("🔹 جوین اجباری (چند کانالی)", [
-            "افزودن کانال جوین [آیدی/یوزرنیم] [لینک اختیاری]",
-            "حذف کانال جوین [آیدی/یوزرنیم]",
-            "لیست کانال‌های جوین",
+        ("🔹 جوین اجباری", [
+            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
+            "لینک کانال جوین [لینک]  ← لینک دکمه رنگی جوین",
             "پیام جوین [متن]  ← تغییر متن پیام هشدار",
             "جوین اجباری روشن / خاموش",
-            "حذف کانال اجباری  ← پاک کردن کل لیست",
-            "💡 پیام عضو‌نشده حذف + هشدار با دکمه‌ی همه‌ی کانال‌ها میفرسته",
+            "حذف کانال اجباری",
+            "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
         ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
@@ -3166,9 +2984,9 @@ def _help_text():
             "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
-        ("🎲 تاس (تقلب — حتماً با نقطه)", [
-            ".تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
-            ".roll [1-6]  ← همان دستور به انگلیسی",
+        ("🎲 تاس", [
+            "تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
+            "roll [1-6]  ← همان دستور به انگلیسی",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -3305,6 +3123,7 @@ PANEL_CATEGORIES = {
             ("auto_reply_active", "پاسخ خودکار", "پاسخ خودکار روشن", "پاسخ خودکار خاموش"),
         ],
         "actions": [
+            ("تنظیم متن پاسخ", "INFO::برای تنظیم متن تایپ کن: متن پاسخ خودکار [متن دلخواه]"),
             ("افزودن پاسخ کلیدی", "INFO::برای ثبت تایپ کن: پاسخ کلیدی [کلمه] = [پاسخ]\nمثال: پاسخ کلیدی قیمت = قیمت‌ها توی کانال هست."),
             ("حذف پاسخ کلیدی", "INFO::برای حذف تایپ کن: حذف پاسخ کلیدی [کلمه]"),
             ("لیست پاسخ کلیدی", "لیست پاسخ کلیدی"),
@@ -3318,11 +3137,8 @@ PANEL_CATEGORIES = {
             ("force_join_active", "عضویت اجباری", "جوین اجباری روشن", "جوین اجباری خاموش"),
         ],
         "actions": [
-            ("افزودن کانال", "INFO::برای افزودن تایپ کن:\nافزودن کانال جوین [آیدی/یوزرنیم] [لینک اختیاری برای کانال خصوصی]"),
-            ("حذف یه کانال", "INFO::برای حذف تایپ کن: حذف کانال جوین [آیدی/یوزرنیم]"),
-            ("لیست کانال‌ها", "لیست کانال‌های جوین"),
-            ("تنظیم متن پیام", "INFO::برای تنظیم متن تایپ کن: پیام جوین [متن دلخواه]"),
-            ("حذف همه‌ی کانال‌ها", "حذف کانال اجباری"),
+            ("نمایش متن دستورات", "INFO::دستورات عضویت اجباری:\nتنظیم کانال [آیدی/لینک]\nحذف کانال اجباری\nجوین اجباری روشن / جوین اجباری خاموش"),
+            ("حذف کانال اجباری", "حذف کانال اجباری"),
         ],
     },
     "downloader": {
@@ -3393,12 +3209,11 @@ PANEL_CATEGORIES = {
         "menu_style": "success",
         "direct_command": (
             "INFO::تقلب تاس/دارت/فوتبال/بسکتبال/کازینو — همیشه بهترین نتیجه می‌گیری:\n"
-            "⚠️ حتماً باید اول یه نقطه (.) بذاری، وگرنه اجرا نمیشه.\n"
-            ".تاس یا .تاس 6\n"
-            ".دارت یا .دارت 6\n"
-            ".فوتبال یا .فوتبال 5\n"
-            ".بسکتبال یا .بسکتبال 5\n"
-            ".کازینو انگور  (یا: .کازینو میله/لیمو/هفت)"
+            "تاس یا تاس 6\n"
+            "دارت یا دارت 6\n"
+            "فوتبال یا فوتبال 5\n"
+            "بسکتبال یا بسکتبال 5\n"
+            "کازینو انگور  (یا: کازینو میله/لیمو/هفت)"
         ),
     },
     "calculator": {
