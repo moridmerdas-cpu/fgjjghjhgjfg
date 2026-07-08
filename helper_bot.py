@@ -24,6 +24,7 @@
 
 import io
 import asyncio
+import time
 
 from telethon import TelegramClient, events
 from telethon.tl.custom import Button
@@ -37,9 +38,16 @@ DENIED_TEXT = "این پنل مخصوص کسی است که آن را باز کر
 
 # ─── بستن خودکار پنل بعد از بیکار موندن ──────────────────────────────────────
 PANEL_IDLE_SECONDS = 180  # ۳ دقیقه
-IDLE_CLOSED_TEXT = "⏰ این پنل به‌خاطر ۳ دقیقه بیکار موندن بسته شد.\nبرای باز کردن دوباره، توی سلف بنویس: پنل"
+IDLE_CLOSED_TEXT = "پنل بعد از ۳ دقیقه بیکار موندن بسته شد."
 _panel_timers = {}  # {(chat_id, message_id): asyncio.Task}
 _schedule_panel_timeout_impl = None  # موقع start_helper_bot ست میشه
+
+# ─── کش بنر پنل (عکس پروفایل + بنر) ─────────────────────────────────────────
+# دانلود عکس پروفایل + ساخت بنر هر بار طول می‌کشه و اگه معطل بشه، تلگرام با خطای
+# "did not answer to the callback query in time" ریکوئست اینلاین رو fail می‌کنه.
+# پس نتیجه رو برای هر owner چند دقیقه کش می‌کنیم و فقط گاهی رفرش می‌کنیم.
+_panel_banner_cache = {}  # {owner_id: (timestamp, raw_png_bytes, display_name, username_line)}
+PANEL_BANNER_TTL = 600  # ۱۰ دقیقه
 
 
 def schedule_panel_timeout(chat_id: int, message_id: int):
@@ -100,7 +108,7 @@ async def start_helper_bot():
         try:
             await asyncio.sleep(PANEL_IDLE_SECONDS)
             try:
-                await cl.edit_message(chat_id, message_id, IDLE_CLOSED_TEXT, buttons=None)
+                await cl.edit_message(chat_id, message_id, IDLE_CLOSED_TEXT, buttons=[])
             except Exception:
                 try:
                     await cl.delete_messages(chat_id, message_id)
@@ -176,6 +184,36 @@ async def start_helper_bot():
             return
 
         owner_tg_id = event.query.user_id  # همون کسی که inline query زده = صاحب پنل
+
+        # ─── پیام «جوین اجباری پیوی» با دکمه‌ی لینک کانال ──────────────────────
+        # سلف با فرستادن این کوئری اینلاین (به‌جای send_message مستقیم که دکمه
+        # نداره چون اکانتِ کاربر عادیه نه بات)، از خودِ بات کمکی می‌خواد پیام
+        # آماده با دکمه بسازه؛ بعد سلف فقط نتیجه رو توی پیوی هدف کلیک می‌کنه.
+        if event.query.text.startswith("forcejoin"):
+            import database as _db
+            join_msg = _db.get_setting(owner_id, "force_join_message",
+                "⛔ برای ارسال پیام ابتدا باید در کانال‌های زیر عضو شوید.")
+            channels = _db.get_force_join_channels(owner_id) if hasattr(_db, "get_force_join_channels") else []
+            if not channels:
+                # سازگاری با نسخه‌ی قدیمی (تک‌کاناله)
+                legacy_link = _db.get_setting(owner_id, "force_join_link", "")
+                if legacy_link:
+                    channels = [{"title": "کانال", "link": legacy_link}]
+            fj_buttons = None
+            if channels:
+                fj_buttons = [[Button.url(f"📢 عضویت در {c.get('title') or 'کانال'} ✅", c.get("link"))]
+                              for c in channels if c.get("link")]
+                if not fj_buttons:
+                    fj_buttons = None
+            result = event.builder.article(
+                title="پیام جوین اجباری",
+                description="ارسال پیام جوین اجباری با دکمه‌ی کانال‌ها",
+                text=join_msg,
+                buttons=fj_buttons,
+            )
+            await event.answer([result], cache_time=0)
+            return
+
         buttons = _menu_buttons(owner_tg_id)
 
         # ─── ساخت متن مشخصات (اسم + آیدی عددی + یوزرنیم) از روی خودِ سلف ───
@@ -184,7 +222,14 @@ async def start_helper_bot():
         username_line = ""
         photo_bytes = None
 
-        if self_client is not None:
+        cached = _panel_banner_cache.get(owner_id)
+        now_ts = time.time()
+        if cached and (now_ts - cached[0]) < PANEL_BANNER_TTL:
+            _, raw_png, display_name, username_line = cached
+            buf = io.BytesIO(raw_png)
+            buf.name = "panel.png"
+            photo_bytes = buf
+        elif self_client is not None:
             try:
                 me = await self_client.get_me()
                 full_name = " ".join(p for p in [me.first_name, me.last_name] if p)
@@ -198,6 +243,7 @@ async def start_helper_bot():
                         raw_buf.seek(0)
                         from banner import generate_banner
                         banner_bytes = generate_banner(raw_buf.read(), bottom_text="self panel", bottom_sub=f"@{me.username}" if me.username else "")
+                        _panel_banner_cache[owner_id] = (now_ts, banner_bytes, display_name, username_line)
                         buf = io.BytesIO(banner_bytes)
                         buf.name = "panel.png"
                         photo_bytes = buf
@@ -214,11 +260,19 @@ async def start_helper_bot():
         )
 
         if photo_bytes is not None:
-            result = await event.builder.photo(
-                file=photo_bytes,
-                text=caption,
-                buttons=buttons,
-            )
+            try:
+                result = await event.builder.photo(
+                    file=photo_bytes,
+                    text=caption,
+                    buttons=buttons,
+                )
+            except Exception:
+                result = event.builder.article(
+                    title="پنل مدیریت سلف",
+                    description="برای نمایش پنل دکمه‌ای لمس کن",
+                    text=caption,
+                    buttons=buttons,
+                )
         else:
             result = event.builder.article(
                 title="پنل مدیریت سلف",
