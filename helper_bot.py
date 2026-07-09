@@ -88,8 +88,10 @@ async def start_helper_bot():
         build_category_menu,
         build_category_commands,
         _execute_panel_command,
+        _get_force_join_channels,
     )
     from telegram_bot import get_all_commands_buttons
+    import database as db
 
     cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
     await cl.start(bot_token=config.HELPER_BOT_TOKEN)
@@ -177,6 +179,28 @@ async def start_helper_bot():
             return
 
         owner_tg_id = event.query.user_id  # همون کسی که inline query زده = صاحب پنل
+
+        # ─── جوین اجباری: پیام هشدار با دکمه‌های واقعیِ لینک کانال‌ها ──────────
+        query_text = (getattr(event.query, "query", "") or "").strip()
+        if query_text == "جوین":
+            join_msg = db.get_setting(owner_id, "force_join_message",
+                "⛔ برای ارسال پیام ابتدا باید در کانال‌های زیر عضو شوید.")
+            fj_channels = _get_force_join_channels(owner_id)
+            rows = []
+            for ch in fj_channels:
+                link = ch.get("link")
+                title = ch.get("title") or "عضویت در کانال"
+                if link:
+                    rows.append([Button.url(f"📢 عضویت در {title} ✅", link)])
+            result = event.builder.article(
+                title="هشدار جوین اجباری",
+                description="پیام هشدار عضویت اجباری",
+                text=join_msg,
+                buttons=rows or None,
+            )
+            await event.answer([result], cache_time=0)
+            return
+
         buttons = _menu_buttons(owner_tg_id)
 
         # ─── ساخت متن مشخصات (اسم + آیدی عددی + یوزرنیم) از روی خودِ سلف ───

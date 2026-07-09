@@ -568,16 +568,21 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-        # ✅ جوین اجباری (فقط پیوی) — با بات‌ها کاری نداشته باش
+        # ✅ جوین اجباری (فقط پیوی، چند کاناله) — با بات‌ها کاری نداشته باش
         if event.is_private and not is_bot_sender and db.get_setting(owner_id, "force_join_active") == "1":
-            channel_id = db.get_setting(owner_id, "force_join_channel", "")
-            if channel_id:
-                is_member = False
-                try:
-                    from telethon.tl.functions.channels import GetParticipantRequest
-                    from telethon.errors import UserNotParticipantError, ChannelPrivateError
+            fj_channels = _get_force_join_channels(owner_id)
+            if fj_channels:
+                from telethon.tl.functions.channels import GetParticipantRequest
+                from telethon.errors import UserNotParticipantError, ChannelPrivateError
+
+                is_member_all = True
+                for ch in fj_channels:
+                    ch_id = ch.get("id")
+                    if not ch_id:
+                        continue
+                    is_member = False
                     try:
-                        channel_entity = await cl.get_entity(int(channel_id) if channel_id.lstrip("-").isdigit() else channel_id)
+                        channel_entity = await cl.get_entity(int(ch_id) if str(ch_id).lstrip("-").isdigit() else ch_id)
                         await cl(GetParticipantRequest(channel_entity, sender_id))
                         is_member = True
                     except (UserNotParticipantError, KeyError):
@@ -586,42 +591,54 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         is_member = True  # کانال خصوصی — نمی‌تونیم چک کنیم، رد می‌کنیم
                     except Exception:
                         is_member = True  # خطای ناشناخته — رد می‌کنیم تا اشتباهاً بلاک نشه
-                except Exception:
-                    is_member = True
+                    if not is_member:
+                        is_member_all = False
+                        break
 
-                if not is_member:
+                if not is_member_all:
                     # پیام رو حذف کن
                     try:
                         await msg.delete()
                     except Exception:
                         pass
-                    # پیام هشدار با دکمه رنگی جوین — از طریق ربات کمکی فرستاده می‌شه
-                    # چون سلف‌بات نمی‌تونه دکمه‌ی شیشه‌ای واقعی (inline keyboard) بفرسته
-                    # و ربات کمکی یک بات واقعیه که دکمه‌هاش درست کار می‌کنن.
+
+                    # پیام هشدار جوین اجباری — دقیقاً مثل پنل، از طریقِ inline
+                    # query به ربات کمکی و کلیک روی نتیجه توسط خودِ سلف فرستاده
+                    # می‌شه؛ یعنی «via @helper_bot» ولی دکمه‌هاش واقعاً کار می‌کنن،
+                    # بدون این‌که کاربر مجبور باشه قبلش با ربات کمکی استارت زده باشه.
                     join_msg = db.get_setting(owner_id, "force_join_message",
-                        "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
-                    channel_link = db.get_setting(owner_id, "force_join_link", "")
+                        "⛔ برای ارسال پیام ابتدا باید در کانال‌های زیر عضو شوید.")
+                    sent_via_helper = False
                     try:
-                        from telethon.tl.custom import Button
-                        from helper_bot import get_helper_client
-
-                        helper_cl = get_helper_client()
-                        buttons = None
-                        if channel_link:
-                            buttons = [Button.url("📢 عضویت در کانال ✅", channel_link)]
-
-                        if helper_cl is not None:
-                            try:
-                                await helper_cl.send_message(sender_id, join_msg, buttons=buttons)
-                            except Exception:
-                                # اگه کاربر با ربات کمکی استارت نزده باشه یا خطای دیگه‌ای پیش بیاد،
-                                # به‌عنوان جایگزین از خود سلف پیام رو بفرست (بدون دکمه چون کار نمی‌کنه)
-                                await cl.send_message(sender_id, join_msg)
-                        else:
-                            # ربات کمکی راه‌اندازی نشده — جایگزین: پیام ساده از سلف
-                            await cl.send_message(sender_id, join_msg)
+                        if config.HELPER_BOT_TOKEN:
+                            from helper_bot import get_helper_client
+                            helper = get_helper_client()
+                            uname = None
+                            if helper:
+                                try:
+                                    me = await helper.get_me()
+                                    uname = me.username
+                                except Exception:
+                                    uname = None
+                            if uname:
+                                results = await cl.inline_query(uname, "جوین")
+                                if results:
+                                    sent = await results[0].click(event.chat_id)
+                                    if sent is not None:
+                                        sent_via_helper = True
                     except Exception:
-                        pass
+                        sent_via_helper = False
+
+                    if not sent_via_helper:
+                        # جایگزین: پیام ساده از خود سلف (بدون دکمه چون سلف نمی‌تونه
+                        # دکمه‌ی شیشه‌ی واقعی بفرسته)
+                        try:
+                            links_text = "\n".join(
+                                f"📢 {c.get('title', '؟')}: {c.get('link', '')}" for c in fj_channels
+                            )
+                            await cl.send_message(sender_id, f"{join_msg}\n\n{links_text}")
+                        except Exception:
+                            pass
                     return
 
         # ✅ منشی (فقط پیوی - با محدودیت 24 ساعت) — با بات‌ها کاری نداشته باش
@@ -959,8 +976,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "وضعیت", "راهنما", "help",
             "حذف بعد ",
             "سیو کانال", "توقف سیو",
-            "تنظیم کانال ", "حذف کانال اجباری", "جوین اجباری روشن", "جوین اجباری خاموش",
-            "پیام جوین ", "لینک کانال جوین ",
+            "افزودن کانال ", "حذف کانال ", "جوین اجباری روشن", "جوین اجباری خاموش",
+            "پیام جوین ", "پاک کردن کانال‌های اجباری", "لیست کانال‌های اجباری",
             "پنل", "panel",
         ]
 
@@ -2230,43 +2247,82 @@ async def _handle_command(cl, event, text, owner_id, entry):
             target = None  # بدون نام ارز خاص → نمایش لیست ارزهای مهم
         await edit(await _get_currency_text(target))
 
-    # ─── جوین اجباری ─────────────────────────────────────────────────────────
-    elif text.startswith("تنظیم کانال "):
-        channel_raw = text[len("تنظیم کانال "):].strip()
-        if not channel_raw:
-            await edit("❗ فرمت: تنظیم کانال [آیدی یا @یوزرنیم]")
+    # ─── جوین اجباری (چند کاناله، لیست توی دیتابیس دائمی ذخیره می‌شه) ─────────
+    elif text.startswith("افزودن کانال "):
+        raw = text[len("افزودن کانال "):].strip()
+        parts = raw.split()
+        if len(parts) < 2:
+            await edit("❗ فرمت: افزودن کانال [آیدی یا @یوزرنیم] [لینک]\nمثال: افزودن کانال @mychannel https://t.me/mychannel")
         else:
-            # نرمال‌سازی: آیدی عددی یا @username
-            channel_input = channel_raw
+            channel_input, link = parts[0], parts[1]
+            if not link.startswith("http"):
+                link = "https://t.me/" + link.lstrip("@")
             try:
                 entity = await cl.get_entity(
                     int(channel_input.lstrip("-")) * (-1 if channel_input.startswith("-") else 1)
                     if channel_input.lstrip("-").isdigit() else channel_input
                 )
-                # ذخیره آیدی عددی برای دقت بیشتر
                 real_id = str(entity.id)
                 title = getattr(entity, "title", channel_input)
-                ss("force_join_channel", real_id)
+                channels = _get_force_join_channels(owner_id)
+                channels = [c for c in channels if c.get("id") != real_id]
+                channels.append({"id": real_id, "title": title, "link": link})
+                _save_force_join_channels(owner_id, channels)
                 ss("force_join_active", "1")
                 await edit(
-                    f"✅ کانال جوین اجباری تنظیم شد:\n"
-                    f"📢 {title} (ID: {real_id})\n\n"
+                    f"✅ کانال به لیست جوین اجباری اضافه شد:\n"
+                    f"📢 {title} (ID: {real_id})\n"
+                    f"🔗 {link}\n\n"
+                    f"در حال حاضر {len(channels)} کانال توی لیست هست.\n\n"
                     f"💡 دستورات:\n"
+                    f"> `لیست کانال‌های اجباری`\n"
+                    f"> `حذف کانال [آیدی/یوزرنیم]`\n"
                     f"> `جوین اجباری روشن` / `جوین اجباری خاموش`\n"
                     f"> `پیام جوین [متن]` — تغییر پیام هشدار"
                 )
             except Exception as e:
                 await edit(f"❌ کانال پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو کانال/گروه هست.")
 
-    elif text == "حذف کانال اجباری":
-        ss("force_join_channel", "")
+    elif text.startswith("حذف کانال "):
+        raw = text[len("حذف کانال "):].strip()
+        if not raw:
+            await edit("❗ فرمت: حذف کانال [آیدی یا @یوزرنیم]")
+        else:
+            channels = _get_force_join_channels(owner_id)
+            target = raw.lstrip("@").lower()
+            new_channels = [
+                c for c in channels
+                if raw != c.get("id")
+                and target not in (c.get("title", "").lower())
+                and target not in (c.get("link", "").lower())
+            ]
+            if len(new_channels) == len(channels):
+                await edit("❗ همچین کانالی توی لیست جوین اجباری نیست.")
+            else:
+                _save_force_join_channels(owner_id, new_channels)
+                if not new_channels:
+                    ss("force_join_active", "0")
+                await edit(f"🗑️ کانال حذف شد. {len(new_channels)} کانال باقی مونده.")
+
+    elif text == "پاک کردن کانال‌های اجباری":
+        _save_force_join_channels(owner_id, [])
         ss("force_join_active", "0")
-        await edit("🗑️ کانال جوین اجباری حذف شد.")
+        await edit("🗑️ همه‌ی کانال‌های جوین اجباری پاک شدند.")
+
+    elif text == "لیست کانال‌های اجباری":
+        channels = _get_force_join_channels(owner_id)
+        if not channels:
+            await edit("❗ هیچ کانالی توی لیست جوین اجباری نیست.\nبرای افزودن: `افزودن کانال [آیدی/یوزرنیم] [لینک]`")
+        else:
+            lines = [f"📋 کانال‌های جوین اجباری ({len(channels)} کانال):\n"]
+            for c in channels:
+                lines.append(f"📢 {c.get('title', '؟')} — {c.get('link', '')}")
+            await edit("\n".join(lines))
 
     elif text == "جوین اجباری روشن":
-        channel_id = gs("force_join_channel", "")
-        if not channel_id:
-            await edit("❗ اول کانال رو تنظیم کن: `تنظیم کانال [آیدی]`")
+        channels = _get_force_join_channels(owner_id)
+        if not channels:
+            await edit("❗ اول حداقل یه کانال اضافه کن: `افزودن کانال [آیدی/یوزرنیم] [لینک]`")
         else:
             ss("force_join_active", "1")
             await edit("✅ جوین اجباری روشن شد.")
@@ -2282,17 +2338,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
         else:
             ss("force_join_message", new_msg)
             await edit(f"✅ پیام جوین اجباری تنظیم شد:\n\n{new_msg}")
-
-    elif text.startswith("لینک کانال جوین "):
-        link = text[len("لینک کانال جوین "):].strip()
-        if not link:
-            await edit("❗ فرمت: لینک کانال جوین [لینک]\nمثال: لینک کانال جوین https://t.me/mychannel")
-        else:
-            # اطمینان از فرمت لینک
-            if not link.startswith("http"):
-                link = "https://t.me/" + link.lstrip("@")
-            ss("force_join_link", link)
-            await edit(f"✅ لینک دکمه جوین تنظیم شد:\n{link}")
 
     # ─── وضعیت ───────────────────────────────────────────────────────────────
     elif text == "وضعیت":
@@ -2311,9 +2356,9 @@ async def _handle_command(cl, event, text, owner_id, entry):
         lines.append(f"\n🔤 فونت: {gs('selected_font', '0')}")
         lines.append(f"✏️ فونت متن خودکار: {'✅ روشن' if gs('text_font_auto','0')=='1' else '❌ خاموش'}")
         lines.append(f"⏰ فونت ساعت: {gs('selected_clock_font', '0')}")
-        fj_ch = gs("force_join_channel", "")
-        if fj_ch:
-            lines.append(f"📢 کانال جوین اجباری: {fj_ch}")
+        fj_channels = _get_force_join_channels(owner_id)
+        if fj_channels:
+            lines.append(f"📢 کانال‌های جوین اجباری: {len(fj_channels)} کانال")
         lines.append(f"👥 دشمن: {len(db.get_enemies(owner_id))} نفر")
         lines.append(f"💚 دوست: {len(db.get_friends(owner_id))} نفر")
         await edit("\n".join(lines))
@@ -2555,6 +2600,25 @@ def _get_keyword_replies(owner_id: int) -> list:
 
 def _save_keyword_replies(owner_id: int, rules: list):
     db.set_setting(owner_id, _KEYWORD_REPLY_KEY, json.dumps(rules))
+
+
+# ─── جوین اجباری: لیست کانال‌هایی که کاربر باید عضوشون باشه (توی دیتابیس دائمی
+# ذخیره می‌شه، چون db.get_setting/set_setting از جدول Supabase استفاده می‌کنن) ──
+_FORCE_JOIN_KEY = "force_join_channels"
+
+
+def _get_force_join_channels(owner_id: int) -> list:
+    raw = db.get_setting(owner_id, _FORCE_JOIN_KEY, "")
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+def _save_force_join_channels(owner_id: int, channels: list):
+    db.set_setting(owner_id, _FORCE_JOIN_KEY, json.dumps(channels))
 
 
 # ─── فیلتر کلمات: لیست کلماتی که پیام حاوی‌شون در پیوی حذف می‌شه ───────────────
@@ -3007,12 +3071,14 @@ def _help_text():
             "💡 پیام‌های پیوی کاربر سکوت‌شده به‌صورت خودکار و دوطرفه پاک می‌شود",
         ]),
         ("🔹 جوین اجباری", [
-            "تنظیم کانال [آیدی یا @یوزرنیم]  ← تنظیم کانال",
-            "لینک کانال جوین [لینک]  ← لینک دکمه رنگی جوین",
+            "افزودن کانال [آیدی یا @یوزرنیم] [لینک]  ← افزودن کانال به لیست",
+            "حذف کانال [آیدی یا @یوزرنیم]  ← حذف یک کانال از لیست",
+            "لیست کانال‌های اجباری  ← نمایش همه کانال‌ها",
+            "پاک کردن کانال‌های اجباری  ← حذف همه کانال‌ها",
             "پیام جوین [متن]  ← تغییر متن پیام هشدار",
             "جوین اجباری روشن / خاموش",
-            "حذف کانال اجباری",
-            "💡 پیام عضو‌نشده حذف + هشدار با دکمه رنگی میفرسته",
+            "💡 می‌تونی چند کانال اضافه کنی؛ لیست توی دیتابیس دائمی ذخیره می‌شه",
+            "💡 پیام عضو‌نشده حذف + هشدار با دکمه‌های رنگی همه‌ی کانال‌ها میفرسته",
         ]),
         ("🔹 اتوماسیون", [
             "سین خودکار روشن",
@@ -3223,8 +3289,9 @@ PANEL_CATEGORIES = {
             ("force_join_active", "عضویت اجباری", "جوین اجباری روشن", "جوین اجباری خاموش"),
         ],
         "actions": [
-            ("نمایش متن دستورات", "INFO::دستورات عضویت اجباری:\nتنظیم کانال [آیدی/لینک]\nحذف کانال اجباری\nجوین اجباری روشن / جوین اجباری خاموش"),
-            ("حذف کانال اجباری", "حذف کانال اجباری"),
+            ("نمایش متن دستورات", "INFO::دستورات عضویت اجباری:\nافزودن کانال [آیدی/یوزرنیم] [لینک]\nحذف کانال [آیدی/یوزرنیم]\nلیست کانال‌های اجباری\nپاک کردن کانال‌های اجباری\nپیام جوین [متن]\nجوین اجباری روشن / جوین اجباری خاموش"),
+            ("لیست کانال‌های اجباری", "لیست کانال‌های اجباری"),
+            ("پاک کردن کانال‌های اجباری", "پاک کردن کانال‌های اجباری"),
         ],
     },
     "downloader": {
