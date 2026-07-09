@@ -483,10 +483,11 @@ def start_token_bot():
         )
         markup.add(
             types.InlineKeyboardButton(" رفرال", callback_data="menu_referral", style="primary", icon_custom_emoji_id=str(EM.ID_REFERRAL)),
-            types.InlineKeyboardButton(" خرید الماس", callback_data="menu_buy", style="success", icon_custom_emoji_id=str(EM.ID_BUY_DIAMOND))
+            types.InlineKeyboardButton(" خرید", callback_data="menu_buy", style="success", icon_custom_emoji_id=str(EM.ID_BUY_DIAMOND))
         )
         markup.add(
-            types.InlineKeyboardButton(" ماموریت‌ها", callback_data="menu_missions", style="primary", icon_custom_emoji_id=str(EM.ID_MISSION))
+            types.InlineKeyboardButton(" ماموریت‌ها", callback_data="menu_missions", style="primary", icon_custom_emoji_id=str(EM.ID_MISSION)),
+            types.InlineKeyboardButton(" مدیریت سلف", callback_data="self_mgmt_open", style="primary", icon_custom_emoji_id=str(EM.ID_SELF_EDIT))
         )
         markup.add(
             types.InlineKeyboardButton(" راهنما", callback_data="guide_menu", style="success", icon_custom_emoji_id=str(EM.ID_GUIDE))
@@ -901,7 +902,7 @@ def start_token_bot():
             f'<tg-emoji emoji-id="4956601935592424315">💰</tg-emoji> {tax_msg}'
         )
 
-    @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال "), chat_types=['private', 'group', 'supergroup'])
+    @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال ") and not m.text.startswith("انتقال اشتراک"), chat_types=['private', 'group', 'supergroup'])
     def cmd_transfer(message):
         try:
             parts = message.text.split()
@@ -996,6 +997,80 @@ def start_token_bot():
             
         except Exception as e:
             print(f"❌ خطا در cmd_transfer: {e}")
+            _bot.reply_to(message, f"❌ خطا: {e}")
+
+    @_bot.message_handler(func=lambda m: m.text and m.text.startswith("انتقال اشتراک"), chat_types=['private', 'group', 'supergroup'])
+    def cmd_transfer_subscription(message):
+        try:
+            parts = message.text.split()
+
+            # ── حالت گروه: ریپلای روی پیام کاربر + «انتقال اشتراک» ────────────
+            if len(parts) == 2 and message.reply_to_message:
+                target_user = message.reply_to_message.from_user
+                if not target_user or target_user.is_bot:
+                    return _bot.reply_to(message, "❌ نمی‌توان اشتراک را به این کاربر منتقل کرد.")
+                if target_user.id == message.from_user.id:
+                    return _bot.reply_to(message, "❌ نمی‌توانید اشتراک را به خودتان انتقال دهید.")
+
+                from_account = _get_account_cached(message.from_user.id)
+                if not from_account:
+                    return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
+
+                to_account = db.get_account_by_tg_id(target_user.id)
+                if not to_account:
+                    return _bot.reply_to(message, "❌ این کاربر در پنل ربات ثبت‌نام نکرده است.")
+
+                success, msg = db.transfer_subscription(from_account["id"], to_account["id"])
+
+                if success:
+                    to_tg_id = db.get_telegram_id_by_owner(to_account["id"])
+                    if to_tg_id:
+                        try:
+                            _bot.send_message(
+                                to_tg_id,
+                                f"📦 <b>اشتراک</b> از @{message.from_user.username or 'کاربر'} به حساب شما منتقل شد!"
+                            )
+                        except Exception:
+                            pass
+                return _bot.reply_to(message, msg)
+
+            # ── حالت معمول: «انتقال اشتراک [یوزرنیم]» ─────────────────────────
+            if len(parts) < 3:
+                return _bot.reply_to(
+                    message,
+                    "❗ فرمت: انتقال اشتراک [یوزرنیم]\nمثال: انتقال اشتراک @ali\nیا روی پیام کاربر ریپلای کنید و بنویسید: انتقال اشتراک"
+                )
+
+            username = parts[2].lstrip("@")
+
+            from_account = _get_account_cached(message.from_user.id)
+            if not from_account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل ربات ثبت‌نام کنید.")
+
+            to_account = db.get_account_by_username(username)
+            if not to_account:
+                return _bot.reply_to(message, f"❌ کاربر '{username}' یافت نشد.")
+
+            if to_account["id"] == from_account["id"]:
+                return _bot.reply_to(message, "❌ نمی‌توانید اشتراک را به خودتان انتقال دهید.")
+
+            success, msg = db.transfer_subscription(from_account["id"], to_account["id"])
+
+            if success:
+                to_tg_id = db.get_telegram_id_by_owner(to_account["id"])
+                if to_tg_id:
+                    try:
+                        _bot.send_message(
+                            to_tg_id,
+                            f"📦 <b>اشتراک</b> از @{message.from_user.username or 'کاربر'} به حساب شما منتقل شد!"
+                        )
+                    except Exception:
+                        pass
+
+            _bot.reply_to(message, msg)
+
+        except Exception as e:
+            print(f"❌ خطا در cmd_transfer_subscription: {e}")
             _bot.reply_to(message, f"❌ خطا: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -2198,7 +2273,7 @@ def start_token_bot():
             print(f"❌ خطا در cmd_self_management: {e}")
 
     @_bot.callback_query_handler(func=lambda call: call.data in (
-        "self_mgmt_stop", "self_mgmt_start", "self_mgmt_back"
+        "self_mgmt_stop", "self_mgmt_start", "self_mgmt_back", "self_mgmt_open"
     ))
     def callback_self_management(call):
         try:
@@ -2208,6 +2283,22 @@ def start_token_bot():
 
             acc_id = account["id"]
             data   = call.data
+
+            if data == "self_mgmt_open":
+                if _is_user_banned(acc_id):
+                    return _bot.answer_callback_query(
+                        call.id, "🚫 شما توسط مالک از سلف بن شده‌اید.", show_alert=True)
+                _bot.answer_callback_query(call.id)
+                try:
+                    _bot.edit_message_text(
+                        _self_management_text(acc_id),
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        reply_markup=_self_management_keyboard(acc_id)
+                    )
+                except Exception:
+                    pass
+                return
 
             if data == "self_mgmt_back":
                 _bot.answer_callback_query(call.id)

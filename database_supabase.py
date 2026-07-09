@@ -1117,6 +1117,46 @@ def is_subscribed(owner_id: int) -> bool:
         return False
 
 
+def transfer_subscription(from_owner_id: int, to_owner_id: int) -> tuple:
+    """انتقال باقی‌مانده‌ی اشتراک از یک حساب به حساب دیگر. خروجی: (success: bool, message: str)"""
+    try:
+        if from_owner_id == to_owner_id:
+            return False, "❌ نمی‌توانید اشتراک را به خودتان انتقال دهید."
+
+        sub = get_subscription(from_owner_id)
+        if not sub:
+            return False, "❌ شما اشتراک فعالی برای انتقال ندارید."
+
+        now_teh = _tehran_now()
+        exp = sub["expires_at"]
+        if isinstance(exp, str):
+            exp = datetime.datetime.fromisoformat(exp)
+        if hasattr(exp, 'tzinfo') and exp.tzinfo:
+            exp = exp.replace(tzinfo=None)
+
+        if exp <= now_teh:
+            return False, "❌ اشتراک شما منقضی شده و قابل انتقال نیست."
+
+        remaining_seconds = (exp - now_teh).total_seconds()
+        remaining_days = int(remaining_seconds // 86400)
+        if remaining_seconds % 86400 > 0:
+            remaining_days += 1
+        remaining_days = max(1, remaining_days)
+
+        # اشتراک رو از حساب فرستنده حذف می‌کنیم
+        execute_query("DELETE FROM amel_subscriptions WHERE owner_id=%s", (from_owner_id,))
+        rc.invalidate_subscribe(from_owner_id)
+
+        # همون باقی‌مانده رو به حساب گیرنده اضافه می‌کنیم (اگه گیرنده هم
+        # اشتراک فعال داشته باشه، set_subscription خودش روزها رو بهش اضافه می‌کنه)
+        set_subscription(to_owner_id, sub["plan"], remaining_days)
+
+        return True, f"✅ اشتراک با {remaining_days} روز باقی‌مانده با موفقیت منتقل شد."
+    except Exception as e:
+        print(f"❌ transfer_subscription error: {e}")
+        return False, f"❌ خطا: {e}"
+
+
 def give_free_trial(owner_id: int) -> bool:
     """یک روز سلف رایگان برای کاربر تازه‌وارد"""
     try:

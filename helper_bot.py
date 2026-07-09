@@ -38,6 +38,7 @@ DENIED_TEXT = "این پنل مخصوص کسی است که آن را باز کر
 # ─── بستن خودکار پنل بعد از بیکار موندن ──────────────────────────────────────
 PANEL_IDLE_SECONDS = 180  # ۳ دقیقه
 IDLE_CLOSED_TEXT = "⏰ این پنل به‌خاطر ۳ دقیقه بیکار موندن بسته شد.\nبرای باز کردن دوباره، توی سلف بنویس: پنل"
+CLOSED_TEXT = "پنل بسته شد.\nبرای باز کردن دوباره، توی سلف بنویس: پنل"
 _panel_timers = {}  # {(chat_id, message_id): asyncio.Task}
 _schedule_panel_timeout_impl = None  # موقع start_helper_bot ست میشه
 
@@ -270,9 +271,12 @@ async def start_helper_bot():
             if old and not old.done():
                 old.cancel()
             try:
-                await event.delete()
+                await event.edit(CLOSED_TEXT, buttons=None)
             except Exception:
-                await event.answer("پنل بسته شد.")
+                try:
+                    await cl.delete_messages(event.chat_id, event.message_id)
+                except Exception:
+                    pass
             return
 
         # ─── انتخاب یک دسته از منوی اصلی ───────────────────────────────────

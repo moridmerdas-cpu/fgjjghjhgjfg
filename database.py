@@ -59,6 +59,7 @@ from database_supabase import (
     get_subscription as supa_get_subscription,
     set_subscription as supa_set_subscription,
     is_subscribed as supa_is_subscribed,
+    transfer_subscription as supa_transfer_subscription,
     create_payment as supa_create_payment,
     update_payment as supa_update_payment,
     get_payment as supa_get_payment,
@@ -297,6 +298,8 @@ def set_subscription(owner_id, plan, days):
     return supa_set_subscription(owner_id, plan, days)
 def is_subscribed(owner_id):
     return supa_is_subscribed(owner_id)
+def transfer_subscription(from_owner_id, to_owner_id):
+    return supa_transfer_subscription(from_owner_id, to_owner_id)
 def create_payment(owner_id, tg_id, ptype, plan=None, diamond_amount=None, toman_amount=None):
     return supa_create_payment(owner_id, tg_id, ptype, plan, diamond_amount, toman_amount)
 def update_payment(payment_id, **kwargs):
@@ -320,6 +323,7 @@ __all__ = [
     
     # توکن
     'get_token_balance', 'add_tokens', 'deduct_tokens', 'transfer_diamonds',
+    'transfer_subscription',
     'claim_daily_token', 'get_token_stats',
     'process_referral', 'get_referral_count',
     

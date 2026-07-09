@@ -53,6 +53,7 @@ AI_REPLY_COOLDOWN = 60  # حداقل فاصله بین دو پاسخ هوش مص
 # ─── نگهبان چت: کش موقتِ متنِ پیام‌ها برای تشخیصِ حذف/ویرایش ──────────────────
 _msg_cache = {}  # {(chat_id, msg_id): text}
 _msg_sender_cache = {}  # {(chat_id, msg_id): sender display name}
+_msg_media_cache = {}  # {(chat_id, msg_id): saved media file path or None}
 _MSG_CACHE_MAX = 2000
 
 # ─── پاسخ خودکار ثابت به همه‌ی پیام‌ها ─────────────────────────────────────────
@@ -414,14 +415,41 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         is_bot_sender = bool(getattr(sender, "bot", False))
 
         # نگهبان چت: کش کردن متن پیام برای تشخیص بعدیِ حذف/ویرایش
+        # نکته‌ی مهم: کلیدِ کش باید از event.chat_id ساخته بشه (همون چیزی که
+        # on_edited/on_deleted استفاده می‌کنن)، نه از chat.id که برای گروه‌ها/
+        # سوپرگروه‌ها/کانال‌ها یه عدد متفاوت (بدون پیشوند -100) برمی‌گردونه؛
+        # قبلاً همین اختلاف باعث می‌شد کش توی گروه‌ها اصلاً پیدا نشه و پیام‌ها
+        # ناقص (یا اصلاً هیچی) ذخیره بشن.
+        cache_key = (event.chat_id, msg.id)
         if sender_id != owner_id:
             who_name = getattr(sender, "first_name", None) or getattr(sender, "username", None) or str(sender_id)
-            _msg_cache[(chat_id, msg.id)] = text
-            _msg_sender_cache[(chat_id, msg.id)] = who_name
+            _msg_cache[cache_key] = text
+            _msg_sender_cache[cache_key] = who_name
+
+            # اگه پیام رسانه داره (عکس/ویدیو/گیف/استیکر و ...) و «ذخیره پیام
+            # حذف‌شده» روشنه، خودِ رسانه رو هم دانلود می‌کنیم تا اگه پیام حذف
+            # شد، بشه عینِ همون رسانه رو هم برای خودت فرستاد، نه فقط یه متنِ خالی.
+            if msg.media and db.get_setting(owner_id, "guard_delete_active") == "1":
+                try:
+                    guard_dir = f"saved_media/_guard/{owner_id}"
+                    os.makedirs(guard_dir, exist_ok=True)
+                    media_path = await cl.download_media(msg, file=guard_dir + "/")
+                    _msg_media_cache[cache_key] = media_path
+                except Exception:
+                    _msg_media_cache[cache_key] = None
+            else:
+                _msg_media_cache[cache_key] = None
+
             if len(_msg_cache) > _MSG_CACHE_MAX:
                 for k in list(_msg_cache.keys())[:200]:
                     _msg_cache.pop(k, None)
                     _msg_sender_cache.pop(k, None)
+                    old_media = _msg_media_cache.pop(k, None)
+                    if old_media:
+                        try:
+                            os.remove(old_media)
+                        except Exception:
+                            pass
 
         # ✅ سکوت: اگه فرستنده توی لیست سکوت باشه و پیوی باشه، پیام دوطرفه پاک می‌شه
         if event.is_private and sender_id and _is_silence_user(owner_id, sender_id):
@@ -445,6 +473,49 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 is_tagged = True
             if me.username and me.username.lower() in text.lower():
                 is_tagged = True
+
+        # ✅ تگ رندوم توسط اعضای گروه — «تگ [تعداد]» فقط برای مالک/ادمین گروه
+        # (این با فرمان «تگ [متن]» خود صاحب سلف که در on_outgoing هندل می‌شه فرق داره؛
+        # اینجا هر عضو گروه می‌تونه بزنه، ولی فقط اگه خودش ادمین یا سازنده‌ی گروه باشه)
+        if not event.is_private and not is_bot_sender:
+            tag_count_match = re.match(r"^تگ\s+(\d+)\s*$", text.strip())
+            if tag_count_match:
+                requested_count = int(tag_count_match.group(1))
+                requested_count = max(1, min(requested_count, 50))
+                is_privileged = False
+                try:
+                    perms = await cl.get_permissions(chat_id, sender_id)
+                    is_privileged = bool(perms.is_admin or perms.is_creator)
+                except Exception:
+                    is_privileged = False
+
+                if is_privileged:
+                    try:
+                        members = []
+                        async for user in cl.iter_participants(chat_id):
+                            if user.bot or user.deleted or not user.username:
+                                continue
+                            members.append(user)
+                    except Exception:
+                        members = []
+                    if members:
+                        picked = random.sample(members, min(requested_count, len(members)))
+                        mention_text = " ".join(f"@{u.username}" for u in picked)
+                        try:
+                            await cl.send_message(chat_id, mention_text)
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            await event.reply("⛔ عضوی با یوزرنیم برای تگ کردن پیدا نشد.")
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        await event.reply("⛔ این دستور فقط برای مالک یا ادمین‌های گروه است.")
+                    except Exception:
+                        pass
+                return
 
         # ✅ اگر در گروه است و تگ نشده، فقط کارهای خودکار را انجام بده
         if not event.is_private and not is_tagged:
@@ -524,26 +595,30 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         await msg.delete()
                     except Exception:
                         pass
-                    # پیام هشدار با دکمه رنگی جوین
+                    # پیام هشدار با دکمه رنگی جوین — از طریق ربات کمکی فرستاده می‌شه
+                    # چون سلف‌بات نمی‌تونه دکمه‌ی شیشه‌ای واقعی (inline keyboard) بفرسته
+                    # و ربات کمکی یک بات واقعیه که دکمه‌هاش درست کار می‌کنن.
                     join_msg = db.get_setting(owner_id, "force_join_message",
                         "⛔ برای ارسال پیام ابتدا باید در کانال ما عضو شوید.")
+                    channel_link = db.get_setting(owner_id, "force_join_link", "")
                     try:
-                        # ساخت دکمه لینک کانال
-                        channel_link = db.get_setting(owner_id, "force_join_link", "")
-                        from telethon.tl.types import (
-                            ReplyInlineMarkup, KeyboardButtonUrl, KeyboardButtonRow
-                        )
+                        from telethon.tl.custom import Button
+                        from helper_bot import get_helper_client
+
+                        helper_cl = get_helper_client()
+                        buttons = None
                         if channel_link:
-                            buttons = ReplyInlineMarkup(rows=[
-                                KeyboardButtonRow(buttons=[
-                                    KeyboardButtonUrl(
-                                        text="📢 عضویت در کانال ✅",
-                                        url=channel_link
-                                    )
-                                ])
-                            ])
-                            await cl.send_message(sender_id, join_msg, buttons=buttons)
+                            buttons = [Button.url("📢 عضویت در کانال ✅", channel_link)]
+
+                        if helper_cl is not None:
+                            try:
+                                await helper_cl.send_message(sender_id, join_msg, buttons=buttons)
+                            except Exception:
+                                # اگه کاربر با ربات کمکی استارت نزده باشه یا خطای دیگه‌ای پیش بیاد،
+                                # به‌عنوان جایگزین از خود سلف پیام رو بفرست (بدون دکمه چون کار نمی‌کنه)
+                                await cl.send_message(sender_id, join_msg)
                         else:
+                            # ربات کمکی راه‌اندازی نشده — جایگزین: پیام ساده از سلف
                             await cl.send_message(sender_id, join_msg)
                     except Exception:
                         pass
@@ -739,16 +814,19 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     return
 
         # پاسخ خودکار ثابت به همه‌ی پیام‌ها (با کول‌داون مستقل از منشی/هوش‌مصنوعی) — با بات‌ها کاری نداشته باش
+        # فقط وقتی کار می‌کنه که کاربر خودش یه متن برای پاسخ خودکار تنظیم کرده باشه؛
+        # اگه متنی تنظیم نشده باشه، حتی اگه روشن باشه، هیچ پیامی فرستاده نمی‌شه.
         if db.get_setting(owner_id, "auto_reply_active") == "1" and sender_id != owner_id and not is_bot_sender and text.strip():
-            now = time.time()
-            last = _last_auto_reply.get(chat_id, 0)
-            if now - last >= AUTO_REPLY_COOLDOWN:
-                msg_text = db.get_setting(owner_id, "auto_reply_message", "در حال حاضر در دسترس نیستم.")
-                try:
-                    await event.reply(msg_text)
-                    _last_auto_reply[chat_id] = now
-                except Exception:
-                    pass
+            msg_text = db.get_setting(owner_id, "auto_reply_message", "").strip()
+            if msg_text:
+                now = time.time()
+                last = _last_auto_reply.get(chat_id, 0)
+                if now - last >= AUTO_REPLY_COOLDOWN:
+                    try:
+                        await event.reply(msg_text)
+                        _last_auto_reply[chat_id] = now
+                    except Exception:
+                        pass
 
     @cl.on(events.MessageEdited())
     async def on_edited(event):
@@ -796,21 +874,37 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             chat_id_del = event.chat_id
             for msg_id in event.deleted_ids:
                 key = (chat_id_del, msg_id)
-                cached = _msg_cache.pop(key, None)
-                if cached:
-                    who = _msg_sender_cache.pop(key, None) or "نامشخص"
-                    try:
-                        from telethon.tl.types import MessageEntityBlockquote
-                        header = f"پیام حذف شده\nاز طرف: {who}\nپیام قبلی\n"
-                        body = cached
-                        full = header + body
-                        entity_start = len(header)
+                # قبلاً اینجا `if cached:` بود که چون رشته‌ی خالی هم False حساب
+                # می‌شه، پیام‌های رسانه‌ایِ بدون کپشن (که متنشون "" کش شده بود)
+                # اصلاً گزارش نمی‌شدن و به نظر می‌رسید نگهبان چت ناقص کار می‌کنه.
+                if key not in _msg_cache:
+                    continue
+                cached = _msg_cache.pop(key, None) or ""
+                who = _msg_sender_cache.pop(key, None) or "نامشخص"
+                media_path = _msg_media_cache.pop(key, None)
+                try:
+                    from telethon.tl.types import MessageEntityBlockquote
+                    header = f"پیام حذف شده\nاز طرف: {who}\n"
+                    body = cached if cached else "(بدون متن — فقط رسانه)"
+                    header += "پیام قبلی\n"
+                    full = header + body
+                    entity_start = len(header)
+                    if media_path and os.path.exists(media_path):
+                        await cl.send_file(
+                            "me", media_path, caption=full,
+                            formatting_entities=[MessageEntityBlockquote(entity_start, len(body), collapsed=False)]
+                        )
+                        try:
+                            os.remove(media_path)
+                        except Exception:
+                            pass
+                    else:
                         await cl.send_message(
                             "me", full,
                             formatting_entities=[MessageEntityBlockquote(entity_start, len(body), collapsed=False)]
                         )
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -858,7 +952,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             "تنظیم دوست", "حذف دوست", "نمایش لیست دوست", "پاک کردن لیست دوست",
             "سایلنت چت روشن", "سایلنت چت خاموش", "سایلنت کاربر", "لغو سایلنت کاربر",
             "سکوت", "لغو سکوت", "لیست سکوت",
-            "فونت ", "لیست فونت", "فونت متن روشن", "فونت متن خاموش", "بنویس ",
+            "فونت ", "لیست فونت", "فونت متن روشن", "فونت متن خاموش",
             "بولد ", "ایتالیک ", "مونو ", "اسپویلر ", "کوت ", "خط‌خورده ", "زیرخط ",
             "ذخیره ", "ارسال ذخیره ",
             "ترجمه ", "هوا ", "قیمت دلار", "ارز",
@@ -1148,10 +1242,14 @@ async def _handle_command(cl, event, text, owner_id, entry):
 
     # ─── تگ (منشن همه اعضای گروه) ────────────────────────────────────────────
     elif text.startswith("تگ") and text != "لغو تگ":
-        if event.is_private:
+        raw_part = text[len("تگ"):].strip()
+        if not raw_part:
+            # «تگ» خالی (بدون متن/عدد بعدش) — عمداً هیچ کاری نمی‌کنیم
+            pass
+        elif event.is_private:
             await edit("این دستور فقط توی گروه کار می‌کند.")
         else:
-            msg_part = text[len("تگ"):].strip() or "."
+            msg_part = raw_part
             entry["cancel_tag"] = False
             await edit("در حال تگ کردن اعضا... (برای توقف: لغو تگ)")
             mentions = []
@@ -1928,17 +2026,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
     elif text == "فونت متن خاموش":
         ss("text_font_auto", "0")
         await edit("❌ فونت متن خودکار خاموش شد.\nپیام‌ها دیگه ادیت نمی‌شن.")
-
-    elif text.startswith("بنویس "):
-        # «بنویس [متن]» — متن رو با فونت فعلی برمی‌گردونه
-        raw = text[len("بنویس "):].strip()
-        if not raw:
-            await edit("❗ فرمت: بنویس [متن]")
-        else:
-            font_id = gs("selected_font", "0")
-            fn = FONTS.get(font_id, FONTS["0"])
-            styled = fn(raw)
-            await edit(styled)
 
     # ─── قالب‌بندی تلگرام (entities) — کار با فارسی هم دارد ────────────────────
     elif text.startswith("بولد "):
@@ -2979,7 +3066,6 @@ def _help_text():
             "──────────────────",
             "فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
             "فونت متن خاموش  ← خاموش کردن حالت خودکار",
-            "بنویس [متن]  ← نوشتن با فونت فعلی (بدون روشن کردن خودکار)",
             "──────────────────",
             "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
