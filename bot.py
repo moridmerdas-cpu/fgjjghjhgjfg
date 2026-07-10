@@ -8,6 +8,20 @@ import threading
 import time
 from telethon import TelegramClient, events
 from telethon.tl.types import InputMediaDice
+
+
+def _u16len(s: str) -> int:
+    """
+    طول رشته بر حسب واحدهای UTF-16 (نه تعداد کاراکتر پایتون).
+    تلگرام آفست/طولِ entity ها (بولد، کوت، اسپویلر و ...) رو با UTF-16
+    حساب می‌کنه، در حالی که ایموجی‌ها و بعضی کاراکترهای خاص (مثل خیلی از
+    ایموجی‌های رایج) در UTF-16 دو واحدی (surrogate pair) هستن ولی len()
+    پایتون براشون فقط ۱ می‌شمره. همین اختلاف باعث می‌شد افست/طولِ کوت
+    اشتباه محاسبه بشه و متنِ نگهبانِ چت (پیام حذف/ویرایش‌شده) قاطی یا ناقص
+    نمایش داده بشه، مخصوصاً وقتی اسم فرستنده ایموجی داشت.
+    """
+    return len(s.encode("utf-16-le")) // 2
+
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.errors import FloodWaitError
@@ -36,6 +50,11 @@ LINK_PATTERN = re.compile(
 # لینک یک پست خاص، مثل: https://t.me/channelname/123 یا t.me/channelname/123
 _POST_LINK_RE = re.compile(
     r"^(?:https?://)?t\.me/([A-Za-z0-9_]+)/(\d+)/?$", re.IGNORECASE
+)
+
+# لینک یک پست از کانال خصوصی، مثل: https://t.me/c/3807322753/674
+_PRIVATE_POST_LINK_RE = re.compile(
+    r"^(?:https?://)?t\.me/c/(\d+)/(\d+)/?$", re.IGNORECASE
 )
 
 # ─── سیستم محدودیت زمانی برای منشی و دوست ────────────────────────────────────
@@ -866,13 +885,13 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     header = f"پیام ویرایش شده\nاز طرف: {who}\nپیام قبلی\n"
                     mid = f"\n\nپیام جدید\n"
                     full = header + old_text + mid + new_text
-                    old_start = len(header)
-                    new_start = len(header) + len(old_text) + len(mid)
+                    old_start = _u16len(header)
+                    new_start = _u16len(header) + _u16len(old_text) + _u16len(mid)
                     await cl.send_message(
                         "me", full,
                         formatting_entities=[
-                            MessageEntityBlockquote(old_start, len(old_text), collapsed=False),
-                            MessageEntityBlockquote(new_start, len(new_text), collapsed=False),
+                            MessageEntityBlockquote(old_start, _u16len(old_text), collapsed=False),
+                            MessageEntityBlockquote(new_start, _u16len(new_text), collapsed=False),
                         ]
                     )
                 except Exception:
@@ -905,11 +924,11 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     body = cached if cached else "(بدون متن — فقط رسانه)"
                     header += "پیام قبلی\n"
                     full = header + body
-                    entity_start = len(header)
+                    entity_start = _u16len(header)
                     if media_path and os.path.exists(media_path):
                         await cl.send_file(
                             "me", media_path, caption=full,
-                            formatting_entities=[MessageEntityBlockquote(entity_start, len(body), collapsed=False)]
+                            formatting_entities=[MessageEntityBlockquote(entity_start, _u16len(body), collapsed=False)]
                         )
                         try:
                             os.remove(media_path)
@@ -918,7 +937,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                     else:
                         await cl.send_message(
                             "me", full,
-                            formatting_entities=[MessageEntityBlockquote(entity_start, len(body), collapsed=False)]
+                            formatting_entities=[MessageEntityBlockquote(entity_start, _u16len(body), collapsed=False)]
                         )
                 except Exception:
                     pass
@@ -1963,13 +1982,15 @@ async def _handle_command(cl, event, text, owner_id, entry):
         channel_input = parts[2] if len(parts) >= 3 else None
         if not channel_input:
             await edit(
-                "❗ فرمت درست یکی از این دو حالت:\n"
+                "❗ فرمت درست یکی از این حالت‌هاست:\n"
                 "• سیو کانال [لینک یک پست خاص]\n"
                 "  مثال: سیو کانال https://t.me/channel/123\n"
+                "• سیو کانال [لینک پست کانال خصوصی]\n"
+                "  مثال: سیو کانال https://t.me/c/3807322753/674\n"
                 "• سیو کانال [@یوزرنیم یا لینک کانال] [تعداد]\n"
                 "  مثال: سیو کانال @channel 50"
             )
-        elif _POST_LINK_RE.match(channel_input):
+        elif _POST_LINK_RE.match(channel_input) or _PRIVATE_POST_LINK_RE.match(channel_input):
             await edit("⏳ در حال ذخیره این پست...")
             asyncio.ensure_future(_save_channel_media(cl, channel_input, None, owner_id))
         else:
@@ -2073,7 +2094,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
         raw = text[len("اسپویلر "):].strip()
         if raw:
             from telethon.tl.types import MessageEntitySpoiler
-            await event.edit(raw, formatting_entities=[MessageEntitySpoiler(0, len(raw))])
+            await event.edit(raw, formatting_entities=[MessageEntitySpoiler(0, _u16len(raw))])
         else:
             await edit("❗ فرمت: اسپویلر [متن]")
 
@@ -2082,7 +2103,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
         if raw:
             try:
                 from telethon.tl.types import MessageEntityBlockquote
-                await event.edit(raw, formatting_entities=[MessageEntityBlockquote(0, len(raw), collapsed=False)])
+                await event.edit(raw, formatting_entities=[MessageEntityBlockquote(0, _u16len(raw), collapsed=False)])
             except Exception:
                 # fallback برای نسخه‌های قدیمی‌تر telethon
                 await event.edit(f"❝ {raw} ❞")
@@ -2440,7 +2461,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
                         cut = max(1, (n * i) // steps)
                         partial = body[:cut]
                         try:
-                            await event.edit(partial, formatting_entities=_entities_for(len(partial)) or None)
+                            await event.edit(partial, formatting_entities=_entities_for(_u16len(partial)) or None)
                         except FloodWaitError as e:
                             await asyncio.sleep(e.seconds + 1)
                         except Exception:
@@ -2448,7 +2469,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
                         if cut < n:
                             await asyncio.sleep(0.35)
                 else:
-                    entities = _entities_for(len(body))
+                    entities = _entities_for(_u16len(body))
                     if body != text or entities:
                         await event.edit(body, formatting_entities=entities or None)
             except FloodWaitError as e:
@@ -2752,14 +2773,22 @@ async def _save_channel_media(cl, channel_input, limit, owner_id):
     try:
         me = await cl.get_me()
 
-        # ─── حالت ۱: لینک یک پست خاص ────────────────────────────────────
+        # ─── حالت ۱: لینک یک پست خاص (کانال عمومی یا خصوصی) ──────────────
         post_match = _POST_LINK_RE.match(channel_input)
-        if post_match:
-            channel_username, post_id = post_match.group(1), int(post_match.group(2))
+        private_match = _PRIVATE_POST_LINK_RE.match(channel_input)
+        if post_match or private_match:
             try:
-                target_msg = await cl.get_messages(channel_username, ids=post_id)
+                if private_match:
+                    # لینک کانال خصوصی: t.me/c/CHANNEL_ID/MSG_ID — این CHANNEL_ID
+                    # همون آیدیِ خامِ کانال (بدون پیشوند -100) هست
+                    from telethon.tl.types import PeerChannel
+                    raw_channel_id, post_id = int(private_match.group(1)), int(private_match.group(2))
+                    entity = await cl.get_entity(PeerChannel(raw_channel_id))
+                else:
+                    entity, post_id = post_match.group(1), int(post_match.group(2))
+                target_msg = await cl.get_messages(entity, ids=post_id)
             except Exception as e:
-                await cl.send_message(me.id, f"❌ پست پیدا نشد: {e}")
+                await cl.send_message(me.id, f"❌ پست پیدا نشد: {e}\n\n💡 مطمئن شو سلف عضو این کانال هست.")
                 db.set_setting(owner_id, "channel_save_active", "0")
                 return
 
@@ -3111,7 +3140,7 @@ def _help_text():
             "ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن",
         ]),
         ("🔹 سیو مدیا", [
-            "سیو کانال [لینک پست]  ← ذخیره یک پست",
+            "سیو کانال [لینک پست]  ← ذخیره یک پست (عمومی یا خصوصی، مثل t.me/c/.../...)",
             "سیو کانال [@کانال] [تعداد]  ← ذخیره چند پست",
             "توقف سیو",
         ]),
