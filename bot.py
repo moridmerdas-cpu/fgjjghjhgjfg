@@ -1,6 +1,7 @@
 import asyncio
 import re
 import os
+import io
 import json
 import datetime
 import random
@@ -1351,6 +1352,93 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 await event.delete()
         except Exception as e:
             await edit(f"خطا در ساخت لوگو: {e}")
+
+    # ─── اسکرین (ساخت استیکر از یک پیام، همراه با پروفایلِ فرستنده) ────────────
+    elif text == "اسکرین" or text.startswith("اسکرین "):
+        link_part = text[len("اسکرین"):].strip()
+        try:
+            target_msg = None
+            sender_name = None
+            profile_bytes = None
+
+            if link_part:
+                # حالت لینک — مخصوصِ کانال‌ها: «اسکرین [لینک پیام]»
+                post_match = _POST_LINK_RE.match(link_part)
+                private_match = _PRIVATE_POST_LINK_RE.match(link_part)
+                if not (post_match or private_match):
+                    await edit(
+                        "❗ لینک پیام معتبر نیست.\n"
+                        "مثال: اسکرین https://t.me/channel/123\n"
+                        "یا (کانال خصوصی): اسکرین https://t.me/c/123456789/123"
+                    )
+                else:
+                    if private_match:
+                        from telethon.tl.types import PeerChannel
+                        raw_channel_id, post_id = int(private_match.group(1)), int(private_match.group(2))
+                        channel_entity = await cl.get_entity(PeerChannel(raw_channel_id))
+                    else:
+                        channel_username, post_id = post_match.group(1), int(post_match.group(2))
+                        channel_entity = await cl.get_entity(channel_username)
+
+                    target_msg = await cl.get_messages(channel_entity, ids=post_id)
+                    if not target_msg:
+                        await edit("❌ پیام پیدا نشد.")
+                    else:
+                        sender_name = getattr(channel_entity, "title", None) or "کانال"
+                        try:
+                            profile_bytes = await cl.download_profile_photo(channel_entity, file=bytes)
+                        except Exception:
+                            profile_bytes = None
+            else:
+                # حالت ریپلای — روی یه پیام ریپلای بزن و بنویس: اسکرین
+                if not event.is_reply:
+                    await edit("❗ روی یه پیام ریپلای بزن و بنویس: اسکرین")
+                else:
+                    target_msg = await event.get_reply_message()
+                    if not target_msg:
+                        await edit("❌ پیامِ ریپلای‌شده پیدا نشد.")
+                    else:
+                        sender = await target_msg.get_sender()
+                        sender_name = (
+                            " ".join(filter(None, [
+                                getattr(sender, "first_name", None),
+                                getattr(sender, "last_name", None),
+                            ])).strip()
+                            or getattr(sender, "title", None)
+                            or getattr(sender, "username", None)
+                            or "کاربر"
+                        )
+                        try:
+                            profile_bytes = await cl.download_profile_photo(sender, file=bytes)
+                        except Exception:
+                            profile_bytes = None
+
+            if target_msg is not None:
+                message_text = target_msg.text or target_msg.raw_text or ""
+                if not message_text and not target_msg.media:
+                    await edit("❗ این پیام متنی برای اسکرین کردن نداره.")
+                else:
+                    if not message_text:
+                        message_text = "🖼 (رسانه بدون متن)"
+                    date_str = target_msg.date.strftime("%H:%M") if target_msg.date else None
+
+                    from screenshot import generate_message_sticker
+                    sticker_bytes = generate_message_sticker(profile_bytes, sender_name, message_text, date_str)
+
+                    from telethon.tl.types import DocumentAttributeSticker, InputStickerSetEmpty
+                    buf = io.BytesIO(sticker_bytes)
+                    buf.name = "screen.webp"
+                    await cl.send_file(
+                        event.chat_id, buf,
+                        attributes=[DocumentAttributeSticker(alt="🖼", stickerset=InputStickerSetEmpty())],
+                        force_document=False,
+                    )
+                    try:
+                        await event.delete()
+                    except Exception:
+                        pass
+        except Exception as e:
+            await edit(f"❌ خطا در ساخت اسکرین: {e}")
 
     # ─── فیلتر کلمات ─────────────────────────────────────────────────────────
     elif text.startswith("فیلتر کلمه "):
@@ -3459,7 +3547,7 @@ PANEL_CATEGORIES = {
     "screen_guard": {
         "title": "اسکرین",
         "menu_style": "danger",
-        "direct_command": "INFO::این بخش هنوز آماده نیست.",
+        "direct_command": "INFO::دستورات اسکرین:\nروی یه پیام ریپلای بزن و بنویس: اسکرین\nپیام به‌صورت استیکر (همراه با پروفایل فرستنده) ساخته می‌شه.\n\nبرای پست‌های کانال:\nاسکرین [لینک پیام]\nمثال: اسکرین https://t.me/channel/123\nیا (کانال خصوصی): اسکرین https://t.me/c/123456789/123",
     },
     "tools": {
         "title": "ابزار بیشتر",

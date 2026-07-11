@@ -31,6 +31,7 @@ from telethon.sessions import StringSession
 import config
 
 _helper_client = None  # سینگلتون - فقط یک بار در کل پروسس بالا میاد
+_helper_start_lock = None  # موقع اولین صدا زدنِ start_helper_bot ساخته می‌شه
 
 MAIN_TEXT = "پنل مدیریت سلف\nیک دسته را انتخاب کن"
 DENIED_TEXT = "این پنل مخصوص کسی است که آن را باز کرده. دکمه‌ها برای شما فعال نیست."
@@ -71,8 +72,14 @@ def _split_owner_tag(data: str):
 
 
 async def start_helper_bot():
-    """بات کمکی رو راه‌اندازی می‌کنه. فقط یک‌بار صدا زده بشه (مثلاً موقع بالا اومدن سرور)."""
-    global _helper_client
+    """
+    بات کمکی رو راه‌اندازی می‌کنه. ایمن برای صدا زدنِ چندباره از چند جا
+    (مثلاً موقع بالا اومدن سرور، بعد از هر ثبت‌نامِ تازه، و توسط واچ‌داگِ
+    دوره‌ای) — اگه از قبل سالم و وصل باشه فوراً همون رو برمی‌گردونه، وگرنه
+    یک اتصالِ تازه می‌سازه. با قفل جلوگیری می‌کنه که دو تا فراخوانیِ هم‌زمان
+    دو تا کلاینتِ جدا با یک توکن بسازن.
+    """
+    global _helper_client, _helper_start_lock
 
     if not config.HELPER_BOT_TOKEN:
         print("⚠️ HELPER_BOT_TOKEN تنظیم نشده — پنل دکمه‌ای سلف غیرفعال است.")
@@ -81,23 +88,42 @@ async def start_helper_bot():
     if _helper_client is not None and _helper_client.is_connected():
         return _helper_client
 
-    # import داخل تابع تا از circular import با bot.py جلوگیری بشه
-    from bot import (
-        bot_manager,
-        PANEL_CATEGORIES,
-        build_category_menu,
-        build_category_commands,
-        _execute_panel_command,
-        _get_force_join_channels,
-    )
-    from telegram_bot import get_all_commands_buttons
-    import database as db
+    if _helper_start_lock is None:
+        _helper_start_lock = asyncio.Lock()
 
-    cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
-    await cl.start(bot_token=config.HELPER_BOT_TOKEN)
-    _helper_client = cl
-    me = await cl.get_me()
-    print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
+    async with _helper_start_lock:
+        # دوباره چک کن، شاید تا رسیدن نوبتِ ما یه فراخوانیِ دیگه همین الان
+        # وصلش کرده باشه
+        if _helper_client is not None and _helper_client.is_connected():
+            return _helper_client
+
+        if _helper_client is not None:
+            # کلاینتِ قبلی قطع شده (مثلاً به‌خاطر یک خطای شبکه‌ای موقت) — قبل از
+            # ساختِ کلاینتِ تازه، مطمئن می‌شیم درست قطع شده تا دو تا کانکشن با
+            # یک توکن هم‌زمان بالا نمونن.
+            try:
+                await _helper_client.disconnect()
+            except Exception:
+                pass
+            _helper_client = None
+
+        # import داخل تابع تا از circular import با bot.py جلوگیری بشه
+        from bot import (
+            bot_manager,
+            PANEL_CATEGORIES,
+            build_category_menu,
+            build_category_commands,
+            _execute_panel_command,
+            _get_force_join_channels,
+        )
+        from telegram_bot import get_all_commands_buttons
+        import database as db
+
+        cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
+        await cl.start(bot_token=config.HELPER_BOT_TOKEN)
+        _helper_client = cl
+        me = await cl.get_me()
+        print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
 
     async def _close_panel_after_idle(chat_id, message_id):
         try:
