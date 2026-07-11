@@ -70,12 +70,19 @@ def _shape_text(text: str) -> str:
     شکل‌دهی و راست‌به‌چپ کردنِ حروفِ فارسی/عربی برای نمایشِ درست توی عکس.
     اگه کتابخونه‌های arabic_reshaper و python-bidi نصب نباشن، همون متنِ خام
     برگردونده می‌شه (باز هم قابل‌خوندنه، فقط حروف به هم متصل نمی‌شن).
+
+    نکته‌ی مهم: جهتِ پایه رو صریحاً «راست‌به‌چپ» (base_dir='R') می‌فرستیم و به
+    تشخیصِ خودکارِ کتابخونه‌ی bidi تکیه نمی‌کنیم. چون وقتی خطی با یه توکنِ
+    لاتین شروع می‌شه (مثلِ یوزرنیمِ انگلیسی «@user»، یه عدد، یا حتی ایموجی)،
+    تشخیصِ خودکار کلِ خط رو چپ‌به‌راست فرض می‌کنه و ترتیبِ کلمه‌هایِ فارسی رو
+    بهم می‌ریزه (همون باگِ «فارسی برعکس نوشته می‌شه» که با فیلدهایی مثلِ
+    «یوزرنیم: @user» یا خطی که با کد/عدد شروع بشه دیده می‌شد).
     """
     try:
         import arabic_reshaper
         from bidi.algorithm import get_display
         reshaped = arabic_reshaper.reshape(text)
-        return get_display(reshaped)
+        return get_display(reshaped, base_dir="R")
     except Exception:
         return text
 
