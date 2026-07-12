@@ -1286,13 +1286,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
         elif event.is_private:
             await edit("این دستور فقط توی گروه کار می‌کند.")
         else:
-            # اگه بعد از «تگ» فقط یه عدد باشه، یعنی می‌خوایم دقیقاً همون تعداد
-            # عضو رو تگ کنیم (نه اینکه عدد رو به عنوان متن جلوی منشن‌ها بذاریم
-            # و همه‌ی اعضا رو تگ کنیم).
-            count_match = re.match(r"^(\d+)$", raw_part)
-            tag_count = None
-            if count_match:
-                tag_count = max(1, min(int(count_match.group(1)), 200))
+            # اگر بعد از «تگ» فقط عدد بود، یعنی تعداد نفراتی که باید تگ بشن، نه متن پیام
+            tag_limit = None
+            if raw_part.isdigit():
+                tag_limit = int(raw_part)
                 msg_part = ""
             else:
                 msg_part = raw_part
@@ -1304,11 +1301,11 @@ async def _handle_command(cl, event, text, owner_id, entry):
                     if user.bot or user.deleted:
                         continue
                     mentions.append(user)
+                    if tag_limit is not None and len(mentions) >= tag_limit:
+                        break
             except Exception as e:
                 await edit(f"خطا در دریافت اعضا: {e}")
                 mentions = []
-            if tag_count is not None and mentions:
-                mentions = random.sample(mentions, min(tag_count, len(mentions)))
             chunk = []
             cancelled = False
             for user in mentions:
@@ -1319,7 +1316,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 if len(chunk) == 5:
                     text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
                     try:
-                        await cl.send_message(event.chat_id, f"{msg_part} {text_line}".strip())
+                        await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
                     except Exception:
                         pass
                     chunk = []
@@ -1327,7 +1324,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             if chunk and not entry.get("cancel_tag"):
                 text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
                 try:
-                    await cl.send_message(event.chat_id, f"{msg_part} {text_line}".strip())
+                    await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
                 except Exception:
                     pass
             if cancelled or entry.get("cancel_tag"):
@@ -2560,22 +2557,21 @@ async def _handle_command(cl, event, text, owner_id, entry):
                         cut = max(1, (n * i) // steps)
                         partial = body[:cut]
                         try:
-                            await event.edit(partial, parse_mode=None, formatting_entities=_entities_for(_u16len(partial)) or None)
+                            await event.edit(partial, formatting_entities=_entities_for(_u16len(partial)) or None)
                         except FloodWaitError as e:
                             await asyncio.sleep(e.seconds + 1)
-                        except Exception as e:
-                            print(f"⚠️ خطا در اعمال حالت متن (تدریجی): {e!r}")
+                        except Exception:
                             break
                         if cut < n:
                             await asyncio.sleep(0.35)
                 else:
                     entities = _entities_for(_u16len(body))
                     if body != text or entities:
-                        await event.edit(body, parse_mode=None, formatting_entities=entities or None)
+                        await event.edit(body, formatting_entities=entities or None)
             except FloodWaitError as e:
                 await asyncio.sleep(e.seconds + 1)
-            except Exception as e:
-                print(f"⚠️ خطا در اعمال حالت متن روی پیام: {e!r}")
+            except Exception:
+                pass
 
 
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
