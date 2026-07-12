@@ -1286,7 +1286,16 @@ async def _handle_command(cl, event, text, owner_id, entry):
         elif event.is_private:
             await edit("این دستور فقط توی گروه کار می‌کند.")
         else:
-            msg_part = raw_part
+            # اگه بعد از «تگ» فقط یه عدد باشه، یعنی می‌خوایم دقیقاً همون تعداد
+            # عضو رو تگ کنیم (نه اینکه عدد رو به عنوان متن جلوی منشن‌ها بذاریم
+            # و همه‌ی اعضا رو تگ کنیم).
+            count_match = re.match(r"^(\d+)$", raw_part)
+            tag_count = None
+            if count_match:
+                tag_count = max(1, min(int(count_match.group(1)), 200))
+                msg_part = ""
+            else:
+                msg_part = raw_part
             entry["cancel_tag"] = False
             await edit("در حال تگ کردن اعضا... (برای توقف: لغو تگ)")
             mentions = []
@@ -1298,6 +1307,8 @@ async def _handle_command(cl, event, text, owner_id, entry):
             except Exception as e:
                 await edit(f"خطا در دریافت اعضا: {e}")
                 mentions = []
+            if tag_count is not None and mentions:
+                mentions = random.sample(mentions, min(tag_count, len(mentions)))
             chunk = []
             cancelled = False
             for user in mentions:
@@ -1308,7 +1319,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
                 if len(chunk) == 5:
                     text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
                     try:
-                        await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
+                        await cl.send_message(event.chat_id, f"{msg_part} {text_line}".strip())
                     except Exception:
                         pass
                     chunk = []
@@ -1316,7 +1327,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             if chunk and not entry.get("cancel_tag"):
                 text_line = " ".join(f"[‌](tg://user?id={u.id})" for u in chunk)
                 try:
-                    await cl.send_message(event.chat_id, f"{msg_part} {text_line}")
+                    await cl.send_message(event.chat_id, f"{msg_part} {text_line}".strip())
                 except Exception:
                     pass
             if cancelled or entry.get("cancel_tag"):
@@ -2549,21 +2560,22 @@ async def _handle_command(cl, event, text, owner_id, entry):
                         cut = max(1, (n * i) // steps)
                         partial = body[:cut]
                         try:
-                            await event.edit(partial, formatting_entities=_entities_for(_u16len(partial)) or None)
+                            await event.edit(partial, parse_mode=None, formatting_entities=_entities_for(_u16len(partial)) or None)
                         except FloodWaitError as e:
                             await asyncio.sleep(e.seconds + 1)
-                        except Exception:
+                        except Exception as e:
+                            print(f"⚠️ خطا در اعمال حالت متن (تدریجی): {e!r}")
                             break
                         if cut < n:
                             await asyncio.sleep(0.35)
                 else:
                     entities = _entities_for(_u16len(body))
                     if body != text or entities:
-                        await event.edit(body, formatting_entities=entities or None)
+                        await event.edit(body, parse_mode=None, formatting_entities=entities or None)
             except FloodWaitError as e:
                 await asyncio.sleep(e.seconds + 1)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"⚠️ خطا در اعمال حالت متن روی پیام: {e!r}")
 
 
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
