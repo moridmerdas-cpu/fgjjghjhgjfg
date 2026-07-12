@@ -34,6 +34,11 @@ services:
       # ─── DeepSeek (دستیار هوش مصنوعی) ────────────────────────────────────────
       - key: DEEPSEEK_API_KEY
         sync: false
+      # ─── پنل دکمه‌ای (ربات کمکی حالا یک پروژه‌ی جداست) ───────────────────────
+      - key: HELPER_BOT_USERNAME
+        sync: false
+      - key: PANEL_API_SECRET
+        sync: false
         services:
   - type: web
     name: amel-self55

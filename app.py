@@ -21,22 +21,16 @@ app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["PERMANENT_SESSION_LIFETIME"] = 180  # ۳ دقیقه بی‌کاری → لاگ‌اوت خودکار
 
+# ─── API داخلیِ پنل (برای ربات کمکی که حالا روی هاستِ جداست) ──────────────────
+from panel_api import panel_api_bp
+app.register_blueprint(panel_api_bp)
 
-def _ensure_helper_bot():
-    """
-    اگه ربات کمکیِ پنل به هر دلیلی (خطای شبکه‌ای موقت موقع بالا اومدنِ سرور،
-    قطعی لحظه‌ای و ...) وصل نباشه، بدون نیاز به ری‌استارتِ هاست دوباره
-    وصلش می‌کنه. صدا زدنش امن و بی‌ضرره چون start_helper_bot() اگه از قبل
-    سالم باشه فوراً برمی‌گرده. عمداً fire-and-forget هست تا مسیر
-    ثبت‌نام/لاگین کاربر رو بلاک نکنه.
-    """
-    if not config.HELPER_BOT_TOKEN:
-        return
-    try:
-        from helper_bot import start_helper_bot
-        asyncio.run_coroutine_threadsafe(start_helper_bot(), get_loop())
-    except Exception as e:
-        print(f"⚠️ خطا در تلاش برای اتصال ربات کمکی: {e}")
+
+# ─── توجه ────────────────────────────────────────────────────────────────────
+# ربات کمکیِ پنل (helper_bot) دیگر روی این هاست اجرا نمی‌شود؛ به یک پروژه‌ی
+# جدا منتقل شده و روی هاستِ دیگری اجرا می‌شود. این هاست فقط از طریقِ
+# panel_api.py به آن سرویس می‌دهد (هلپر بات درخواست می‌زند، این‌جا جواب
+# می‌دهد) — دیگر نیازی به start/ensure کردنِ آن از این‌جا نیست.
 
 
 @app.errorhandler(500)
@@ -266,7 +260,6 @@ def verify_code():
     try:
         result = run_async(_verify())
         bot_manager.start(oid, get_loop(), check_tokens=False)
-        _ensure_helper_bot()
         return jsonify(result)
     except SessionPasswordNeededError:
         return jsonify({"ok": False, "need_2fa": True}), 200
@@ -314,7 +307,6 @@ def verify_2fa():
     try:
         result = run_async(_verify())
         bot_manager.start(oid, get_loop(), check_tokens=False)
-        _ensure_helper_bot()
         return jsonify(result)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -337,7 +329,6 @@ def start_bot_api():
     oid = owner_id()
     ok = bot_manager.start(oid, get_loop(), check_tokens=True)
     if ok:
-        _ensure_helper_bot()
         db.set_setting(oid, "self_bot_active", "1")
         tg_id = db.get_telegram_id_by_owner(oid)
         if tg_id == config.OWNER_TG_ID:
@@ -590,31 +581,10 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"⚠️ واچ‌داگ: خطای کلی: {e}")
 
-            # ✅ همون کاری که برای سلف‌ها می‌کنیم رو برای ربات کمکیِ پنل هم
-            # انجام می‌دیم: اگه به هر دلیلی (خطای شبکه‌ای موقت و ...) قطع
-            # شده باشه، بدون نیاز به ری‌استارتِ هاست دوباره وصلش می‌کنیم.
-            # این دقیقاً همون مشکلی رو حل می‌کنه که «کاربر تازه ثبت‌نام کرده
-            # ولی پنل ربات کمکی براش کار نمی‌کنه تا هاست ریستارت بشه».
-            try:
-                from helper_bot import get_helper_client
-                helper_cl = get_helper_client()
-                if helper_cl is None or not helper_cl.is_connected():
-                    print("🩺 واچ‌داگ: ربات کمکی پنل وصل نبود — تلاش برای اتصال مجدد خودکار")
-                    _ensure_helper_bot()
-            except Exception as e:
-                print(f"⚠️ واچ‌داگ: خطا در بررسی/اتصال مجدد ربات کمکی: {e}")
-
     threading.Thread(target=_self_heal_watchdog, daemon=True).start()
     print("✅ واچ‌داگ سلامت سلف‌ها استارت شد")
 
-    # ۶. استارت بات کمکی پنل دکمه‌ای مدیریت سلف (اختیاری - نیازمند HELPER_BOT_TOKEN)
-    if config.HELPER_BOT_TOKEN:
-        from helper_bot import start_helper_bot
-        try:
-            asyncio.run_coroutine_threadsafe(start_helper_bot(), get_loop()).result(timeout=30)
-        except Exception as e:
-            print(f"❌ خطا در استارت بات کمکی پنل: {e}")
-    else:
-        print("⚠️ HELPER_BOT_TOKEN تنظیم نشده — پنل دکمه‌ای سلف غیرفعال می‌ماند")
+    # ربات کمکیِ پنل روی این هاست اجرا نمی‌شود (پروژه‌ی جدا)، پس دیگر نیازی
+    # به استارت/واچ‌داگِ آن این‌جا نیست.
 
     app.run(host="0.0.0.0", port=config.PORT, debug=False)
