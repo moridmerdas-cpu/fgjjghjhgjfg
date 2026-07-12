@@ -8,16 +8,8 @@ load_dotenv()
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-# ─── پنل دکمه‌ای سلف (حالا یک پروژه‌ی کاملاً جدا: helper_bot) ─────────────────
-# این هاست (سلف) دیگر خودِ ربات کمکی را اجرا نمی‌کند؛ فقط باید نامِ کاربریِ آن
-# را بداند تا موقعِ نوشتنِ «پنل» یک inline query واقعی روی تلگرام به آن بزند.
-# اگر خالی باشد یعنی پنلِ دکمه‌ای فعال نیست (دقیقاً مثلِ قبل که HELPER_BOT_TOKEN
-# خالی بود).
-HELPER_BOT_USERNAME = os.environ.get("HELPER_BOT_USERNAME", "")
-# سکرتِ مشترک بینِ این هاست و هاستِ ربات کمکی، برای احرازِ هویتِ درخواست‌های
-# API داخلیِ پنل (panel_api.py). باید دقیقاً همین مقدار در پروژه‌ی helper_bot
-# هم به‌عنوانِ PANEL_API_SECRET ست شود.
-PANEL_API_SECRET = os.environ.get("PANEL_API_SECRET", "")
+# ربات کمکی پنل دکمه‌ای سلف (اختیاری - اگر خالی باشد پنل دکمه‌ای غیرفعال می‌ماند)
+HELPER_BOT_TOKEN = os.environ.get("HELPER_BOT_TOKEN", "")
 
 # ─── سرور ──────────────────────────────────────────────────────────────────
 SECRET_KEY = os.environ.get("SECRET_KEY", "nexoself_secret_key_change_me")

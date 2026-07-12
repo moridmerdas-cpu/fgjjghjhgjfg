@@ -630,13 +630,22 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                         "⛔ برای ارسال پیام ابتدا باید در کانال‌های زیر عضو شوید.")
                     sent_via_helper = False
                     try:
-                        uname = config.HELPER_BOT_USERNAME
-                        if uname:
-                            results = await cl.inline_query(uname, "جوین")
-                            if results:
-                                sent = await results[0].click(event.chat_id)
-                                if sent is not None:
-                                    sent_via_helper = True
+                        if config.HELPER_BOT_TOKEN:
+                            from helper_bot import get_helper_client
+                            helper = get_helper_client()
+                            uname = None
+                            if helper:
+                                try:
+                                    me = await helper.get_me()
+                                    uname = me.username
+                                except Exception:
+                                    uname = None
+                            if uname:
+                                results = await cl.inline_query(uname, "جوین")
+                                if results:
+                                    sent = await results[0].click(event.chat_id)
+                                    if sent is not None:
+                                        sent_via_helper = True
                     except Exception:
                         sent_via_helper = False
 
@@ -1180,18 +1189,34 @@ async def _handle_command(cl, event, text, owner_id, entry):
         except Exception:
             pass
 
-        if not config.HELPER_BOT_USERNAME:
+        if not config.HELPER_BOT_TOKEN:
             await cl.send_message(event.chat_id, "❗ پنل دکمه‌ای فعال نیست (بات کمکی تنظیم نشده).")
             return
 
-        uname = config.HELPER_BOT_USERNAME
+        from helper_bot import get_helper_client
+        helper = get_helper_client()
+        uname = None
+        if helper:
+            try:
+                me = await helper.get_me()
+                uname = me.username
+            except Exception:
+                uname = None
+
+        if not uname:
+            await cl.send_message(event.chat_id, "❗ بات کمکی هنوز آماده نیست، کمی بعد دوباره امتحان کن.")
+            return
 
         try:
             results = await cl.inline_query(uname, "پنل")
             if results:
                 sent = await results[0].click(event.chat_id)
-                if sent is None:
-                    await cl.send_message(event.chat_id, "❗ نتیجه‌ای از بات کمکی دریافت نشد.")
+                if sent is not None:
+                    try:
+                        from helper_bot import schedule_panel_timeout
+                        schedule_panel_timeout(sent.chat_id, sent.id)
+                    except Exception:
+                        pass
             else:
                 await cl.send_message(event.chat_id, "❗ نتیجه‌ای از بات کمکی دریافت نشد.")
         except Exception as e:
