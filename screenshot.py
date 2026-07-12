@@ -8,10 +8,7 @@ screenshot.py - ساخت تصویرِ «اسکرین» (شبیهِ حباب پی
 """
 
 import io
-import os
 from PIL import Image, ImageDraw, ImageFont
-
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ─── تنظیمات ظاهری ──────────────────────────────────────────────────────────
 W = 640
@@ -32,14 +29,12 @@ _AVATAR_COLORS = [
 # چند مسیر رایج فونت که ممکنه فارسی رو (حداقل نسبتاً) پشتیبانی کنن؛
 # اگه هیچ‌کدوم پیدا نشه، می‌ره سراغ DejaVuSans و در نهایت فونت پیش‌فرض PIL.
 _FONT_CANDIDATES_BOLD = [
-    os.path.join(_BASE_DIR, "fonts", "Vazirmatn-Bold.ttf"),
     "/usr/share/fonts/truetype/vazir/Vazir-Bold.ttf",
     "/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Bold.ttf",
     "/usr/share/fonts/opentype/noto/NotoNaskhArabic-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 ]
 _FONT_CANDIDATES_REGULAR = [
-    os.path.join(_BASE_DIR, "fonts", "Vazirmatn-Regular.ttf"),
     "/usr/share/fonts/truetype/vazir/Vazir.ttf",
     "/usr/share/fonts/truetype/vazirmatn/Vazirmatn-Regular.ttf",
     "/usr/share/fonts/opentype/noto/NotoNaskhArabic-Regular.ttf",
@@ -53,15 +48,6 @@ def _load_font(candidates, size):
             return ImageFont.truetype(path, size)
         except Exception:
             continue
-    # هشدار: فونتِ پیش‌فرضِ PIL اصلاً از حروفِ فارسی/عربی پشتیبانی نمی‌کنه؛
-    # یعنی اسم/متنِ فارسی یا اصلاً رسم نمی‌شه یا به‌صورتِ خرابکاراکتر درمیاد.
-    # قبلاً این حالت به‌خاطرِ نبودِ فایلِ فونت (چون هیچ فونتی همراهِ پروژه نبود و
-    # مسیرهای سیستمی هم روی سرورِ دیپلوی وجود نداشتن) به‌صورتِ ساکت رخ می‌داد.
-    print(
-        "[screenshot.py] ⚠️ هیچ‌کدوم از فونت‌های TTF لود نشدن؛ "
-        "فونتِ پیش‌فرضِ PIL از فارسی پشتیبانی نمی‌کنه. مسیرهای بررسی‌شده: "
-        + ", ".join(candidates)
-    )
     return ImageFont.load_default()
 
 
@@ -70,19 +56,12 @@ def _shape_text(text: str) -> str:
     شکل‌دهی و راست‌به‌چپ کردنِ حروفِ فارسی/عربی برای نمایشِ درست توی عکس.
     اگه کتابخونه‌های arabic_reshaper و python-bidi نصب نباشن، همون متنِ خام
     برگردونده می‌شه (باز هم قابل‌خوندنه، فقط حروف به هم متصل نمی‌شن).
-
-    نکته‌ی مهم: جهتِ پایه رو صریحاً «راست‌به‌چپ» (base_dir='R') می‌فرستیم و به
-    تشخیصِ خودکارِ کتابخونه‌ی bidi تکیه نمی‌کنیم. چون وقتی خطی با یه توکنِ
-    لاتین شروع می‌شه (مثلِ یوزرنیمِ انگلیسی «@user»، یه عدد، یا حتی ایموجی)،
-    تشخیصِ خودکار کلِ خط رو چپ‌به‌راست فرض می‌کنه و ترتیبِ کلمه‌هایِ فارسی رو
-    بهم می‌ریزه (همون باگِ «فارسی برعکس نوشته می‌شه» که با فیلدهایی مثلِ
-    «یوزرنیم: @user» یا خطی که با کد/عدد شروع بشه دیده می‌شد).
     """
     try:
         import arabic_reshaper
         from bidi.algorithm import get_display
         reshaped = arabic_reshaper.reshape(text)
-        return get_display(reshaped, base_dir="R")
+        return get_display(reshaped)
     except Exception:
         return text
 

@@ -1286,13 +1286,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
         elif event.is_private:
             await edit("این دستور فقط توی گروه کار می‌کند.")
         else:
-            # اگر بعد از «تگ» فقط عدد بود، یعنی تعداد نفراتی که باید تگ بشن، نه متن پیام
-            tag_limit = None
-            if raw_part.isdigit():
-                tag_limit = int(raw_part)
-                msg_part = ""
-            else:
-                msg_part = raw_part
+            msg_part = raw_part
             entry["cancel_tag"] = False
             await edit("در حال تگ کردن اعضا... (برای توقف: لغو تگ)")
             mentions = []
@@ -1301,8 +1295,6 @@ async def _handle_command(cl, event, text, owner_id, entry):
                     if user.bot or user.deleted:
                         continue
                     mentions.append(user)
-                    if tag_limit is not None and len(mentions) >= tag_limit:
-                        break
             except Exception as e:
                 await edit(f"خطا در دریافت اعضا: {e}")
                 mentions = []
