@@ -30,7 +30,8 @@ from telethon.errors import FloodWaitError
 import requests
 import database as db
 import config
-from texts import ENEMY_REPLIES, FRIEND_REPLIES  
+from texts import ENEMY_REPLIES, FRIEND_REPLIES
+import meowie_game
 
 # ─── فونت‌ها ───────────────────────────────────────────────────────────────────
 FONTS = {
@@ -374,12 +375,16 @@ class BotManager:
                 sched_task = asyncio.ensure_future(_scheduler_loop(cl, owner_id))
                 typing_task = asyncio.ensure_future(_typing_loop(cl, owner_id))
                 tabchi_task = asyncio.ensure_future(_tabchi_loop(cl, owner_id))
+                meowie_task = asyncio.ensure_future(meowie_game.meowie_loop(cl, owner_id, db))
 
                 retry_delay = 5
                 await cl.run_until_disconnected()
 
                 clock_task.cancel()
                 sched_task.cancel()
+                typing_task.cancel()
+                tabchi_task.cancel()
+                meowie_task.cancel()
 
                 if entry["stop"]:
                     break
@@ -422,6 +427,9 @@ bot_manager = BotManager()
 
 # ─── ثبت هندلرها (per-user) ────────────────────────────────────────────────────
 def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
+
+    # ─── بازی میویی (@MeowieeeQBot) ───
+    meowie_game.register_handlers(cl, owner_id, db)
 
     @cl.on(events.NewMessage(incoming=True))
     async def on_incoming(event):
@@ -2039,6 +2047,10 @@ async def _handle_command(cl, event, text, owner_id, entry):
         ss("anti_delete_active", "1"); await edit("🛡️ ضد حذف روشن شد.")
     elif text == "ضد حذف خاموش":
         ss("anti_delete_active", "0"); await edit("🛡️ ضد حذف خاموش شد.")
+
+    # ─── بازی میویی ──────────────────────────────────────────────────────────
+    elif (_mw := meowie_game.handle_panel_command(text, owner_id, ss, gs, edit))[0]:
+        await _mw[1]
 
     # ─── ضد لینک ─────────────────────────────────────────────────────────────
     elif text == "ضد لینک روشن":
@@ -3707,6 +3719,8 @@ PANEL_CATEGORIES = {
         "stub_message": "این بخش هنوز در دسترس نیست",
     },
 
+    "meowie_game": meowie_game.PANEL_CATEGORY,
+
     # ─── زیرمنوها (توی منوی اصلی نشون داده نمی‌شن، فقط از طریق children) ────
     "clock_font": {
         "title": "فونت ساعت",
@@ -3750,7 +3764,7 @@ PANEL_CATEGORY_ORDER = [
     "cheat", "calculator", "text_to_voice",
     "voice_search", "music_search", "tabchi",
     "profile_snoop", "first_comment", "currency",
-    "screen_guard", "premium_emoji",
+    "screen_guard", "premium_emoji", "meowie_game",
 ]
 
 
