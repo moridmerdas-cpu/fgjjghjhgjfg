@@ -38,8 +38,8 @@ DENIED_TEXT = "این پنل مخصوص کسی است که آن را باز کر
 
 # ─── بستن خودکار پنل بعد از بیکار موندن ──────────────────────────────────────
 PANEL_IDLE_SECONDS = 180  # ۳ دقیقه
-IDLE_CLOSED_TEXT = "⏰ این پنل به‌خاطر ۳ دقیقه بیکار موندن بسته شد.\nبرای باز کردن دوباره، توی سلف بنویس: پنل"
-CLOSED_TEXT = "پنل بسته شد.\nبرای باز کردن دوباره، توی سلف بنویس: پنل"
+IDLE_CLOSED_TEXT = "⏰ این پنل به‌خاطر ۳ دقیقه بیکار موندن بسته شد.\nبرای باز کردن دوباره، بنویس: پنل"
+CLOSED_TEXT = "پنل بسته شد.\nبرای باز کردن دوباره،بنویس: پنل"
 _panel_timers = {}  # {(chat_id, message_id): asyncio.Task}
 _schedule_panel_timeout_impl = None  # موقع start_helper_bot ست میشه
 
@@ -148,18 +148,47 @@ async def start_helper_bot():
     global _schedule_panel_timeout_impl
     _schedule_panel_timeout_impl = _do_schedule
 
-    def _menu_buttons(owner_tg_id):
-        """دکمه‌های سطح ۱ به‌صورت شبکه‌ای (۳ ستونه)، رنگی از طریق style واقعی،
-        بدون ایموجی، + یک دکمه «بستن» در انتها."""
-        rows = []
-        row = []
-        for key, title, style in build_category_menu():
-            row.append(Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}", style=style or "primary"))
-            if len(row) == 3:
+    def _menu_buttons(owner_tg_id, page=0):
+        """
+        دکمه‌های سطح ۱ به‌صورت شبکه‌ای (۳ ستونه)، رنگی از طریق style واقعی.
+        فقط دکمه‌های «آبی» (primary) بین ۲ صفحه تقسیم می‌شن؛ دکمه‌های سبز
+        (success) و قرمز (danger — شامل موارد غیرفعال مثل «ایموجی پرمیوم»)
+        همیشه توی هر دو صفحه ثابت نشون داده می‌شن، چون تعدادشون کمه و نیازی
+        به صفحه‌بندی ندارن. دکمه‌ی «بستن» هم همیشه ثابته و پیجینیت نمی‌شه.
+        """
+        categories = build_category_menu()
+        primary_cats = [c for c in categories if (c[2] or "primary") == "primary"]
+        fixed_cats = [c for c in categories if (c[2] or "primary") != "primary"]
+
+        page_size = -(-len(primary_cats) // 2) if primary_cats else 0  # سقف تقسیم بر ۲
+        total_pages = 2 if page_size and len(primary_cats) > page_size else 1
+        page = max(0, min(page, total_pages - 1))
+        start = page * page_size
+        page_primary = primary_cats[start:start + page_size] if page_size else primary_cats
+
+        def _grid(items):
+            rows, row = [], []
+            for key, title, style in items:
+                row.append(Button.inline(title, data=f"panel_cat_{key}_{owner_tg_id}", style=style or "primary"))
+                if len(row) == 3:
+                    rows.append(row)
+                    row = []
+            if row:
                 rows.append(row)
-                row = []
-        if row:
-            rows.append(row)
+            return rows
+
+        rows = _grid(page_primary)
+        rows += _grid(fixed_cats)
+
+        if total_pages > 1:
+            nav = []
+            if page > 0:
+                nav.append(Button.inline("‹ صفحه قبل", data=f"panel_menu_page_{page - 1}_{owner_tg_id}", style="primary"))
+            if page < total_pages - 1:
+                nav.append(Button.inline("صفحه بعد ›", data=f"panel_menu_page_{page + 1}_{owner_tg_id}", style="primary"))
+            if nav:
+                rows.append(nav)
+
         rows.append([Button.inline("بستن", data=f"panel_close_{owner_tg_id}", style="danger")])
         return rows
 
@@ -313,6 +342,15 @@ async def start_helper_bot():
         # ─── بازگشت به منوی اصلی (لیست دسته‌ها) ────────────────────────────
         if body == "panel_menu":
             await event.edit(MAIN_TEXT, buttons=_menu_buttons(owner_tg_id))
+            return
+
+        # ─── ورق‌زدن صفحه‌های منوی اصلی (فقط دکمه‌های آبی) ──────────────────
+        if body.startswith("panel_menu_page_"):
+            try:
+                page = int(body.replace("panel_menu_page_", ""))
+            except ValueError:
+                page = 0
+            await event.edit(MAIN_TEXT, buttons=_menu_buttons(owner_tg_id, page=page))
             return
 
         # ─── بستن پنل ───────────────────────────────────────────────────────
