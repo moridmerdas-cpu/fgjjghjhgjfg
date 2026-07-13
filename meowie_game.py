@@ -57,9 +57,22 @@ SETTING_DEFAULTS_EXTRA = {
 
 _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
 
+# کاراکترهای نامرئیِ جهت‌دهی (LRM/RLM/LRE/RLE/PDF/isolates/ZWSP) که تلگرام یا
+# کیبورد گوشی گاهی بین رقم‌های انگلیسیِ زمان (مثل «5:00») و متن فارسی اطراف‌شون
+# درج می‌کنه. اگه حذف نشن، رجکس (\d+):(\d+) به‌خاطر همین کاراکترهای نامرئی
+# بین رقم و «:» شکست می‌خوره و زمان اصلاً پارس نمی‌شه — این شایع‌ترین دلیلِ
+# «تشخیص داد ولی دوباره خودکار انجام نشد» هست.
+_INVISIBLE_RE = re.compile("[\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def _clean(s: str) -> str:
+    s = (s or "").translate(_PERSIAN_DIGITS)
+    s = _INVISIBLE_RE.sub("", s)
+    return s
+
 
 def _normalize_digits(s: str) -> str:
-    return (s or "").translate(_PERSIAN_DIGITS)
+    return _clean(s)
 
 
 def _parse_mmss(text: str, after_keyword: str) -> int | None:
@@ -164,8 +177,13 @@ def register_handlers(cl, owner_id: int, db):
             if not event.is_group:
                 return
             ss("meowie_game_group_id", str(event.chat_id))
-            ss("meowie_next_meow_ts", "0")
-            ss("meowie_next_fish_ts", "0")
+            # ⏳ به‌جای صفر، یه فاصله‌ی کوتاه (grace) می‌ذاریم؛ چون همین «میو»یی
+            # که کاربر الان دستی فرستاد قبلاً کول‌داون رو مصرف کرده و بات
+            # میویی چند لحظه دیگه با زمان واقعی جواب می‌ده. اگه این‌جا صفر
+            # می‌ذاشتیم، حلقه‌ی پس‌زمینه ممکن بود قبل از رسیدن همون جواب،
+            # یه «میو»ی تکراری و زودهنگام بفرسته.
+            ss("meowie_next_meow_ts", str(time.time() + 15))
+            ss("meowie_next_fish_ts", str(time.time() + 15))
             try:
                 await event.reply(
                     "🐾 این گروه به‌عنوان گروه بازی میویی ثبت شد. از این به بعد "
@@ -198,13 +216,20 @@ def register_handlers(cl, owner_id: int, db):
                 return
 
             text = event.raw_text or ""
+            clean_text = _clean(text)
             now = time.time()
+
+            # 🐞 لاگ خام برای دیباگ — اگه یه روز فرمت پیام‌های ربات عوض شد یا
+            # رجکس چیزی رو تشخیص نداد، همین لاگ توی کنسول/فایل لاگ سرور
+            # نشون می‌ده دقیقاً چی دریافت شده تا بشه رجکس‌ها رو اصلاح کرد.
+            print(f"🐾 [{owner_id}] پیام از {MEOWIE_BOT_USERNAME}: {text[:200]!r}")
 
             # (الف) پاسخ «میو» — هم حالت موفق («میو پوینت گرفتی») هم پیام
             # کول‌داونِ زودهنگام، هر دو معمولاً شامل «بعد از MM:SS» هستن.
-            secs = _parse_mmss(text, "بعد از")
-            if secs is not None and "میو" in text:
+            secs = _parse_mmss(clean_text, "بعد از")
+            if secs is not None and "میو" in clean_text:
                 ss("meowie_next_meow_ts", str(now + secs))
+                print(f"⏱️ [{owner_id}] میو بعدی تا {secs} ثانیه‌ی دیگه تنظیم شد.")
                 return
 
             # (ب) پیام صید ماهی که نیاز به تصمیم داره — دکمه‌ی
@@ -222,8 +247,9 @@ def register_handlers(cl, owner_id: int, db):
                             return
 
             # (ج) تایید خورده‌شدن ماهی توسط پیشی → دوباره «ماهی» بفرست
-            if "پیشی خوردش" in text:
+            if "پیشی خوردش" in clean_text:
                 ss("meowie_next_fish_ts", "0")
+                print(f"🐟 [{owner_id}] پیشی ماهی رو خورد — دوباره «ماهی» فرستاده می‌شه.")
                 try:
                     await cl.send_message(event.chat_id, "ماهی")
                 except Exception as e:
@@ -231,10 +257,13 @@ def register_handlers(cl, owner_id: int, db):
                 return
 
             # (د) پیام کول‌داونِ ماهی: «باید MM:SS صبر کنی»
-            secs2 = _parse_mmss(text, "باید")
-            if secs2 is not None and "صبر کنی" in text:
+            secs2 = _parse_mmss(clean_text, "باید")
+            if secs2 is not None and "صبر کنی" in clean_text:
                 ss("meowie_next_fish_ts", str(now + secs2))
+                print(f"⏱️ [{owner_id}] ماهی بعدی تا {secs2} ثانیه‌ی دیگه تنظیم شد.")
                 return
+
+            print(f"❔ [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} با هیچ الگویی مچ نشد (بالا رو ببین).")
 
         except Exception as e:
             print(f"❌ [{owner_id}] خطا در پردازش پیام بازی میویی: {e}")
@@ -268,6 +297,7 @@ async def meowie_loop(cl, owner_id: int, db):
 
             next_meow = float(db.get_setting(owner_id, "meowie_next_meow_ts", "0") or "0")
             if now >= next_meow:
+                print(f"🐾 [{owner_id}] زمان میو رسید ({now:.0f} >= {next_meow:.0f}) — ارسال «میو».")
                 try:
                     await cl.send_message(group_id, "میو")
                 except Exception as e:
@@ -276,6 +306,7 @@ async def meowie_loop(cl, owner_id: int, db):
 
             next_fish = float(db.get_setting(owner_id, "meowie_next_fish_ts", "0") or "0")
             if now >= next_fish:
+                print(f"🐟 [{owner_id}] زمان ماهی رسید ({now:.0f} >= {next_fish:.0f}) — ارسال «ماهی».")
                 try:
                     await cl.send_message(group_id, "ماهی")
                 except Exception as e:
