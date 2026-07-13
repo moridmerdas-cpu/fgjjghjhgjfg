@@ -25,7 +25,9 @@ def _u16len(s: str) -> int:
 
 from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
+from telethon.tl.functions.messages import GetCommonChatsRequest
 from telethon.errors import FloodWaitError
+import requests
 import database as db
 import config
 from texts import ENEMY_REPLIES, FRIEND_REPLIES  
@@ -1286,7 +1288,13 @@ async def _handle_command(cl, event, text, owner_id, entry):
         elif event.is_private:
             await edit("این دستور فقط توی گروه کار می‌کند.")
         else:
-            msg_part = raw_part
+            # اگر بعد از «تگ» فقط عدد بود، یعنی تعداد نفراتی که باید تگ بشن، نه متن پیام
+            tag_limit = None
+            if raw_part.isdigit():
+                tag_limit = int(raw_part)
+                msg_part = ""
+            else:
+                msg_part = raw_part
             entry["cancel_tag"] = False
             await edit("در حال تگ کردن اعضا... (برای توقف: لغو تگ)")
             mentions = []
@@ -1295,6 +1303,8 @@ async def _handle_command(cl, event, text, owner_id, entry):
                     if user.bot or user.deleted:
                         continue
                     mentions.append(user)
+                    if tag_limit is not None and len(mentions) >= tag_limit:
+                        break
             except Exception as e:
                 await edit(f"خطا در دریافت اعضا: {e}")
                 mentions = []
@@ -2486,6 +2496,126 @@ async def _handle_command(cl, event, text, owner_id, entry):
         else:
             await edit("❗ فرمت: ارسال زمان‌بندی [YYYY-MM-DD HH:MM] متن")
 
+    # ─── ایدی: اطلاعات کامل کاربر/چت (با ریپلای = اطلاعات همون کاربر) ──────────
+    elif text == "ایدی":
+        try:
+            replied = await event.get_reply_message()
+            if replied:
+                sender = await replied.get_sender()
+                chat = await event.get_chat()
+                username = f"@{sender.username}" if getattr(sender, "username", None) else "ندارد"
+                premium = "فعال" if getattr(sender, "premium", False) else "غیرفعال"
+                info = (
+                    "• اطلاعات کاربر\n\n"
+                    f"آیدی عددی: {sender.id}\n"
+                    f"یوزرنیم: {username}\n"
+                    f"نام: {getattr(sender, 'first_name', None) or 'ندارد'}\n"
+                    f"نام خانوادگی: {getattr(sender, 'last_name', None) or 'ندارد'}\n"
+                    f"پریمیوم: {premium}\n\n"
+                    "• اطلاعات چت\n"
+                    f"آیدی چت: {chat.id}\n"
+                    f"عنوان چت: {getattr(chat, 'title', None) or 'ندارد'}\n"
+                )
+                try:
+                    common = await cl(GetCommonChatsRequest(user_id=await cl.get_input_entity(sender.id), max_id=0, limit=20))
+                    if common.chats:
+                        info += f"\n• گروه‌های مشترک: {len(common.chats)}\n"
+                        for i, c in enumerate(common.chats, 1):
+                            uname = f"@{c.username}" if getattr(c, "username", None) else "بدون یوزرنیم"
+                            members = getattr(c, "participants_count", None)
+                            info += f"{i}. {getattr(c, 'title', '')} | {uname} | {members if members else 'نامشخص'} عضو | {c.id}\n"
+                except Exception:
+                    pass
+                await edit(info)
+            else:
+                me = await cl.get_me()
+                chat = await event.get_chat()
+                username = f"@{me.username}" if getattr(me, "username", None) else "ندارد"
+                info = (
+                    "• اطلاعات شما\n\n"
+                    f"آیدی عددی: {me.id}\n"
+                    f"یوزرنیم: {username}\n"
+                    f"نام: {getattr(me, 'first_name', None) or 'ندارد'}\n"
+                    f"نام خانوادگی: {getattr(me, 'last_name', None) or 'ندارد'}\n"
+                    f"پریمیوم: {'فعال' if getattr(me, 'premium', False) else 'غیرفعال'}\n\n"
+                    "• اطلاعات چت فعلی\n"
+                    f"آیدی چت: {chat.id}\n"
+                    f"عنوان چت: {getattr(chat, 'title', None) or 'ندارد'}\n"
+                    f"تعداد اعضا: {getattr(chat, 'participants_count', None) or 'نامشخص'}\n"
+                )
+                await edit(info)
+        except Exception as e:
+            await edit(f"❌ خطا در دریافت اطلاعات: {e}")
+
+    # ─── دانلود: کپی یک پست از لینک تلگرام به «پیام‌های ذخیره‌شده» ─────────────
+    elif text.startswith("دانلود "):
+        link = text[len("دانلود "):].strip()
+        m = re.match(r"^https?://t\.me/(?:c/)?([^/]+)/(\d+)$", link)
+        if not m:
+            await edit("❗ فرمت: دانلود https://t.me/channel/123")
+        else:
+            username_or_id, post_id = m.group(1), int(m.group(2))
+            try:
+                await edit("🔄 در حال دریافت پست...")
+                if username_or_id.isdigit():
+                    entity = int(f"-100{username_or_id}")
+                else:
+                    entity = username_or_id
+                post = await cl.get_messages(entity, ids=post_id)
+                if not post:
+                    await edit("❌ پست یافت نشد.")
+                else:
+                    try:
+                        await cl.forward_messages("me", post)
+                    except Exception:
+                        if post.media:
+                            await cl.send_file("me", post.media, caption=post.text or "")
+                        elif post.text:
+                            await cl.send_message("me", post.text)
+                    await edit("✅ پست به پیام‌های ذخیره‌شده کپی شد.")
+            except Exception as e:
+                await edit(f"❌ خطا: {e}")
+
+    # ─── اینستا: دانلود پست/ریل اینستاگرام از طریق یک API شخص‌ثالث ─────────────
+    # ⚠️ این قابلیت به یک سرویس/کلید خارجی (fast-creat.ir) وابسته‌ست که تحت
+    # کنترل ما نیست؛ در صورت از کار افتادن یا محدودیت اون سرویس، این دستور
+    # هم کار نخواهد کرد. اگه بخوای می‌تونیم بعداً با یه API قابل‌اعتمادتر یا
+    # سلف‌هاستد جایگزینش کنیم.
+    elif text.startswith("اینستا "):
+        url = text[len("اینستا "):].strip()
+        if not url.startswith(("https://www.instagram.com/", "https://instagram.com/")):
+            await edit("❗ فرمت: اینستا [لینک پست یا ریل اینستاگرام]")
+        elif "/stories/" in url or "/story/" in url:
+            await edit("❌ این دستور فقط برای پست‌ها و ریل‌ها کار می‌کند؛ استوری پشتیبانی نمی‌شود.")
+        else:
+            await edit("🔄 در حال دریافت اطلاعات از اینستاگرام...")
+            try:
+                import urllib.parse
+                api_key = "8000978149:uJC3mxBncq9ELPN@Api_ManagerRoBot"
+                encoded_url = urllib.parse.quote(url, safe="")
+                api_url = f"https://api.fast-creat.ir/instagram?apikey={api_key}&type=post&url={encoded_url}"
+                resp = await asyncio.to_thread(requests.get, api_url, timeout=45)
+                if resp.status_code != 200:
+                    await edit(f"❌ خطا در اتصال به سرور (کد {resp.status_code})")
+                else:
+                    data = resp.json()
+                    result = (data or {}).get("result", {})
+                    posts = result.get("result", []) if result.get("status") == "success" else []
+                    if not posts:
+                        await edit("❌ محتوایی یافت نشد یا لینک نامعتبر است.")
+                    else:
+                        post = posts[0]
+                        media_url = post.get("video_url") or post.get("url") or post.get("thumbnail_url")
+                        caption = (post.get("caption") or "")[:500]
+                        cap_text = f"👤 @{post.get('username','نامشخص')}\n\n{caption}"
+                        if media_url:
+                            await cl.send_file(event.chat_id if False else "me", media_url, caption=cap_text)
+                        else:
+                            await cl.send_message("me", cap_text)
+                        await edit("✅ محتوا در پیام‌های ذخیره‌شده ارسال شد.")
+            except Exception as e:
+                await edit(f"❌ خطا: {e}")
+
     # ─── پیام عادی (دستور نیست) — اعمال فونت اگه حالت خودکار روشنه ─────────────
     else:
         font_id = gs("selected_font", "0")
@@ -2514,31 +2644,28 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "gradual": gs("text_style_gradual_active", "0") == "1",
         }
         if text and any(style_on.values()):
-            from telethon.tl.types import (
-                MessageEntityBold, MessageEntityItalic, MessageEntityUnderline,
-                MessageEntityStrike, MessageEntitySpoiler, MessageEntityBlockquote,
-            )
+            import html as _html_mod
 
             body = " ".join(list(text.replace(" ", ""))) if style_on["single_space"] else text
 
-            def _entities_for(length):
-                ents = []
+            # ─── به‌جای محاسبه‌ی دستیِ آفست/طول entity ها (که خطاپذیر بود و
+            # روی برخی پیام‌ها بی‌صدا شکست می‌خورد)، از تگ‌های HTML استفاده
+            # می‌کنیم — دقیقاً همون روشی که در تست عملی درست کار کرده.
+            def _wrap_html(s: str) -> str:
+                escaped = _html_mod.escape(s, quote=False)
                 if style_on["bold"]:
-                    ents.append(MessageEntityBold(0, length))
+                    escaped = f"<b>{escaped}</b>"
                 if style_on["italic"]:
-                    ents.append(MessageEntityItalic(0, length))
+                    escaped = f"<i>{escaped}</i>"
                 if style_on["underline"]:
-                    ents.append(MessageEntityUnderline(0, length))
+                    escaped = f"<u>{escaped}</u>"
                 if style_on["strike"]:
-                    ents.append(MessageEntityStrike(0, length))
+                    escaped = f"<s>{escaped}</s>"
                 if style_on["spoiler"]:
-                    ents.append(MessageEntitySpoiler(0, length))
+                    escaped = f"<spoiler>{escaped}</spoiler>"
                 if style_on["quote"]:
-                    try:
-                        ents.append(MessageEntityBlockquote(0, length, collapsed=False))
-                    except Exception:
-                        pass
-                return ents
+                    escaped = f"<blockquote>{escaped}</blockquote>"
+                return escaped
 
             try:
                 if style_on["gradual"]:
@@ -2549,21 +2676,23 @@ async def _handle_command(cl, event, text, owner_id, entry):
                         cut = max(1, (n * i) // steps)
                         partial = body[:cut]
                         try:
-                            await event.edit(partial, formatting_entities=_entities_for(_u16len(partial)) or None)
+                            await event.edit(_wrap_html(partial), parse_mode="html")
                         except FloodWaitError as e:
                             await asyncio.sleep(e.seconds + 1)
-                        except Exception:
+                        except Exception as e:
+                            print(f"❌ خطا در افکت تدریجی: {e!r}")
                             break
                         if cut < n:
                             await asyncio.sleep(0.35)
                 else:
-                    entities = _entities_for(_u16len(body))
-                    if body != text or entities:
-                        await event.edit(body, formatting_entities=entities or None)
+                    if body != text or any(
+                        style_on[k] for k in ("bold", "italic", "underline", "strike", "spoiler", "quote")
+                    ):
+                        await event.edit(_wrap_html(body), parse_mode="html")
             except FloodWaitError as e:
                 await asyncio.sleep(e.seconds + 1)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"❌ خطا در اعمال حالت متن (بولد/ایتالیک/...) روی پیام: {e!r}")
 
 
 # ─── توابع کمکی ────────────────────────────────────────────────────────────────
@@ -3565,6 +3694,9 @@ PANEL_CATEGORIES = {
             ("ترک همگانی کانال", "ترک همگانی کانال"),
             ("تبدیل به گیف", "INFO::روی یک ویدیو ریپلای کن و تایپ کن: تبدیل به گیف"),
             ("توقف سیو کانال", "توقف سیو"),
+            ("اطلاعات کاربر (ایدی)", "INFO::توی یه چت یا گروه تایپ کن: ایدی\nاگه روی پیام یه کاربر ریپلای کنی و «ایدی» رو بفرستی، اطلاعات همون کاربر رو نشون می‌ده."),
+            ("دانلود پست تلگرام", "INFO::برای استفاده تایپ کن: دانلود [لینک پست]\nمثال: دانلود https://t.me/channel/123\nبرای کانال خصوصی: دانلود https://t.me/c/123456789/123"),
+            ("دانلود اینستاگرام", "INFO::برای استفاده تایپ کن: اینستا [لینک پست یا ریل]\nمثال: اینستا https://www.instagram.com/reel/xxxxx/"),
         ],
     },
     "premium_emoji": {
