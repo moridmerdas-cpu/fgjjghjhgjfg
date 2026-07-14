@@ -431,6 +431,20 @@ def start_token_bot():
         except:
             time.sleep(2)
 
+    # ─── جوین اجباری پیش‌فرض ────────────────────────────────────────────────
+    # این دو تا همیشه باید توی لیست کانال‌های جوین اجباری باشن. به‌جای
+    # هاردکد کردن یه لیست جدا و موازی، از همون سیستم دیتابیسیِ موجود
+    # (amel_forced_channels / add_forced_channel) استفاده می‌کنیم که پنل
+    # ادمین هم داره ازش استفاده می‌کنه — پس هم توی این لیست هستن و هم از
+    # طریق دستورهای «لیست کانال‌های اجباری» / «حذف کانال» قابل مدیریتن.
+    # add_forced_channel با ON CONFLICT DO NOTHING نوشته شده، پس اجرای
+    # دوباره‌ش هر بار که ربات بالا میاد کاملاً بی‌خطره (دوباره اضافه نمی‌شه).
+    try:
+        db.add_forced_channel("@Gp_SelfNexo")
+        db.add_forced_channel("@Ch_SelfNexo")
+    except Exception as e:
+        print(f"⚠️ خطا در تنظیم جوین اجباری پیش‌فرض: {e}")
+
     # ─── توابع کمکی ───────────────────────────────────────────────────────────
     def send_forced_channels_menu(message, missing_channels):
         markup = types.InlineKeyboardMarkup(row_width=1)
