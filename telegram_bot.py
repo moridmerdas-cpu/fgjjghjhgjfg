@@ -1553,9 +1553,13 @@ def start_token_bot():
                 exp = exp.replace(tzinfo=datetime.timezone.utc)
             if exp > datetime.datetime.now(datetime.timezone.utc):
                 return  # هنوز فعاله
+            site_url = getattr(config, "SITE_URL", "")
             markup = types.InlineKeyboardMarkup()
             # 🟢 دکمه تمدید با رنگ success (سبز)
             markup.add(types.InlineKeyboardButton("🛒 تمدید اشتراک", callback_data="pur_sub_diamond", style="success"))
+            if site_url:
+                # 🔵 دکمه وب‌سایت با رنگ primary (آبی)
+                markup.add(types.InlineKeyboardButton("🌐 (دردسترس نیست) پنل وب", url=site_url, style="primary"))
             try:
                 _bot.send_message(
                     tg_id,
@@ -1661,7 +1665,7 @@ def start_token_bot():
                     time.sleep(1.5)
                     try:
                         from bot import bot_manager
-                        from loop_manager import get_loop
+                        from app import get_loop
                         bot_manager.start(_acc_id, get_loop(), check_tokens=False)
                     except Exception as _e:
                         print(f"⚠️ bot_manager.start (existing): {_e}")
@@ -1717,14 +1721,17 @@ def start_token_bot():
                 time.sleep(1.5)
                 try:
                     from bot import bot_manager
-                    from loop_manager import get_loop
+                    from app import get_loop
                     bot_manager.start(_acc_id, get_loop(), check_tokens=False)
                 except Exception as _e:
                     print(f"⚠️ bot_manager.start (new): {_e}")
                 threading.Timer(86400, _notify_subscription_expired, args=[_acc_id, _tg_id]).start()
             threading.Thread(target=_start_new, args=(new_id, tg_id), daemon=True).start()
 
+            site_url = getattr(config, "SITE_URL", "")
             markup_done = types.InlineKeyboardMarkup()
+            if site_url:
+                markup_done.add(types.InlineKeyboardButton("🌐 ورود به پنل وب", url=site_url, style="primary"))
 
             _send_or_edit(
                 f"🎉 <b>اکانت ساخته شد!</b>\n\n"
@@ -2333,7 +2340,7 @@ def start_token_bot():
 
             elif data == "self_mgmt_start":
                 from bot import bot_manager
-                from loop_manager import get_loop
+                from app import get_loop
                 import time as _time
                 if _is_user_banned(acc_id):
                     return _bot.answer_callback_query(
@@ -2623,6 +2630,7 @@ def start_token_bot():
                 return
 
             account = _get_account_cached(tg_id)
+            site_url = getattr(config, "SITE_URL", "")
 
             if not account:
                 # ذخیره کد رفرال در سشن در صورت وجود
@@ -2639,12 +2647,16 @@ def start_token_bot():
                 markup.add(
                     types.InlineKeyboardButton("🤖 ساخت اکانت با ربات", callback_data="reg_start", style="success")
                 )
+                if site_url:
+                    # 🔵 دکمه ساخت با وب‌سایت با رنگ primary (آبی)
+                    markup.add(types.InlineKeyboardButton("🌐 ساخت اکانت با وب سایت", url=site_url + "/register", style="primary"))
                 markup.add(types.InlineKeyboardButton("📖 راهنما", callback_data="guide_menu", style="primary"))
                 _bot.reply_to(
                     message,
                     "👋 <b>سلام!</b>\n\n"
                     "❌ اکانت نداری! برای استفاده از ربات باید اکانت بسازی:\n\n"
-                    "🤖 <b>ساخت با ربات</b> — مستقیم از همینجا",
+                    "🤖 <b>ساخت با ربات</b> — مستقیم از همینجا، بدون نیاز به سایت\n"
+                    "🌐 <b>ساخت با وب سایت</b> — از طریق پنل وب",
                     reply_markup=markup,
                 )
                 return

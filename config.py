@@ -11,6 +11,10 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 # ربات کمکی پنل دکمه‌ای سلف (اختیاری - اگر خالی باشد پنل دکمه‌ای غیرفعال می‌ماند)
 HELPER_BOT_TOKEN = os.environ.get("HELPER_BOT_TOKEN", "")
 
+# ─── سرور ──────────────────────────────────────────────────────────────────
+SECRET_KEY = os.environ.get("SECRET_KEY", "nexoself_secret_key_change_me")
+PORT = int(os.environ.get("PORT", 5000))
+SITE_URL = os.environ.get("SITE_URL", "")
 
 # ─── مالک ──────────────────────────────────────────────────────────────────
 OWNER_TG_ID = int(os.environ.get("OWNER_TG_ID", "8540004957"))
