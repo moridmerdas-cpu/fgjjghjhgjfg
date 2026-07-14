@@ -1045,8 +1045,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
             except Exception:
                 pass
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
     async def dice(event):
         if entry.get("paused"):
             return
@@ -1055,8 +1055,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 6  # پیش‌فرض بهترین نتیجه (۶)
         await send_dice(event, "🎲", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?دارت(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.دارت(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.دارت(?:\s+(\d))?$"))
     async def dart(event):
         if entry.get("paused"):
             return
@@ -1065,8 +1065,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 6  # ۶ = وسط دقیقِ دارت (بولزآی)
         await send_dice(event, "🎯", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.فوتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.فوتبال(?:\s+(\d))?$"))
     async def football(event):
         if entry.get("paused"):
             return
@@ -1075,8 +1075,8 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         target = int(g) if g else 5  # ۳،۴،۵ = گل؛ ۵ تمیزترین حالت
         await send_dice(event, "⚽", target=target)
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.بسکتبال(?:\s+(\d))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.بسکتبال(?:\s+(\d))?$"))
     async def basketball(event):
         if entry.get("paused"):
             return
@@ -1089,14 +1089,13 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
     # فرمول رسمی تلگرام برای مقدار اسلات: value = 1 + r1 + r2*4 + r3*16
     # (r1,r2,r3 اندیس هر رول از چپ به راست هستن؛ ۰=میله، ۱=انگور، ۲=لیمو، ۳=هفت)
     _SLOT_SYMBOLS = {
-        "میله": 0, "بار": 0,
         "انگور": 1,
         "لیمو": 2,
         "هفت": 3, "سون": 3, "جکپات": 3,
     }
 
-    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
-    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.?کازینو(?:\s+(.+))?$"))
+    @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.کازینو(?:\s+(.+))?$"))
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.کازینو(?:\s+(.+))?$"))
     async def casino(event):
         if entry.get("paused"):
             return
@@ -1104,7 +1103,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         raw = event.pattern_match.group(1)
         names = raw.split() if raw else []
         if not names:
-            await event.respond("فرمت: کازینو [نماد] — مثال: کازینو انگور\nنمادها: میله، انگور، لیمو، هفت")
+            await event.respond("فرمت: .کازینو [نماد] — مثال: .کازینو انگور\nنمادها: انگور، لیمو، هفت")
             return
         if len(names) == 1:
             names = names * 3
@@ -1113,11 +1112,95 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         indices = []
         for n in names[:3]:
             if n not in _SLOT_SYMBOLS:
-                await event.respond(f"نماد «{n}» شناخته‌شده نیست. نمادها: میله، انگور، لیمو، هفت")
+                await event.respond(f"نماد «{n}» شناخته‌شده نیست. نمادها: انگور، لیمو، هفت")
                 return
             indices.append(_SLOT_SYMBOLS[n])
         target = 1 + indices[0] + indices[1] * 4 + indices[2] * 16
         await send_dice(event, "🎰", target=target)
+
+
+# ─── فینگلیش (تبدیل متن فارسی به حروف لاتین) ───────────────────────────────────
+# یک دیکشنری برای رایج‌ترین کلمه‌های محاوره‌ای (دقت بالا) + یک الگوریتم حرف‌به‌حرف
+# برای بقیه‌ی متن (چون فارسی بدون اعراب نوشته می‌شه، این روش برای بعضی کلمه‌ها
+# ممکنه صددرصد دقیق نباشه، ولی برای استفاده‌ی روزمره کاملاً قابل‌قبوله).
+_FINGLISH_WORDS = {
+    "سلام": "salam", "سلامم": "salamam", "خوبی": "khobi", "خوبم": "khobam",
+    "خوبید": "khobid", "ممنون": "mamnoon", "ممنونم": "mamnoonam", "مرسی": "merci",
+    "چطوری": "chetori", "چطورید": "chetorid", "چطورین": "chetorin",
+    "خداحافظ": "khodahafez", "بله": "bale", "آره": "are", "اره": "are",
+    "نه": "na", "باشه": "bashe", "چی": "chi", "چیه": "chie", "چرا": "chera",
+    "کجا": "koja", "کجایی": "kojayi", "کی": "ki", "کیه": "kie",
+    "چیکار": "chikar", "چیکارا": "chikara", "میخوام": "mikham", "میخوای": "mikhay",
+    "میخواد": "mikhad", "نمیخوام": "nemikham", "میدونم": "midoonam",
+    "نمیدونم": "nemidoonam", "میدونی": "midooni", "دوست": "doost",
+    "دارم": "daram", "داری": "dari", "داره": "dare", "عزیزم": "azizam",
+    "جانم": "janam", "خیلی": "kheyli", "لطفا": "lotfan", "لطفاً": "lotfan",
+    "متشکرم": "motshakeram", "خوش": "khosh", "اومدی": "oomadi",
+    "خوشحالم": "khoshhalam", "تولدت": "tavalodet", "مبارک": "mobarak",
+    "صبح": "sobh", "بخیر": "bekheir", "شب": "shab", "روز": "rooz",
+    "خداروشکر": "khodaroshokr", "قربونت": "ghorboonet", "برم": "beram",
+    "میام": "miam", "میری": "miri", "میره": "mire", "کارت": "karet",
+    "چیزی": "chizi", "هیچی": "hichi", "همه": "hame", "همش": "hamash",
+    "الان": "alan", "بعدا": "bada", "بعداً": "bada", "امروز": "emrooz",
+    "فردا": "farda", "دیروز": "dirooz", "خانه": "khune", "خونه": "khune",
+    "کار": "kar", "درس": "dars", "پول": "pool", "وقت": "vaght",
+    "حالا": "hala", "حالت": "halet", "حالتون": "haletoon", "کمک": "komak",
+    "مشکل": "moshkel", "درست": "dorost", "غلط": "ghalat", "خوب": "khoob",
+    "بد": "bad", "زیاد": "ziad", "کم": "kam", "تند": "tond", "یواش": "yavash",
+}
+
+
+def _finglish_letter(word: str, i: int) -> str:
+    """معادل لاتینِ یک حرف فارسی در جایگاه i از کلمه، با توجه به موقعیتش
+    (شروع/میان/پایان کلمه) برای حرف‌های چندمعنایی مثل ا، و، ی، ه."""
+    ch = word[i]
+    is_first = (i == 0)
+
+    fixed = {
+        "ب": "b", "پ": "p", "ت": "t", "ث": "s", "ج": "j", "چ": "ch",
+        "ح": "h", "خ": "kh", "د": "d", "ذ": "z", "ر": "r", "ز": "z",
+        "ژ": "zh", "س": "s", "ش": "sh", "ص": "s", "ض": "z", "ط": "t",
+        "ظ": "z", "غ": "gh", "ف": "f", "ق": "gh", "ک": "k", "گ": "g",
+        "ل": "l", "م": "m", "ن": "n", "ع": "a",
+    }
+    if ch in fixed:
+        return fixed[ch]
+
+    if ch in ("ا", "آ"):
+        return "a"
+
+    if ch == "و":
+        if is_first:
+            return "v"
+        return "o"
+
+    if ch == "ی":
+        return "y" if is_first else "i"
+
+    if ch == "ه":
+        return "h"
+
+    # هر کاراکتر غیرفارسی (فاصله، عدد، ایموجی، حروف لاتین و ...) دست‌نخورده می‌مونه
+    return ch
+
+
+def to_finglish(text: str) -> str:
+    """تبدیل متن فارسی به فینگلیش (حروف لاتین)، با اولویت دادن به دیکشنریِ
+    کلمات پرکاربرد و بازگشت به تبدیل حرف‌به‌حرف برای بقیه‌ی کلمات."""
+    if not text:
+        return text
+
+    _persian_word_re = re.compile(r"[آ-یءئؤ]+")
+
+    def _convert_word(m: "re.Match") -> str:
+        w = m.group(0)
+        w_norm = w.replace("ي", "ی").replace("ك", "ک")
+        mapped = _FINGLISH_WORDS.get(w_norm)
+        if mapped:
+            return mapped
+        return "".join(_finglish_letter(w_norm, i) for i in range(len(w_norm)))
+
+    return _persian_word_re.sub(_convert_word, text)
 
 
 # ─── پردازش دستورات ────────────────────────────────────────────────────────────
@@ -1155,6 +1238,8 @@ _EXTRA_TOGGLE_COMMANDS = {
     "حالت تدریجی خاموش": ("text_style_gradual_active", "0"),
     "حالت تک‌فاصله روشن": ("text_style_single_space_active", "1"),
     "حالت تک‌فاصله خاموش": ("text_style_single_space_active", "0"),
+    "حالت فینگلیش روشن": ("text_style_finglish_active", "1"),
+    "حالت فینگلیش خاموش": ("text_style_finglish_active", "0"),
 }
 
 # ─── گروه‌هایی که باید «انحصاری» (رادیویی) رفتار کنن: با روشن شدن یکی، بقیه
@@ -1163,6 +1248,7 @@ _TEXT_STYLE_GROUP = [
     "text_style_bold_active", "text_style_italic_active", "text_style_quote_active",
     "text_style_underline_active", "text_style_spoiler_active", "text_style_strike_active",
     "text_style_gradual_active", "text_style_single_space_active",
+    "text_style_finglish_active",
 ]
 _ACTION_GROUP = [
     "typing_action_active", "gaming_action_active",
@@ -2654,11 +2740,17 @@ async def _handle_command(cl, event, text, owner_id, entry):
             "strike": gs("text_style_strike_active", "0") == "1",
             "single_space": gs("text_style_single_space_active", "0") == "1",
             "gradual": gs("text_style_gradual_active", "0") == "1",
+            "finglish": gs("text_style_finglish_active", "0") == "1",
         }
         if text and any(style_on.values()):
             import html as _html_mod
 
-            body = " ".join(list(text.replace(" ", ""))) if style_on["single_space"] else text
+            if style_on["finglish"]:
+                body = to_finglish(text)
+            elif style_on["single_space"]:
+                body = " ".join(list(text.replace(" ", "")))
+            else:
+                body = text
 
             # ─── به‌جای محاسبه‌ی دستیِ آفست/طول entity ها (که خطاپذیر بود و
             # روی برخی پیام‌ها بی‌صدا شکست می‌خورد)، از تگ‌های HTML استفاده
@@ -3395,8 +3487,8 @@ def _help_text():
             "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
         ("🎲 تاس", [
-            "تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
-            "roll [1-6]  ← همان دستور به انگلیسی",
+            ".تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
+            ".roll [1-6]  ← همان دستور به انگلیسی",
         ]),
         ("💡 نکات", [
             "در گروه‌ها فقط وقتی تگ شوید پاسخ می‌دهد",
@@ -3436,6 +3528,7 @@ PANEL_CATEGORIES = {
             ("text_style_italic_active", "ایتالیک", "حالت ایتالیک روشن", "حالت ایتالیک خاموش"),
             ("text_style_strike_active", "خط خورده", "حالت خط‌خورده روشن", "حالت خط‌خورده خاموش"),
             ("text_style_single_space_active", "تک فاصله", "حالت تک‌فاصله روشن", "حالت تک‌فاصله خاموش"),
+            ("text_style_finglish_active", "فینگلیش", "حالت فینگلیش روشن", "حالت فینگلیش خاموش"),
         ],
         "actions": [],
     },
@@ -3620,11 +3713,11 @@ PANEL_CATEGORIES = {
         "menu_style": "success",
         "direct_command": (
             "INFO::تقلب تاس/دارت/فوتبال/بسکتبال/کازینو — همیشه بهترین نتیجه می‌گیری:\n"
-            "تاس یا تاس 6\n"
-            "دارت یا دارت 6\n"
-            "فوتبال یا فوتبال 5\n"
-            "بسکتبال یا بسکتبال 5\n"
-            "کازینو انگور  (یا: کازینو میله/لیمو/هفت)"
+            ".تاس یا .تاس 6\n"
+            ".دارت یا .دارت 6\n"
+            ".فوتبال یا .فوتبال 5\n"
+            ".بسکتبال یا .بسکتبال 5\n"
+            ".کازینو انگور  (یا: .کازینو لیمو/هفت)"
         ),
     },
     "calculator": {
