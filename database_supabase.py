@@ -280,6 +280,8 @@ SETTING_DEFAULTS = {
     "meowie_game_group_id": "",
     "meowie_next_meow_ts": "0",
     "meowie_next_fish_ts": "0",
+    "meowie_last_meow_msg_id": "",
+    "meowie_last_fish_msg_id": "",
 }
 
 # کش تنظیمات (RAM — fallback سریع)

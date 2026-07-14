@@ -53,6 +53,8 @@ SETTING_DEFAULTS_EXTRA = {
     "meowie_game_group_id": "",      # آیدی عددی گروه بازی (بعد از بایند شدن)
     "meowie_next_meow_ts": "0",      # یونیکس‌تایمِ زمان مجاز بعدی برای «میو»
     "meowie_next_fish_ts": "0",      # یونیکس‌تایمِ زمان مجاز بعدی برای «ماهی»
+    "meowie_last_meow_msg_id": "",   # آیدیِ آخرین پیام «میو»یی که خودِ همین کاربر فرستاده
+    "meowie_last_fish_msg_id": "",   # آیدیِ آخرین پیام «ماهی»یی که خودِ همین کاربر فرستاده
 }
 
 _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
@@ -148,16 +150,26 @@ def register_handlers(cl, owner_id: int, db):
     def ss(key, value):
         db.set_setting(owner_id, key, value)
 
-    # 1) پیام دستیِ «میو» خودِ کاربر → بایند کردن گروه بازی (فقط یک‌بار)
+    # 1) پیام دستیِ «میو» خودِ کاربر → بایند کردن گروه بازی (فقط یک‌بار) و
+    # ردگیریِ آیدیِ پیام (برای اینکه بعداً بشه پاسخِ ربات رو دقیقاً به همین
+    # کاربر نسبت داد، نه به هر کاربر دیگه‌ای که توی همون گروهه).
     @cl.on(events.NewMessage(outgoing=True, pattern=r"^\s*میو\s*$"))
     async def _meowie_bind_group(event):
         try:
             if gs("meowie_game_active", "0") != "1":
                 return
-            if gs("meowie_game_group_id", ""):
-                return  # قبلاً بایند شده
             if not event.is_group:
                 return
+
+            # همیشه آیدیِ آخرین «میو»یی که خودمون فرستادیم رو ثبت کن — چه
+            # برای بایند اولیه، چه برای «میو»هایی که بعداً خودِ کاربر دستی
+            # می‌فرسته. این آیدی توی _process برای تشخیص «این پاسخ واقعاً
+            # جواب منه یا جواب یه کاربر دیگه‌ست» استفاده می‌شه.
+            ss("meowie_last_meow_msg_id", str(event.message.id))
+
+            if gs("meowie_game_group_id", ""):
+                return  # قبلاً بایند شده، فقط ردگیری آیدی کافی بود
+
             ss("meowie_game_group_id", str(event.chat_id))
             # ⏳ به‌جای صفر، یه فاصله‌ی کوتاه (grace) می‌ذاریم؛ چون همین «میو»یی
             # که کاربر الان دستی فرستاد قبلاً کول‌داون رو مصرف کرده و بات
@@ -175,6 +187,20 @@ def register_handlers(cl, owner_id: int, db):
                 pass
         except Exception as e:
             print(f"❌ [{owner_id}] خطا در بایند گروه بازی میویی: {e}")
+
+    # 1ب) پیام دستیِ «ماهی» خودِ کاربر → فقط ردگیریِ آیدی (برای همون دلیل بالا)
+    @cl.on(events.NewMessage(outgoing=True, pattern=r"^\s*ماهی\s*$"))
+    async def _meowie_track_fish(event):
+        try:
+            if gs("meowie_game_active", "0") != "1":
+                return
+            if not event.is_group:
+                return
+            if gs("meowie_game_group_id", "") != str(event.chat_id):
+                return
+            ss("meowie_last_fish_msg_id", str(event.message.id))
+        except Exception as e:
+            print(f"❌ [{owner_id}] خطا در ردگیری پیام ماهی: {e}")
 
     # 2) پیام‌های ورودی از @MeowieeeQBot داخل گروه ثبت‌شده — هم پیام‌های
     # تازه (NewMessage) و هم پیام‌هایی که ادیت می‌شن (MessageEdited).
@@ -206,14 +232,39 @@ def register_handlers(cl, owner_id: int, db):
             text = event.raw_text or ""
             clean_text = _clean(text)
             now = time.time()
+            reply_to_id = getattr(event.message, "reply_to_msg_id", None)
 
-            print(f"🐾 [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} ({'edit' if isinstance(event, events.MessageEdited.Event) else 'new'}): {text[:200]!r}")
+            print(f"🐾 [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} ({'edit' if isinstance(event, events.MessageEdited.Event) else 'new'}, reply_to={reply_to_id}): {text[:200]!r}")
+
+            def _is_mine(expected_key: str) -> bool:
+                """
+                چون ممکنه چند کاربرِ مختلفِ همین سیستم عضوِ یه گروهِ مشترک
+                باشن، همه‌شون همین پیام‌های ربات بازی رو می‌بینن. برای اینکه
+                تایمرِ هر کاربر فقط از روی پاسخِ دستورِ خودش آپدیت بشه (نه
+                دستورِ یه کاربر دیگه)، اگه پیام یه ریپلای باشه، فقط وقتی
+                قبولش می‌کنیم که دقیقاً ریپلایِ همون پیامی باشه که خودمون
+                فرستادیم. اگه پیام اصلاً ریپلای نبود (بعضی نسخه‌های ربات
+                شاید ریپلای نکنن)، برای عقب نگه‌نداشتنِ کاربرهایی که تنها
+                عضو گروهشونن، محتاطانه قبولش می‌کنیم.
+                """
+                if reply_to_id is None:
+                    return True
+                expected = gs(expected_key, "")
+                if not expected:
+                    return True
+                try:
+                    return int(expected) == int(reply_to_id)
+                except (TypeError, ValueError):
+                    return True
 
             # (الف) پیام صید ماهی که نیاز به تصمیم داره — دکمه‌ی
             # «بده پیشی بخوره» رو پیدا و کلیک کن. این چک باید همیشه اول
             # از همه باشه، چون دکمه معمولاً با یه ادیت دیرتر ظاهر می‌شه.
             buttons = getattr(event.message, "buttons", None)
             if buttons:
+                if not _is_mine("meowie_last_fish_msg_id"):
+                    print(f"⏭️ [{owner_id}] پیام صید ماهی مالِ یه کاربر دیگه‌ست (ریپلای مچ نشد) — نادیده گرفته شد.")
+                    return
                 for row in buttons:
                     for btn in row:
                         btn_text = getattr(btn, "text", "") or ""
@@ -228,10 +279,14 @@ def register_handlers(cl, owner_id: int, db):
 
             # (ب) تایید خورده‌شدن ماهی توسط پیشی → دوباره «ماهی» بفرست
             if "پیشی خوردش" in clean_text:
+                if not _is_mine("meowie_last_fish_msg_id"):
+                    print(f"⏭️ [{owner_id}] پیام «پیشی خوردش» مالِ یه کاربر دیگه‌ست — نادیده گرفته شد.")
+                    return
                 ss("meowie_next_fish_ts", "0")
                 print(f"🐟 [{owner_id}] پیشی ماهی رو خورد — دوباره «ماهی» فرستاده می‌شه.")
                 try:
-                    await cl.send_message(event.chat_id, "ماهی")
+                    sent = await cl.send_message(event.chat_id, "ماهی")
+                    ss("meowie_last_fish_msg_id", str(sent.id))
                 except Exception as e:
                     print(f"❌ [{owner_id}] خطا در ارسال مجدد ماهی: {e}")
                 return
@@ -255,6 +310,9 @@ def register_handlers(cl, owner_id: int, db):
                 secs = int(m.group(1)) * 60 + int(m.group(2))
                 new_ts = now + secs
                 if "ماهی" in clean_text:
+                    if not _is_mine("meowie_last_fish_msg_id"):
+                        print(f"⏭️ [{owner_id}] کول‌داون ماهی مالِ یه کاربر دیگه‌ست — نادیده گرفته شد.")
+                        return
                     old_ts = float(gs("meowie_next_fish_ts", "0") or "0")
                     if abs(new_ts - old_ts) >= 1:
                         ss("meowie_next_fish_ts", str(new_ts))
@@ -262,6 +320,9 @@ def register_handlers(cl, owner_id: int, db):
                     else:
                         print(f"⏱️ [{owner_id}] (تشخیص: ماهی) تایمر فرقی نکرده، عوض نشد.")
                 elif "میو" in clean_text:
+                    if not _is_mine("meowie_last_meow_msg_id"):
+                        print(f"⏭️ [{owner_id}] کول‌داون میو مالِ یه کاربر دیگه‌ست — نادیده گرفته شد.")
+                        return
                     old_ts = float(gs("meowie_next_meow_ts", "0") or "0")
                     if abs(new_ts - old_ts) >= 1:
                         ss("meowie_next_meow_ts", str(new_ts))
@@ -316,7 +377,8 @@ async def meowie_loop(cl, owner_id: int, db):
             if now >= next_meow:
                 print(f"🐾 [{owner_id}] زمان میو رسید ({now:.0f} >= {next_meow:.0f}) — ارسال «میو».")
                 try:
-                    await cl.send_message(group_id, "میو")
+                    sent = await cl.send_message(group_id, "میو")
+                    db.set_setting(owner_id, "meowie_last_meow_msg_id", str(sent.id))
                 except Exception as e:
                     print(f"❌ [{owner_id}] خطا در ارسال میو: {e}")
                 db.set_setting(owner_id, "meowie_next_meow_ts", str(now + _FALLBACK_RETRY_SECONDS))
@@ -325,7 +387,8 @@ async def meowie_loop(cl, owner_id: int, db):
             if now >= next_fish:
                 print(f"🐟 [{owner_id}] زمان ماهی رسید ({now:.0f} >= {next_fish:.0f}) — ارسال «ماهی».")
                 try:
-                    await cl.send_message(group_id, "ماهی")
+                    sent = await cl.send_message(group_id, "ماهی")
+                    db.set_setting(owner_id, "meowie_last_fish_msg_id", str(sent.id))
                 except Exception as e:
                     print(f"❌ [{owner_id}] خطا در ارسال ماهی: {e}")
                 db.set_setting(owner_id, "meowie_next_fish_ts", str(now + _FALLBACK_RETRY_SECONDS))
