@@ -75,22 +75,6 @@ def _normalize_digits(s: str) -> str:
     return _clean(s)
 
 
-def _parse_mmss(text: str, after_keyword: str) -> int | None:
-    """
-    از متن، اولین الگوی MM:SS که بعد از after_keyword میاد رو استخراج و به
-    ثانیه تبدیل می‌کنه. اگه پیدا نشد None برمی‌گردونه.
-    """
-    norm = _normalize_digits(text or "")
-    idx = norm.find(after_keyword)
-    if idx == -1:
-        return None
-    m = re.search(r"(\d+):(\d+)", norm[idx:])
-    if not m:
-        return None
-    minutes, seconds = int(m.group(1)), int(m.group(2))
-    return minutes * 60 + seconds
-
-
 # ─── پنل دکمه‌ای ─────────────────────────────────────────────────────────────
 PANEL_CATEGORY = {
     "title": "مدیریت بازی میویی",
@@ -194,9 +178,15 @@ def register_handlers(cl, owner_id: int, db):
         except Exception as e:
             print(f"❌ [{owner_id}] خطا در بایند گروه بازی میویی: {e}")
 
-    # 2) پیام‌های ورودی از @MeowieeeQBot داخل گروه ثبت‌شده
-    @cl.on(events.NewMessage(incoming=True))
-    async def _meowie_incoming(event):
+    # 2) پیام‌های ورودی از @MeowieeeQBot داخل گروه ثبت‌شده — هم پیام‌های
+    # تازه (NewMessage) و هم پیام‌هایی که ادیت می‌شن (MessageEdited).
+    #
+    # چرا MessageEdited هم لازمه؟ چون ربات بازی معمولاً اول پیام رو بدون
+    # دکمه می‌فرسته (مثلاً حالت «در حال گرفتن ماهی...») و چند ثانیه بعد
+    # (طبق مشاهده‌ی شما ۱۰ تا ۱۵ ثانیه) همون پیام رو ادیت می‌کنه و دکمه‌ی
+    # «بده پیشی بخوره» رو بهش اضافه می‌کنه. اگه فقط NewMessage گوش بدیم،
+    # دکمه‌ای که بعداً با ادیت اضافه شده رو اصلاً نمی‌بینیم.
+    async def _process(event):
         try:
             if gs("meowie_game_active", "0") != "1":
                 return
@@ -219,34 +209,26 @@ def register_handlers(cl, owner_id: int, db):
             clean_text = _clean(text)
             now = time.time()
 
-            # 🐞 لاگ خام برای دیباگ — اگه یه روز فرمت پیام‌های ربات عوض شد یا
-            # رجکس چیزی رو تشخیص نداد، همین لاگ توی کنسول/فایل لاگ سرور
-            # نشون می‌ده دقیقاً چی دریافت شده تا بشه رجکس‌ها رو اصلاح کرد.
-            print(f"🐾 [{owner_id}] پیام از {MEOWIE_BOT_USERNAME}: {text[:200]!r}")
+            print(f"🐾 [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} ({'edit' if isinstance(event, events.MessageEdited.Event) else 'new'}): {text[:200]!r}")
 
-            # (الف) پاسخ «میو» — هم حالت موفق («میو پوینت گرفتی») هم پیام
-            # کول‌داونِ زودهنگام، هر دو معمولاً شامل «بعد از MM:SS» هستن.
-            secs = _parse_mmss(clean_text, "بعد از")
-            if secs is not None and "میو" in clean_text:
-                ss("meowie_next_meow_ts", str(now + secs))
-                print(f"⏱️ [{owner_id}] میو بعدی تا {secs} ثانیه‌ی دیگه تنظیم شد.")
-                return
-
-            # (ب) پیام صید ماهی که نیاز به تصمیم داره — دکمه‌ی
-            # «بده پیشی بخوره» رو پیدا و کلیک کن.
+            # (الف) پیام صید ماهی که نیاز به تصمیم داره — دکمه‌ی
+            # «بده پیشی بخوره» رو پیدا و کلیک کن. این چک باید همیشه اول
+            # از همه باشه، چون دکمه معمولاً با یه ادیت دیرتر ظاهر می‌شه.
             buttons = getattr(event.message, "buttons", None)
             if buttons:
                 for row in buttons:
                     for btn in row:
                         btn_text = getattr(btn, "text", "") or ""
                         if "بده پیشی بخوره" in btn_text:
+                            print(f"🎣 [{owner_id}] دکمه‌ی «{btn_text}» پیدا شد — در حال کلیک...")
                             try:
                                 await event.message.click(text=btn_text)
+                                print(f"✅ [{owner_id}] کلیک دکمه‌ی ماهی موفق بود.")
                             except Exception as e:
                                 print(f"❌ [{owner_id}] خطا در کلیک دکمه‌ی ماهی: {e}")
                             return
 
-            # (ج) تایید خورده‌شدن ماهی توسط پیشی → دوباره «ماهی» بفرست
+            # (ب) تایید خورده‌شدن ماهی توسط پیشی → دوباره «ماهی» بفرست
             if "پیشی خوردش" in clean_text:
                 ss("meowie_next_fish_ts", "0")
                 print(f"🐟 [{owner_id}] پیشی ماهی رو خورد — دوباره «ماهی» فرستاده می‌شه.")
@@ -256,17 +238,38 @@ def register_handlers(cl, owner_id: int, db):
                     print(f"❌ [{owner_id}] خطا در ارسال مجدد ماهی: {e}")
                 return
 
-            # (د) پیام کول‌داونِ ماهی: «باید MM:SS صبر کنی»
-            secs2 = _parse_mmss(clean_text, "باید")
-            if secs2 is not None and "صبر کنی" in clean_text:
-                ss("meowie_next_fish_ts", str(now + secs2))
-                print(f"⏱️ [{owner_id}] ماهی بعدی تا {secs2} ثانیه‌ی دیگه تنظیم شد.")
+            # (ج) پیام‌های کول‌داون/امتیاز میو یا ماهی — به‌جای تکیه به
+            # حرف‌اضافه‌ی «بعد از»/«باید» (که جهتش وابسته به نسخه‌ی ربات و
+            # می‌تونه برعکس باشه)، فقط MM:SS رو پیدا می‌کنیم و بر اساس
+            # اسم موضوع («ماهی» در برابر «میو») تصمیم می‌گیریم که این زمان
+            # مال کدوم تایمره. «ماهی» رو اول چک می‌کنیم چون احتمالاً «میو»
+            # به‌عنوان برندینگ ربات (Meowie) توی خیلی از پیام‌ها هست، ولی
+            # «ماهی» فقط توی پیام‌های واقعاً مربوط به ماهی میاد.
+            m = re.search(r"(\d+):(\d+)", clean_text)
+            if m:
+                secs = int(m.group(1)) * 60 + int(m.group(2))
+                if "ماهی" in clean_text:
+                    ss("meowie_next_fish_ts", str(now + secs))
+                    print(f"⏱️ [{owner_id}] (تشخیص: ماهی) ماهی بعدی تا {secs} ثانیه‌ی دیگه.")
+                elif "میو" in clean_text:
+                    ss("meowie_next_meow_ts", str(now + secs))
+                    print(f"⏱️ [{owner_id}] (تشخیص: میو) میو بعدی تا {secs} ثانیه‌ی دیگه.")
+                else:
+                    print(f"❔ [{owner_id}] زمان {secs} ثانیه پیدا شد ولی معلوم نشد میو مال میو هست یا ماهی — پیام رو بالا ببین.")
                 return
 
             print(f"❔ [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} با هیچ الگویی مچ نشد (بالا رو ببین).")
 
         except Exception as e:
             print(f"❌ [{owner_id}] خطا در پردازش پیام بازی میویی: {e}")
+
+    @cl.on(events.NewMessage(incoming=True))
+    async def _meowie_incoming(event):
+        await _process(event)
+
+    @cl.on(events.MessageEdited(incoming=True))
+    async def _meowie_edited(event):
+        await _process(event)
 
 
 # ─── حلقه‌ی پس‌زمینه (برای asyncio.ensure_future کنار بقیه‌ی لوپ‌ها) ─────────
