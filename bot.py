@@ -431,6 +431,78 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
     # ─── بازی میویی (@MeowieeeQBot) ───
     meowie_game.register_handlers(cl, owner_id, db)
 
+    # ─── قفل لاگین ──────────────────────────────────────────────────────────
+    # منطق: تلگرام هر ورودِ جدید به اکانت رو به‌صورت پیام از طرفِ «اعلان‌های
+    # سرویس» (چتِ ۷۷۷۰۰۰) گزارش می‌ده. وقتی این قفل روشنه:
+    #   - اگه از قبل یک دستگاهِ دیگه (غیر از خودِ همین سلف) روی اکانت فعال
+    #     بوده باشه، ورودِ تازه رو بلافاصله قطع (لاگ‌اوت) می‌کنیم و هرچی
+    #     مشخصات ازش گیر بیاد (اپ/دستگاه/سیستم‌عامل/کشور/آی‌پی/زمان) رو تو
+    #     سیو مسیج می‌فرستیم.
+    #   - اگه هیچ دستگاهِ دیگه‌ای (بجز خودِ سلف) از قبل روی اکانت نبود، یعنی
+    #     صاحبِ اکانت از همه‌جا بیرون افتاده بوده و این احتمالاً خودشه که
+    #     داره برمی‌گرده — پس کاری باهاش نداریم و اجازه می‌دیم بمونه.
+    @cl.on(events.NewMessage(chats=777000))
+    async def _login_lock_guard(event):
+        if db.get_setting(owner_id, "login_lock_active", "0") != "1":
+            return
+
+        msg_text = event.message.text or ""
+        # پیامِ رسمیِ تلگرام برای ورودِ جدید بسته به زبانِ اکانت فرق می‌کنه؛
+        # چندتا کلیدواژه‌ی رایج (فارسی/انگلیسی) رو پوشش می‌دیم.
+        keywords = ("New login", "ورود جدید", "login was detected", "وارد شدید", "new device")
+        if not any(k.lower() in msg_text.lower() for k in keywords):
+            return
+
+        try:
+            from telethon.tl.functions.account import GetAuthorizationsRequest, ResetAuthorizationRequest
+            result = await cl(GetAuthorizationsRequest())
+            auths = list(result.authorizations)
+        except Exception as e:
+            print(f"❌ [{owner_id}] قفل لاگین: خطا در گرفتنِ لیستِ سشن‌ها: {e}")
+            return
+
+        non_current = [a for a in auths if not getattr(a, "current", False)]
+        if not non_current:
+            return  # فقط خودِ سلف فعاله؛ چیزی برای بررسی نیست
+
+        # جدیدترین سشنِ غیرِ-جاری همون تلاشِ ورودِ تازه‌ست
+        non_current.sort(key=lambda a: getattr(a, "date_created", 0), reverse=True)
+        newest = non_current[0]
+        others = non_current[1:]  # دستگاه‌های دیگه‌ای که از قبل (پیش از این ورود) موجود بودن
+
+        if not others:
+            print(f"🔓 [{owner_id}] قفل لاگین: دستگاهِ دیگه‌ای از قبل روی اکانت نبود — ورودِ جدید مجاز شمرده شد.")
+            return
+
+        try:
+            await cl(ResetAuthorizationRequest(hash=newest.hash))
+            print(f"🔒 [{owner_id}] قفل لاگین: سشنِ تازه‌ی مشکوک قطع شد.")
+        except Exception as e:
+            print(f"❌ [{owner_id}] قفل لاگین: خطا در قطعِ سشنِ تازه: {e}")
+
+        def _fmt(v, fallback="نامشخص"):
+            return str(v) if v not in (None, "") else fallback
+
+        date_created = getattr(newest, "date_created", None)
+        try:
+            date_str = date_created.strftime("%Y-%m-%d %H:%M:%S UTC") if date_created else "نامشخص"
+        except Exception:
+            date_str = str(date_created) if date_created else "نامشخص"
+
+        report = (
+            "🚨 قفل لاگین: یک تلاشِ ورودِ جدید به اکانتت شناسایی و قطع شد.\n\n"
+            f"📱 اپ: {_fmt(getattr(newest, 'app_name', None))} {_fmt(getattr(newest, 'app_version', None), '')}\n"
+            f"💻 دستگاه: {_fmt(getattr(newest, 'device_model', None))}\n"
+            f"🖥 سیستم‌عامل: {_fmt(getattr(newest, 'platform', None))} {_fmt(getattr(newest, 'system_version', None), '')}\n"
+            f"🌍 کشور/منطقه: {_fmt(getattr(newest, 'country', None))} {_fmt(getattr(newest, 'region', None), '')}\n"
+            f"🌐 آی‌پی: {_fmt(getattr(newest, 'ip', None))}\n"
+            f"🕒 زمانِ تلاشِ ورود: {date_str}"
+        )
+        try:
+            await cl.send_message("me", report)
+        except Exception as e:
+            print(f"❌ [{owner_id}] قفل لاگین: خطا در ارسالِ گزارش به سیو مسیج: {e}")
+
     @cl.on(events.NewMessage(incoming=True))
     async def on_incoming(event):
         # اگه پلن منقضی شده، هیچ کاری نکن (اتصال زنده‌ست)
@@ -458,8 +530,10 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
             # اگه پیام رسانه داره (عکس/ویدیو/گیف/استیکر و ...) و «ذخیره پیام
             # حذف‌شده» روشنه، خودِ رسانه رو هم دانلود می‌کنیم تا اگه پیام حذف
-            # شد، بشه عینِ همون رسانه رو هم برای خودت فرستاد، نه فقط یه متنِ خالی.
-            if msg.media and db.get_setting(owner_id, "guard_delete_active") == "1":
+            # شد، بشه عینِ همون رسانه رو هم برای خودت فرستاد، نه فقط یه متنِ
+            # خالی. این قابلیت فقط تویِ پیوی معنا داره (طبق درخواست)، پس
+            # برای گروه/سوپرگروه/کانال اصلاً دانلود نمی‌کنیم.
+            if msg.media and event.is_private and db.get_setting(owner_id, "guard_delete_active") == "1":
                 try:
                     guard_dir = f"saved_media/_guard/{owner_id}"
                     os.makedirs(guard_dir, exist_ok=True)
@@ -914,9 +988,12 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.MessageDeleted())
     async def on_deleted(event):
-        """نگهبان چت: اگه پیامِ یک نفر دیگه حذف شد و توی کش بود، برای خودت بفرست."""
+        """نگهبان چت: اگه پیامِ یک نفر دیگه حذف شد و توی کش بود، برای خودت بفرست (فقط پیوی)."""
         try:
             if db.get_setting(owner_id, "guard_delete_active") != "1":
+                return
+            # طبق درخواست: این قابلیت فقط تویِ پیوی کار کنه، نه گروه/سوپرگروه/کانال.
+            if not event.is_private:
                 return
             chat_id_del = event.chat_id
             for msg_id in event.deleted_ids:
@@ -957,10 +1034,10 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     @cl.on(events.NewMessage(outgoing=True))
     async def on_outgoing(event):
-        text = event.raw_text.strip()
+        raw = event.raw_text.strip()
+        had_dot = raw.startswith(".") and len(raw) > 1
         # قبول کردن پیشوند نقطه («.دستور» هم مثل «دستور» کار کند)
-        if text.startswith(".") and len(text) > 1:
-            text = text[1:].strip()
+        text = raw[1:].strip() if had_dot else raw
 
         # ثبت آخرین فعالیتِ خودِ کاربر — برای تشخیص «غایب/آفلاین» دستیار هوش مصنوعی
         _last_outgoing_activity[owner_id] = time.time()
@@ -1017,7 +1094,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         if not is_config_command and db.get_setting(owner_id, "self_bot_active") != "1":
             return
 
-        await _handle_command(cl, event, text, owner_id, entry)
+        await _handle_command(cl, event, text, owner_id, entry, had_dot=had_dot)
 
 
 
@@ -1220,6 +1297,8 @@ _EXTRA_TOGGLE_COMMANDS = {
     "قفل استیکر خاموش": ("lock_sticker_active", "0"),
     "قفل فوروارد روشن": ("lock_forward_active", "1"),
     "قفل فوروارد خاموش": ("lock_forward_active", "0"),
+    "قفل لاگین روشن": ("login_lock_active", "1"),
+    "قفل لاگین خاموش": ("login_lock_active", "0"),
     "ساعت پرمیوم روشن": ("clock_premium_active", "1"),
     "ساعت پرمیوم خاموش": ("clock_premium_active", "0"),
     "حالت بولد روشن": ("text_style_bold_active", "1"),
@@ -1263,7 +1342,7 @@ def _enforce_exclusive_group(owner_id: int, group: list, active_key: str):
             db.set_setting(owner_id, k, "0")
 
 
-async def _handle_command(cl, event, text, owner_id, entry):
+async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
     msg = event.message
 
     def gs(key, default=None):
@@ -2250,14 +2329,14 @@ async def _handle_command(cl, event, text, owner_id, entry):
         ss("enemy_reply_active", "0"); await edit("⚔️ پاسخ خودکار به دشمن خاموش شد.")
 
     # ─── فونت متن (حالت خودکار) ──────────────────────────────────────────────
-    elif text == "فونت متن روشن":
+    elif text == "فونت متن روشن" and had_dot:
         ss("text_font_auto", "1")
         font_id = gs("selected_font", "0")
         fn = FONTS.get(font_id, FONTS["0"])
         sample = fn("Hello World")
         await edit(f"✅ فونت متن خودکار روشن شد.\n✏️ از این به بعد هر پیامی که بنویسی با فونت {font_id} ادیت می‌شه.\nنمونه: `{sample}`")
 
-    elif text == "فونت متن خاموش":
+    elif text == "فونت متن خاموش" and had_dot:
         ss("text_font_auto", "0")
         await edit("❌ فونت متن خودکار خاموش شد.\nپیام‌ها دیگه ادیت نمی‌شن.")
 
@@ -2323,7 +2402,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit("❗ فرمت: زیرخط [متن]")
 
     # ─── فونت ساعت ──────────────────────────────────────────────────────────
-    elif text.startswith("فونت ساعت "):
+    elif text.startswith("فونت ساعت ") and had_dot:
         font_id = text.split()[-1]
         if font_id in CLOCK_FONTS:
             ss("selected_clock_font", font_id)
@@ -2332,18 +2411,18 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit(f"⏰ فونت ساعت {font_id} انتخاب شد:\n`{sample}`")
         else:
             await edit("❗ شماره فونت ساعت باید بین ۰ تا ۹ باشد.")
-    elif text == "لیست فونت ساعت":
+    elif text == "لیست فونت ساعت" and had_dot:
         lines = ["⏰ **فونت‌های ساعت موجود:**\n"]
         for k, digits in CLOCK_FONTS.items():
             sample = "".join(digits[int(ch)] for ch in "1234567890")
-            lines.append(f"`فونت ساعت {k}` — `{sample}`")
-        lines.append("\n💡 برای انتخاب: `فونت ساعت [شماره]`")
+            lines.append(f"`.فونت ساعت {k}` — `{sample}`")
+        lines.append("\n💡 برای انتخاب: `.فونت ساعت [شماره]`")
         await edit("\n".join(lines))
 
     # ─── فونت ────────────────────────────────────────────────────────────────
-    elif text.startswith("فونت "):
+    elif text.startswith("فونت ") and had_dot:
         parts = text.split()
-        # "فونت 4" یا "فونت amel 4"
+        # ".فونت 4" یا ".فونت amel 4"
         font_id = parts[-1]
         preview_words = parts[1:-1]  # کلمات بین "فونت" و شماره
         if font_id in FONTS:
@@ -2358,13 +2437,13 @@ async def _handle_command(cl, event, text, owner_id, entry):
         else:
             await edit("❗ شماره فونت باید بین ۰ تا ۸ باشد.")
 
-    elif text == "لیست فونت":
+    elif text == "لیست فونت" and had_dot:
         lines = ["🔤 **فونت‌های موجود:**\n"]
         for k in FONTS:
             fn = FONTS[k]
             sample = fn("Hello World")
-            lines.append(f"`فونت {k}` — `{sample}`")
-        lines.append("\n💡 برای انتخاب: `فونت [شماره]`")
+            lines.append(f"`.فونت {k}` — `{sample}`")
+        lines.append("\n💡 برای انتخاب: `.فونت [شماره]`")
         await edit("\n".join(lines))
 
     # ─── ساعت نام/بیو ─────────────────────────────────────────────────────────
@@ -2443,7 +2522,7 @@ async def _handle_command(cl, event, text, owner_id, entry):
             await edit("❗ متن یا ریپلای لازم است.")
 
     # ─── هواشناسی ────────────────────────────────────────────────────────────
-    elif text.startswith("هوا "):
+    elif text.startswith("هوا ") and had_dot:
         await edit(await _get_weather(text[len("هوا "):].strip()))
 
     # ─── قیمت ارز ────────────────────────────────────────────────────────────
@@ -3445,7 +3524,7 @@ def _help_text():
         ]),
         ("🔹 ابزار", [
             "ترجمه [متن]",
-            "هوا [شهر]",
+            ".هوا [شهر]",
             "ارز  ← دلار، تتر، یورو، پوند",
             "ارز دلار / ارز تتر / ارز یورو / ارز پوند / ارز بیت کوین",
         ]),
@@ -3476,15 +3555,15 @@ def _help_text():
             "💡 روی متن فارسی هم کار می‌کند",
         ]),
         ("🔹 فونت", [
-            "فونت [0-8]  ← انتخاب فونت",
-            "فونت [متن] [0-8]  ← نوشتن یه کلمه با فونت",
-            "لیست فونت  ← نمایش همه فونت‌ها",
+            ".فونت [0-8]  ← انتخاب فونت",
+            ".فونت [متن] [0-8]  ← نوشتن یه کلمه با فونت",
+            ".لیست فونت  ← نمایش همه فونت‌ها",
             "──────────────────",
-            "فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
-            "فونت متن خاموش  ← خاموش کردن حالت خودکار",
+            ".فونت متن روشن  ← هر پیامی که بنویسی ادیت می‌شه",
+            ".فونت متن خاموش  ← خاموش کردن حالت خودکار",
             "──────────────────",
-            "فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
-            "لیست فونت ساعت  ← نمایش فونت‌های ساعت",
+            ".فونت ساعت [0-9]  ← فونت ساعت نام/بیو",
+            ".لیست فونت ساعت  ← نمایش فونت‌های ساعت",
         ]),
         ("🎲 تاس", [
             ".تاس [1-6]  ← ارسال تاس با عدد دلخواه 🎲",
@@ -3576,6 +3655,7 @@ PANEL_CATEGORIES = {
             ("lock_sticker_active", "قفل استیکر", "قفل استیکر روشن", "قفل استیکر خاموش"),
             ("lock_forward_active", "قفل فوروارد", "قفل فوروارد روشن", "قفل فوروارد خاموش"),
             ("anti_delete_active", "قفل ضد حذف", "ضد حذف روشن", "ضد حذف خاموش"),
+            ("login_lock_active", "قفل لاگین", "قفل لاگین روشن", "قفل لاگین خاموش"),
         ],
         "actions": [],
     },
@@ -3926,7 +4006,7 @@ async def _execute_panel_command(cl, owner_id: int, command_text: str):
     entry = bot_manager._bots.get(owner_id) or {}
     fake_event = _FakePanelEvent(cl)
     try:
-        await _handle_command(cl, fake_event, command_text, owner_id, entry)
+        await _handle_command(cl, fake_event, command_text, owner_id, entry, had_dot=True)
     except Exception as e:
         print(f"❌ خطا در اجرای دستور پنل ({command_text}): {e}")
 
