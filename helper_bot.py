@@ -119,8 +119,40 @@ async def start_helper_bot():
         from telegram_bot import get_all_commands_buttons
         import database as db
 
-        cl = TelegramClient(StringSession(), config.API_ID, config.API_HASH)
-        await cl.start(bot_token=config.HELPER_BOT_TOKEN)
+        # ⏱️ نکته‌ی مهم: قبلاً اینجا `await cl.start(...)` بدون هیچ timeout ای
+        # صدا زده می‌شد. اگه این اتصال (مثلاً به‌خاطر یک فلاکِ شبکه‌ایِ موقتِ
+        # هاست) گیر می‌کرد و هیچ‌وقت برنمی‌گشت، چون این خط داخلِ
+        # `async with _helper_start_lock:` هست، قفل برای همیشه گرفته می‌موند
+        # و همه‌ی تلاش‌های بعدی (واچ‌داگِ هر ۲۰ ثانیه، لاگینِ کاربرِ تازه و...)
+        # پشتِ همون قفل تا ابد صف می‌کشیدن — دقیقاً همون «تا ریستارتِ سرور
+        # درست نمی‌شه» که مشاهده شده. با اضافه‌کردنِ timeout و disconnect
+        # کردنِ صریح در صورتِ شکست، قفل زود آزاد می‌شه و واچ‌داگِ بعدی
+        # می‌تونه دوباره تلاش کنه.
+        cl = TelegramClient(
+            StringSession(),
+            config.API_ID,
+            config.API_HASH,
+            connection_retries=3,
+            retry_delay=2,
+            timeout=10,
+        )
+        try:
+            await asyncio.wait_for(cl.start(bot_token=config.HELPER_BOT_TOKEN), timeout=25)
+        except asyncio.TimeoutError:
+            print("⏱️ تایم‌اوت در اتصال ربات کمکی — تلاش لغو شد، دفعه‌ی بعد دوباره امتحان می‌شه.")
+            try:
+                await cl.disconnect()
+            except Exception:
+                pass
+            return None
+        except Exception as e:
+            print(f"❌ خطا در اتصال ربات کمکی: {e} — دفعه‌ی بعد دوباره امتحان می‌شه.")
+            try:
+                await cl.disconnect()
+            except Exception:
+                pass
+            return None
+
         _helper_client = cl
         me = await cl.get_me()
         print(f"✅ ربات کمکی پنل راه‌اندازی شد — @{me.username}")
