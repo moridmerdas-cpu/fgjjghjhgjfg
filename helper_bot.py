@@ -341,6 +341,32 @@ async def start_helper_bot():
         # cache_time=0 تا این پنل هیچ‌وقت به‌جای کاربر دیگه از کش تلگرام serve نشه
         await event.answer([result], cache_time=0)
 
+    async def _answer_info(event, text: str):
+        """
+        نمایشِ متنِ راهنما/اطلاع‌رسانی به کاربر. تلگرام برای پاپ‌آپِ alert
+        توی answerCallbackQuery سقفِ ۲۰۰ کاراکتری داره — اگه از این سقف رد
+        بشیم، خودِ فراخوانی با خطا مواجه می‌شه (و چون قبلاً این خطا جایی
+        catch نمی‌شد، دکمه از دیدِ کاربر «کار نمی‌کنه»: لودینگِ روی دکمه
+        برای همیشه می‌مونه و هیچ پیامی نشون داده نمی‌شه). برای متن‌های کوتاه
+        همون پاپ‌آپِ قبلی حفظ می‌شه، برای متن‌های بلند (مثل راهنمای تبچی یا
+        راهنمای بازی میویی) به‌جاش یک پیامِ معمولی توی همون چت فرستاده
+        می‌شه که محدودیتِ طول نداره.
+        """
+        if len(text) <= 200:
+            try:
+                await event.answer(text, alert=True)
+                return
+            except Exception:
+                pass  # اگه به هر دلیلی پاپ‌آپ هم شکست خورد، به فالبکِ پیام معمولی برو
+        try:
+            await event.answer()
+        except Exception:
+            pass
+        try:
+            await cl.send_message(event.chat_id, text)
+        except Exception:
+            pass
+
     # ─── کلیک روی دکمه‌های پنل ────────────────────────────────────────────────
     @cl.on(events.CallbackQuery())
     async def on_callback(event):
@@ -413,7 +439,7 @@ async def start_helper_bot():
             direct = cat.get("direct_command")
             if direct is not None:
                 if direct.startswith("INFO::"):
-                    await event.answer(direct[len("INFO::"):], alert=True)
+                    await _answer_info(event, direct[len("INFO::"):])
                 else:
                     await event.answer(f"در حال اجرا: {cat['title']}")
                     await _execute_panel_command(self_client, owner_id, direct)
@@ -461,7 +487,7 @@ async def start_helper_bot():
             # این‌ها نیاز به ورودی متنی دارن، پس به‌جای اجرا روی سلف، فقط یک
             # توضیح کوتاه (toast) نشون داده می‌شه.
             if command_text.startswith("INFO::"):
-                await event.answer(command_text[len("INFO::"):], alert=True)
+                await _answer_info(event, command_text[len("INFO::"):])
                 return
 
             await event.answer(f"در حال اجرا: {label}")

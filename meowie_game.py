@@ -39,7 +39,12 @@ import asyncio
 from telethon import events
 
 # ─── تنظیمات ثابت ───────────────────────────────────────────────────────────
-MEOWIE_BOT_USERNAME = "MeowieeeQBot"   # بدون @
+MEOWIE_BOT_USERNAME = "MeowieeeQBot"   # بدون @ (برای نمایش/لاگ)
+
+# چون ربات بازی گاهی زیر دو یوزرنیم مختلف دیده شده (MeowieeeQBot و
+# MeowieQBot)، هر دو رو قبول می‌کنیم تا پیام‌ها بسته به اینکه از کدوم
+# یوزرنیم بیان، نادیده گرفته نشن.
+MEOWIE_BOT_USERNAMES = {"meowieeeqbot", "meowieqbot"}
 
 # فاصله‌ی امن پیش‌فرض بین دو ارسال، وقتی هنوز پاسخی از ربات نرسیده
 # (صرفاً یک شبکه‌ی ایمنی در برابر لوپ سریع، نه دور زدن کول‌داون واقعی)
@@ -65,6 +70,18 @@ SETTING_DEFAULTS_EXTRA = {
     "meowie_last_myohaam_msg_id": "",  # آیدیِ آخرین پیام «میوهام»یی که خودِ همین کاربر فرستاده
     "meowie_next_myohaam_ts": "0",     # یونیکس‌تایمِ زمانِ ارسال بعدیِ «میوهام»
     "meowie_myohaam_interval_seconds": "21600",  # فاصله‌ی پیش‌فرض بین دو «میوهام» (۶ ساعت)
+
+    # ─── تنظیمات ریز قابلیت‌های خودکار (زیرمنوی «⚙️ تنظیمات») ─────────────────
+    # همه‌ی این‌ها پیش‌فرضشون روشنه (همون رفتار قبلی که این تنظیمات نبودن)؛
+    # کاربر می‌تونه هرکدوم رو جدا از بقیه از توی پنل خاموش کنه، بدون اینکه
+    # کل «بازی میویی» رو خاموش کنه.
+    "meowie_auto_meow_active": "1",     # ارسال خودکار «میو» توسط حلقه‌ی پس‌زمینه
+    "meowie_auto_fish_active": "1",     # ارسال خودکار «ماهی» توسط حلقه‌ی پس‌زمینه
+    "meowie_auto_sell_fish_active": "1",  # وقتی گربه سیره، فروش/انداختن‌توی‌یخچالِ خودکارِ ماهی
+    "meowie_auto_pishi_active": "1",    # ارسال خودکار «پیشی» توسط حلقه‌ی پس‌زمینه (برای پر شدن ظرفیت)
+    "meowie_auto_withdraw_active": "1",  # کلیک خودکار دکمه‌ی «برداشت میو پوینت ها»
+    "meowie_auto_upgrade_active": "1",  # ارسال «پیشی» + کلیک خودکار «ارتقا سطح» وقتی موجودی کافیه
+    "meowie_auto_myohaam_active": "1",  # ارسال خودکار «میوهام» (چک دوره‌ای موجودی/ارتقا)
 }
 
 # ارزشِ ریالیِ ماهی که اگه بیشتر یا مساویش باشه، حتی وقتی گربه سیره هم
@@ -91,6 +108,22 @@ def _normalize_digits(s: str) -> str:
     return _clean(s)
 
 
+# ─── تاگل‌های ریزِ زیرمنوی «⚙️ تنظیمات» ────────────────────────────────────
+# فرمت هر آیتم: (کلیدِ تنظیم توی دیتابیس، برچسبِ فارسی، دستورِ متنیِ روشن‌کردن،
+# دستورِ متنیِ خاموش‌کردن). این لیست هم برای ساختِ دکمه‌های پنل (پایین) و هم
+# برای پردازشِ خودِ دستورها توی handle_panel_command استفاده می‌شه، تا لازم
+# نباشه هر تاگل رو دوبار (یک‌بار برای دکمه، یک‌بار برای پردازش دستور) بنویسیم.
+SETTINGS_TOGGLES = [
+    ("meowie_auto_meow_active", "میو خودکار", "میو خودکار روشن", "میو خودکار خاموش"),
+    ("meowie_auto_fish_active", "ماهی خودکار", "ماهی خودکار روشن", "ماهی خودکار خاموش"),
+    ("meowie_auto_sell_fish_active", "فروش ماهی خودکار", "فروش ماهی خودکار روشن", "فروش ماهی خودکار خاموش"),
+    ("meowie_auto_pishi_active", "پیشی خودکار", "پیشی خودکار روشن", "پیشی خودکار خاموش"),
+    ("meowie_auto_withdraw_active", "برداشت خودکار امتیاز", "برداشت خودکار امتیاز روشن", "برداشت خودکار امتیاز خاموش"),
+    ("meowie_auto_upgrade_active", "ارتقا خودکار پیشی", "ارتقا خودکار پیشی روشن", "ارتقا خودکار پیشی خاموش"),
+    ("meowie_auto_myohaam_active", "چک خودکار موجودی", "چک خودکار موجودی روشن", "چک خودکار موجودی خاموش"),
+]
+
+
 # ─── پنل دکمه‌ای ─────────────────────────────────────────────────────────────
 PANEL_CATEGORY = {
     "title": "مدیریت بازی میویی",
@@ -106,10 +139,25 @@ PANEL_CATEGORY = {
             "برای پیشی هم کافیه یک‌بار دستی «پیشی» رو داخل همون گروه بفرستی؛ "
             "از اون به بعد خودش وقتی ظرفیت پر شد دوباره «پیشی» می‌فرسته و "
             "دکمه‌ی «برداشت میو پوینت ها» رو می‌زنه. "
-            "برای عوض کردن گروه، «ریست گروه بازی میویی» رو بفرست.",
+            "برای عوض کردن گروه، «ریست گروه بازی میویی» رو بفرست.\n"
+            "🔧 برای روشن/خاموش کردن هرکدوم از قابلیت‌ها به‌صورت جدا "
+            "(مثلاً فقط فروش ماهی یا فقط ارتقا) وارد «⚙️ تنظیمات» شو.",
         ),
         ("🗑 حذف گروه میویی", "حذف گروه میویی"),
     ],
+    "children": [("⚙️ تنظیمات", "meowie_settings")],
+}
+
+# زیرمنوی «⚙️ تنظیمات» — فقط از طریق دکمه‌ی «⚙️ تنظیمات» توی «مدیریت بازی
+# میویی» در دسترسه (خودش توی منوی اصلیِ پنل نشون داده نمی‌شه). باید توسطِ
+# bot.py توی PANEL_CATEGORIES با کلیدِ "meowie_settings" ثبت بشه (دقیقاً مثل
+# clock_font و friend_enemy_friend/enemy).
+SETTINGS_PANEL_CATEGORY = {
+    "title": "⚙️ تنظیمات میویی",
+    "menu_style": "primary",
+    "toggles": [(key, label, on_cmd, off_cmd) for key, label, on_cmd, off_cmd in SETTINGS_TOGGLES],
+    "actions": [],
+    "parent": "meowie_game",
 }
 
 
@@ -150,6 +198,16 @@ def handle_panel_command(text: str, owner_id: int, ss, gs, edit_coro_factory) ->
             "🗑 گروه بازی میویی حذف شد. دفعه‌ی بعد که «میو» رو داخل هر "
             "گروهی (دستی) بنویسی، همون گروه به‌عنوان گروه جدید ثبت می‌شه."
         )
+
+    # ─── تاگل‌های ریزِ زیرمنوی «⚙️ تنظیمات» — همه‌شون از روی یک لیست واحد
+    # (SETTINGS_TOGGLES) پردازش می‌شن تا لازم نباشه هفت‌تا if/elif جدا بنویسیم.
+    for key, label, on_cmd, off_cmd in SETTINGS_TOGGLES:
+        if text == on_cmd:
+            ss(key, "1")
+            return True, edit_coro_factory(f"✅ {label} روشن شد.")
+        if text == off_cmd:
+            ss(key, "0")
+            return True, edit_coro_factory(f"⛔️ {label} خاموش شد.")
 
     return False, None
 
@@ -279,7 +337,7 @@ def register_handlers(cl, owner_id: int, db):
 
             sender = await event.get_sender()
             sender_username = (getattr(sender, "username", "") or "").lower()
-            if sender_username != MEOWIE_BOT_USERNAME.lower():
+            if sender_username not in MEOWIE_BOT_USERNAMES:
                 return
 
             text = event.raw_text or ""
@@ -287,7 +345,7 @@ def register_handlers(cl, owner_id: int, db):
             now = time.time()
             reply_to_id = getattr(event.message, "reply_to_msg_id", None)
 
-            print(f"🐾 [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} ({'edit' if isinstance(event, events.MessageEdited.Event) else 'new'}, reply_to={reply_to_id}): {text[:200]!r}")
+            print(f"🐾 [{owner_id}] پیام از @{sender_username} ({'edit' if isinstance(event, events.MessageEdited.Event) else 'new'}, reply_to={reply_to_id}): {text[:200]!r}")
 
             def _is_mine(expected_key: str) -> bool:
                 """
@@ -353,23 +411,34 @@ def register_handlers(cl, owner_id: int, db):
 
                 target_btn_text = None
                 if cat_is_full:
-                    fish_value_m = re.search(r"ارزش\s*:\s*([\d,\.]+)", clean_text)
-                    fish_value = None
-                    if fish_value_m:
-                        try:
-                            fish_value = float(fish_value_m.group(1).replace(",", ""))
-                        except ValueError:
-                            fish_value = None
-
-                    if fish_value is not None and fish_value >= _FISH_SELL_THRESHOLD:
-                        target_btn_text = "فروش ماهی"
-                        print(f"🐟 [{owner_id}] گربه سیره و ارزشِ ماهی ({fish_value:g}) >= {_FISH_SELL_THRESHOLD} → فروش.")
-                    elif has_freezer_btn:
-                        target_btn_text = "بندازش تو یخچال"
-                        print(f"🐟 [{owner_id}] گربه سیره و ارزشِ ماهی کمه ولی یخچال دارد → انداختن تو یخچال.")
+                    if gs("meowie_auto_sell_fish_active", "1") != "1":
+                        # فروش ماهی خودکار خاموشه — فقط اگه یخچال داشته باشیم
+                        # ماهی رو بی‌خطر نگه می‌داریم، وگرنه دست نمی‌زنیم و
+                        # می‌ذاریم کاربر خودش تصمیم بگیره.
+                        if has_freezer_btn:
+                            target_btn_text = "بندازش تو یخچال"
+                            print(f"🧊 [{owner_id}] گربه سیره ولی «فروش ماهی خودکار» خاموشه → فقط انداختن تو یخچال.")
+                        else:
+                            print(f"⏸️ [{owner_id}] گربه سیره و «فروش ماهی خودکار» خاموشه و یخچالی هم نیست — کاری انجام نشد.")
+                            return
                     else:
-                        target_btn_text = "فروش ماهی"
-                        print(f"🐟 [{owner_id}] گربه سیره، ارزشِ ماهی کمه ولی هنوز یخچال نخریده → فروش به‌جاش.")
+                        fish_value_m = re.search(r"ارزش\s*:\s*([\d,\.]+)", clean_text)
+                        fish_value = None
+                        if fish_value_m:
+                            try:
+                                fish_value = float(fish_value_m.group(1).replace(",", ""))
+                            except ValueError:
+                                fish_value = None
+
+                        if fish_value is not None and fish_value >= _FISH_SELL_THRESHOLD:
+                            target_btn_text = "فروش ماهی"
+                            print(f"🐟 [{owner_id}] گربه سیره و ارزشِ ماهی ({fish_value:g}) >= {_FISH_SELL_THRESHOLD} → فروش.")
+                        elif has_freezer_btn:
+                            target_btn_text = "بندازش تو یخچال"
+                            print(f"🐟 [{owner_id}] گربه سیره و ارزشِ ماهی کمه ولی یخچال دارد → انداختن تو یخچال.")
+                        else:
+                            target_btn_text = "فروش ماهی"
+                            print(f"🐟 [{owner_id}] گربه سیره، ارزشِ ماهی کمه ولی هنوز یخچال نخریده → فروش به‌جاش.")
                 else:
                     target_btn_text = "بده پیشی بخوره"
 
@@ -447,18 +516,22 @@ def register_handlers(cl, owner_id: int, db):
                 # (meowie_want_upgrade == "1")، و این پیامِ پیشی الان دکمه‌ی
                 # «ارتقا سطح» رو داره، همین‌جا کلیکش کن.
                 if gs("meowie_want_upgrade", "0") == "1" and has_upgrade_btn:
-                    for row in buttons:
-                        for btn in row:
-                            btn_text = getattr(btn, "text", "") or ""
-                            if "ارتقا سطح" in btn_text:
-                                print(f"⬆️ [{owner_id}] موجودی کافیه — کلیکِ دکمه‌ی «{btn_text}»...")
-                                try:
-                                    await event.message.click(text=btn_text)
-                                    print(f"✅ [{owner_id}] ارتقاءِ سطح موفق بود.")
-                                except Exception as e:
-                                    print(f"❌ [{owner_id}] خطا در کلیک دکمه‌ی ارتقا: {e}")
-                                ss("meowie_want_upgrade", "0")
-                                return
+                    if gs("meowie_auto_upgrade_active", "1") != "1":
+                        print(f"⏸️ [{owner_id}] موجودی برای ارتقا کافیه ولی «ارتقا خودکار پیشی» خاموشه — کاری انجام نشد.")
+                        ss("meowie_want_upgrade", "0")
+                    else:
+                        for row in buttons:
+                            for btn in row:
+                                btn_text = getattr(btn, "text", "") or ""
+                                if "ارتقا سطح" in btn_text:
+                                    print(f"⬆️ [{owner_id}] موجودی کافیه — کلیکِ دکمه‌ی «{btn_text}»...")
+                                    try:
+                                        await event.message.click(text=btn_text)
+                                        print(f"✅ [{owner_id}] ارتقاءِ سطح موفق بود.")
+                                    except Exception as e:
+                                        print(f"❌ [{owner_id}] خطا در کلیک دکمه‌ی ارتقا: {e}")
+                                    ss("meowie_want_upgrade", "0")
+                                    return
 
                 if produced is None or rate is None or capacity is None:
                     print(f"❔ [{owner_id}] پیام وضعیتِ پیشی پیدا شد ولی نتونستم عدد تولیدشده/نرخ/ظرفیت رو استخراج کنم.")
@@ -479,6 +552,9 @@ def register_handlers(cl, owner_id: int, db):
 
                 # ظرفیت پره (یا نرخ صفر/منفیه) → همین الان دکمه‌ی برداشت رو بزن
                 print(f"🐱 [{owner_id}] پیشی: ظرفیت پره (تولیدشده={produced:g} / ظرفیت={capacity:g}) — تلاش برای برداشت.")
+                if gs("meowie_auto_withdraw_active", "1") != "1":
+                    print(f"⏸️ [{owner_id}] ظرفیت پره ولی «برداشت خودکار امتیاز» خاموشه — کاری انجام نشد.")
+                    return
                 if has_pishi_withdraw_btn:
                     for row in buttons:
                         for btn in row:
@@ -524,6 +600,9 @@ def register_handlers(cl, owner_id: int, db):
                 print(f"📋 [{owner_id}] میوهام: موجودی={total_points:g} / هزینه‌ی ارتقا={upgrade_cost:g}")
 
                 if upgrade_cost > 0 and total_points >= upgrade_cost:
+                    if gs("meowie_auto_upgrade_active", "1") != "1":
+                        print(f"⏸️ [{owner_id}] موجودی کافیه برای ارتقا ولی «ارتقا خودکار پیشی» خاموشه — کاری انجام نشد.")
+                        return
                     print(f"⬆️ [{owner_id}] موجودی کافیه برای ارتقا — ارسالِ «پیشی» برای گرفتنِ دکمه.")
                     ss("meowie_want_upgrade", "1")
                     try:
@@ -577,7 +656,7 @@ def register_handlers(cl, owner_id: int, db):
                     print(f"❔ [{owner_id}] زمان {secs} ثانیه پیدا شد ولی معلوم نشد میو مال میو هست یا ماهی — پیام رو بالا ببین.")
                 return
 
-            print(f"❔ [{owner_id}] پیام از {MEOWIE_BOT_USERNAME} با هیچ الگویی مچ نشد (بالا رو ببین).")
+            print(f"❔ [{owner_id}] پیام از @{sender_username} با هیچ الگویی مچ نشد (بالا رو ببین).")
 
         except Exception as e:
             print(f"❌ [{owner_id}] خطا در پردازش پیام بازی میویی: {e}")
@@ -618,7 +697,7 @@ async def meowie_loop(cl, owner_id: int, db):
             now = time.time()
 
             next_meow = float(db.get_setting(owner_id, "meowie_next_meow_ts", "0") or "0")
-            if now >= next_meow:
+            if now >= next_meow and db.get_setting(owner_id, "meowie_auto_meow_active", "1") == "1":
                 print(f"🐾 [{owner_id}] زمان میو رسید ({now:.0f} >= {next_meow:.0f}) — ارسال «میو».")
                 try:
                     sent = await cl.send_message(group_id, "میو")
@@ -628,7 +707,7 @@ async def meowie_loop(cl, owner_id: int, db):
                 db.set_setting(owner_id, "meowie_next_meow_ts", str(now + _FALLBACK_RETRY_SECONDS))
 
             next_fish = float(db.get_setting(owner_id, "meowie_next_fish_ts", "0") or "0")
-            if now >= next_fish:
+            if now >= next_fish and db.get_setting(owner_id, "meowie_auto_fish_active", "1") == "1":
                 print(f"🐟 [{owner_id}] زمان ماهی رسید ({now:.0f} >= {next_fish:.0f}) — ارسال «ماهی».")
                 try:
                     sent = await cl.send_message(group_id, "ماهی")
@@ -642,7 +721,10 @@ async def meowie_loop(cl, owner_id: int, db):
             # که پیش‌فرضشون صفره و همون لحظه‌ی بایند شروع می‌کنن، چون تا
             # وقتی آمارِ اولیه (نرخ/ظرفیت) رو نبینیم چیزی برای زمان‌بندی
             # نداریم.
-            if db.get_setting(owner_id, "meowie_pishi_started", "0") == "1":
+            if (
+                db.get_setting(owner_id, "meowie_pishi_started", "0") == "1"
+                and db.get_setting(owner_id, "meowie_auto_pishi_active", "1") == "1"
+            ):
                 next_pishi = float(db.get_setting(owner_id, "meowie_next_pishi_ts", "0") or "0")
                 if now >= next_pishi:
                     print(f"🐱 [{owner_id}] زمان پیشی رسید ({now:.0f} >= {next_pishi:.0f}) — ارسال «پیشی».")
@@ -657,16 +739,17 @@ async def meowie_loop(cl, owner_id: int, db):
             # می‌شه؛ برخلافِ پیشی، وابسته به هیچ آماری نیست، پس از همون
             # لحظه‌ی بایند شدنِ گروه شروع می‌کنه (next_myohaam_ts در بایند
             # مقداردهی می‌شه).
-            interval = float(db.get_setting(owner_id, "meowie_myohaam_interval_seconds", "21600") or "21600")
-            next_myohaam = float(db.get_setting(owner_id, "meowie_next_myohaam_ts", "0") or "0")
-            if now >= next_myohaam and next_myohaam > 0:
-                print(f"📋 [{owner_id}] زمان میوهام رسید ({now:.0f} >= {next_myohaam:.0f}) — ارسال «میوهام».")
-                try:
-                    sent = await cl.send_message(group_id, "میوهام")
-                    db.set_setting(owner_id, "meowie_last_myohaam_msg_id", str(sent.id))
-                except Exception as e:
-                    print(f"❌ [{owner_id}] خطا در ارسال میوهام: {e}")
-                db.set_setting(owner_id, "meowie_next_myohaam_ts", str(now + interval))
+            if db.get_setting(owner_id, "meowie_auto_myohaam_active", "1") == "1":
+                interval = float(db.get_setting(owner_id, "meowie_myohaam_interval_seconds", "21600") or "21600")
+                next_myohaam = float(db.get_setting(owner_id, "meowie_next_myohaam_ts", "0") or "0")
+                if now >= next_myohaam and next_myohaam > 0:
+                    print(f"📋 [{owner_id}] زمان میوهام رسید ({now:.0f} >= {next_myohaam:.0f}) — ارسال «میوهام».")
+                    try:
+                        sent = await cl.send_message(group_id, "میوهام")
+                        db.set_setting(owner_id, "meowie_last_myohaam_msg_id", str(sent.id))
+                    except Exception as e:
+                        print(f"❌ [{owner_id}] خطا در ارسال میوهام: {e}")
+                    db.set_setting(owner_id, "meowie_next_myohaam_ts", str(now + interval))
 
             await asyncio.sleep(5)
         except Exception as e:

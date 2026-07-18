@@ -3921,6 +3921,7 @@ PANEL_CATEGORIES = {
         ],
         "parent": "friend_enemy",
     },
+    "meowie_settings": meowie_game.SETTINGS_PANEL_CATEGORY,
 }
 
 # ترتیب نمایش دسته‌ها در منوی اصلی پنل (فقط سطح ۱، زیرمنوها اینجا نیستن)
