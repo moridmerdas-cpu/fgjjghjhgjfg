@@ -370,6 +370,21 @@ async def start_helper_bot():
     # ─── کلیک روی دکمه‌های پنل ────────────────────────────────────────────────
     @cl.on(events.CallbackQuery())
     async def on_callback(event):
+        try:
+            await _handle_panel_callback(event)
+        except Exception as e:
+            # هر خطای پیش‌بینی‌نشده‌ای که این‌جا بگیریم رو باید حتماً جواب
+            # بدیم؛ وگرنه از دیدِ کاربر دکمه برای همیشه توی حالتِ لودینگ
+            # می‌مونه و به نظر می‌رسه «کار نمی‌کنه»، بدون اینکه هیچ خطایی
+            # جایی نشون داده بشه.
+            import traceback
+            traceback.print_exc()
+            try:
+                await event.answer("⚠️ خطایی رخ داد، دوباره امتحان کن.", alert=True)
+            except Exception:
+                pass
+
+    async def _handle_panel_callback(event):
         data = event.data.decode("utf-8")
 
         if data == "panel_noop":
