@@ -341,31 +341,46 @@ async def start_helper_bot():
         # cache_time=0 تا این پنل هیچ‌وقت به‌جای کاربر دیگه از کش تلگرام serve نشه
         await event.answer([result], cache_time=0)
 
-    async def _answer_info(event, text: str):
+    async def _answer_info(event, text: str, back_buttons=None):
         """
         نمایشِ متنِ راهنما/اطلاع‌رسانی به کاربر. تلگرام برای پاپ‌آپِ alert
         توی answerCallbackQuery سقفِ ۲۰۰ کاراکتری داره — اگه از این سقف رد
-        بشیم، خودِ فراخوانی با خطا مواجه می‌شه (و چون قبلاً این خطا جایی
-        catch نمی‌شد، دکمه از دیدِ کاربر «کار نمی‌کنه»: لودینگِ روی دکمه
-        برای همیشه می‌مونه و هیچ پیامی نشون داده نمی‌شه). برای متن‌های کوتاه
-        همون پاپ‌آپِ قبلی حفظ می‌شه، برای متن‌های بلند (مثل راهنمای تبچی یا
-        راهنمای بازی میویی) به‌جاش یک پیامِ معمولی توی همون چت فرستاده
-        می‌شه که محدودیتِ طول نداره.
+        بشیم، خودِ فراخوانی با خطا مواجه می‌شه. برای متن‌های کوتاه همون
+        پاپ‌آپ حفظ می‌شه.
+
+        برای متن‌های بلند (مثل راهنمای تبچی یا راهنمای بازی میویی) قبلاً
+        سعی می‌شد با `cl.send_message(event.chat_id, ...)` یک پیامِ معمولی
+        فرستاده بشه؛ ولی چون این پنل از طریق inline query باز می‌شه، پیامِ
+        نتیجه اصلاً توی یک «چت» واقعی نیست و `event.chat_id` مقدارش None
+        می‌مونه — پس send_message شکست می‌خورد و چون داخل except بی‌صدا
+        قورت داده می‌شد، از دیدِ کاربر دکمه «هیچ کاری نمی‌کرد». برای رفع
+        این مشکل، به‌جای send_message از event.edit(...) استفاده می‌شه که
+        هم برای پیام معمولی و هم برای پیام inline (بر پایه‌ی msg_id خودِ
+        کوئری، نه chat) درست کار می‌کنه.
         """
         if len(text) <= 200:
             try:
                 await event.answer(text, alert=True)
                 return
             except Exception:
-                pass  # اگه به هر دلیلی پاپ‌آپ هم شکست خورد، به فالبکِ پیام معمولی برو
+                pass  # اگه به هر دلیلی پاپ‌آپ هم شکست خورد، به فالبکِ زیر برو
+        try:
+            await event.edit(text, buttons=back_buttons)
+            return
+        except Exception:
+            pass
+        # آخرین فالبک: اگه edit هم به هر دلیلی شکست خورد (مثلاً پیام خیلی
+        # قدیمیه) و این پیام توی یک چتِ واقعی (نه inline) بوده، حداقل
+        # سعی کن یک پیامِ جدید بفرستی.
         try:
             await event.answer()
         except Exception:
             pass
-        try:
-            await cl.send_message(event.chat_id, text)
-        except Exception:
-            pass
+        if getattr(event, "chat_id", None):
+            try:
+                await cl.send_message(event.chat_id, text)
+            except Exception:
+                pass
 
     # ─── کلیک روی دکمه‌های پنل ────────────────────────────────────────────────
     @cl.on(events.CallbackQuery())
@@ -454,7 +469,8 @@ async def start_helper_bot():
             direct = cat.get("direct_command")
             if direct is not None:
                 if direct.startswith("INFO::"):
-                    await _answer_info(event, direct[len("INFO::"):])
+                    back = [[Button.inline("بازگشت", data=_back_target(category_key, owner_tg_id), style="primary")]]
+                    await _answer_info(event, direct[len("INFO::"):], back_buttons=back)
                 else:
                     await event.answer(f"در حال اجرا: {cat['title']}")
                     await _execute_panel_command(self_client, owner_id, direct)
@@ -502,7 +518,8 @@ async def start_helper_bot():
             # این‌ها نیاز به ورودی متنی دارن، پس به‌جای اجرا روی سلف، فقط یک
             # توضیح کوتاه (toast) نشون داده می‌شه.
             if command_text.startswith("INFO::"):
-                await _answer_info(event, command_text[len("INFO::"):])
+                back = [[Button.inline("بازگشت", data=_back_target(category_key, owner_tg_id), style="primary")]]
+                await _answer_info(event, command_text[len("INFO::"):], back_buttons=back)
                 return
 
             await event.answer(f"در حال اجرا: {label}")
