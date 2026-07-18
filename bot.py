@@ -1680,57 +1680,31 @@ async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
         ss("tabchi_active", "0")
         await edit("تبچی خاموش شد.")
 
-    elif text == "ثبت بنر با ریپلای" or re.match(r"^تنظیم بنر (\d+) با ریپلای$", text):
-        if not event.is_reply:
+    elif re.match(r"^تنظیم بنر (\d+)$", text) or re.match(r"^تنظیم بنر (\d+) در همه (?:گپ‌ها|گروه‌ها)$", text):
+        m_this = re.match(r"^تنظیم بنر (\d+)$", text)
+        m_all = re.match(r"^تنظیم بنر (\d+) در همه (?:گپ‌ها|گروه‌ها)$", text)
+        m = m_this or m_all
+        slot = m.group(1)
+        if slot not in _TABCHI_SLOTS:
+            await edit("شماره بنر باید بین ۱ تا ۱۰ باشد.")
+        elif not event.is_reply:
             await edit("روی پیامِ بنر (متن/عکس/ویدیو) ریپلای کن و دوباره تایپ کن.")
         else:
-            data = _get_tabchi(owner_id)
-            m = re.match(r"^تنظیم بنر (\d+) با ریپلای$", text)
-            if m:
-                slot = m.group(1)
-                if slot not in _TABCHI_SLOTS:
-                    await edit("شماره بنر باید بین ۱ تا ۱۰ باشد.")
-                    return
-            else:
-                slot = _tabchi_next_free_slot(data)
-                if not slot:
-                    await edit("همه‌ی ۱۰ اسلات بنر پر است. اول یکی را حذف کن.")
-                    return
             reply = await event.get_reply_message()
-            existing = data.get(slot, {})
+            data = _get_tabchi(owner_id)
+            if m_all:
+                target_mode, target_chat_id, dest_text = "all_groups", None, "همه‌ی گپ‌ها"
+            else:
+                target_mode, target_chat_id, dest_text = "this_chat", event.chat_id, "همین گپ"
             data[slot] = {
                 "chat_id": reply.chat_id,
                 "msg_id": reply.id,
-                "target_mode": existing.get("target_mode"),
-                "target_chat_id": existing.get("target_chat_id"),
-                "active": existing.get("active", False),
+                "target_mode": target_mode,
+                "target_chat_id": target_chat_id,
+                "active": True,
             }
             _save_tabchi(owner_id, data)
-            await edit(f"بنر {slot} ثبت شد.")
-
-    elif re.match(r"^تنظیم بنر (\d+) در این چت$", text):
-        m = re.match(r"^تنظیم بنر (\d+) در این چت$", text)
-        slot = m.group(1)
-        data = _get_tabchi(owner_id)
-        if slot not in data:
-            await edit(f"اول باید بنر {slot} را با ریپلای ثبت کنی.")
-        else:
-            data[slot]["target_mode"] = "this_chat"
-            data[slot]["target_chat_id"] = event.chat_id
-            _save_tabchi(owner_id, data)
-            await edit(f"مقصد بنر {slot} روی این چت تنظیم شد.")
-
-    elif re.match(r"^تنظیم بنر (\d+) در همه گروه‌ها$", text):
-        m = re.match(r"^تنظیم بنر (\d+) در همه گروه‌ها$", text)
-        slot = m.group(1)
-        data = _get_tabchi(owner_id)
-        if slot not in data:
-            await edit(f"اول باید بنر {slot} را با ریپلای ثبت کنی.")
-        else:
-            data[slot]["target_mode"] = "all_groups"
-            data[slot]["target_chat_id"] = None
-            _save_tabchi(owner_id, data)
-            await edit(f"مقصد بنر {slot} روی همه گروه‌ها تنظیم شد.")
+            await edit(f"بنر {slot} ثبت شد — مقصد: {dest_text}.")
 
     elif re.match(r"^فعال کردن بنر (\d+)$", text):
         m = re.match(r"^فعال کردن بنر (\d+)$", text)
@@ -1754,7 +1728,7 @@ async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
             _save_tabchi(owner_id, data)
         await edit(f"بنر {slot} غیرفعال شد.")
 
-    elif text == "لیست بنرها":
+    elif text in ("لیست بنرها", "لیست بنر"):
         data = _get_tabchi(owner_id)
         if not data:
             await edit("هیچ بنری ثبت نشده است.")
@@ -1860,8 +1834,26 @@ async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
                 await asyncio.sleep(1.5)
             await edit(f"بنر {slot} به {sent} گروه ارسال شد.")
 
-    elif re.match(r"^تایم بنرها (\d+)$", text):
-        m = re.match(r"^تایم بنرها (\d+)$", text)
+    elif text == "ارسال بنر برای تمام گروه‌ها":
+        data = _get_tabchi(owner_id)
+        active_banners = {k: v for k, v in data.items() if v.get("active")}
+        if not active_banners:
+            await edit("هیچ بنر فعالی برای ارسال وجود ندارد.")
+        else:
+            await edit("در حال ارسال بنرها به تمام گروه‌ها...")
+            sent = 0
+            async for dialog in cl.iter_dialogs():
+                if not dialog.is_group and not dialog.is_channel:
+                    continue
+                for banner in active_banners.values():
+                    ok = await _tabchi_deliver(cl, dialog.id, banner)
+                    if ok:
+                        sent += 1
+                    await asyncio.sleep(1.5)
+            await edit(f"ارسال بنرها به گروه‌ها تمام شد — {sent} پیام ارسال شد.")
+
+    elif re.match(r"^تایم بنر(?:ها)? (\d+)$", text):
+        m = re.match(r"^تایم بنر(?:ها)? (\d+)$", text)
         minutes = m.group(1)
         ss("tabchi_interval", minutes)
         await edit(f"فاصله‌ی ارسال خودکار بنرها روی {minutes} دقیقه تنظیم شد.")
@@ -3847,19 +3839,18 @@ PANEL_CATEGORIES = {
         ],
         "actions": [
             ("راهنما", "PANELINFO::"
-             "ثبت بنر با ریپلای  (یا: تنظیم بنر N با ریپلای)\n"
-             "تنظیم بنر N در این چت\n"
-             "تنظیم بنر N در همه گروه‌ها\n"
-             "فعال کردن بنر N  /  غیرفعال کردن بنر N\n"
-             "لیست بنرها\n"
-             "پاکسازی لیست بنر  /  پاکسازی بنر در این چت\n"
-             "حذف بنر N  /  حذف بنر N در این چت  /  حذف بنر N از همه گروه‌ها\n"
-             "حذف بنرها از همه گروه‌ها\n"
-             "فور بنر N در 50 گروه اخیر  /  فور بنر N در 100 گروه اخیر\n"
-             "تایم بنرها N   (فاصله‌ی ارسال خودکار به دقیقه)"
+             "تنظیم بنر N  (با ریپلای روی پیام بنر — مقصدش خودِ همین گپ می‌شود)\n"
+             "تنظیم بنر N در همه گپ‌ها  (با ریپلای — مقصدش همه‌ی گروه‌هایت می‌شود)\n"
+             "حذف بنر N\n"
+             "لیست بنر\n"
+             "پاکسازی لیست بنر\n"
+             "ارسال بنر برای تمام گروه‌ها  (ارسال فوریِ همه‌ی بنرهای فعال)\n"
+             "تایم بنر N   (فاصله‌ی ارسال خودکار به دقیقه)\n"
+             "N عددی بین ۱ تا ۱۰ است."
              ),
-            ("لیست بنرها", "لیست بنرها"),
+            ("لیست بنر", "لیست بنر"),
             ("پاکسازی لیست بنر", "پاکسازی لیست بنر"),
+            ("ارسال بنر برای تمام گروه‌ها", "ارسال بنر برای تمام گروه‌ها"),
         ],
     },
     "profile_snoop": {
