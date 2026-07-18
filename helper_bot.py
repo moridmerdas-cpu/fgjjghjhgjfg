@@ -453,7 +453,13 @@ async def start_helper_bot():
             # دکمه‌های تک‌عملی که مستقیم اجرا می‌شن (زیرمنو ندارن)
             direct = cat.get("direct_command")
             if direct is not None:
-                if direct.startswith("INFO::"):
+                if direct.startswith("PANELINFO::"):
+                    await event.answer()
+                    await event.edit(
+                        direct[len("PANELINFO::"):],
+                        buttons=[[Button.inline("بازگشت", data=_back_target(category_key, owner_tg_id))]],
+                    )
+                elif direct.startswith("INFO::"):
                     await _answer_info(event, direct[len("INFO::"):])
                 else:
                     await event.answer(f"در حال اجرا: {cat['title']}")
@@ -501,6 +507,14 @@ async def start_helper_bot():
             # ─── دکمه‌های فقط-اطلاع‌رسانی (مثل ماشین‌حساب/ترجمه) ────────────
             # این‌ها نیاز به ورودی متنی دارن، پس به‌جای اجرا روی سلف، فقط یک
             # توضیح کوتاه (toast) نشون داده می‌شه.
+            if command_text.startswith("PANELINFO::"):
+                await event.answer()
+                await event.edit(
+                    command_text[len("PANELINFO::"):],
+                    buttons=[[Button.inline("بازگشت", data=_back_target(category_key, owner_tg_id))]],
+                )
+                return
+
             if command_text.startswith("INFO::"):
                 await _answer_info(event, command_text[len("INFO::"):])
                 return

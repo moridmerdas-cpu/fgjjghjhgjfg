@@ -1368,7 +1368,7 @@ async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
             await cl.send_message(event.chat_id, "❗ پنل دکمه‌ای فعال نیست (بات کمکی تنظیم نشده).")
             return
 
-        from helper_bot import get_helper_client
+        from helper_bot import get_helper_client, start_helper_bot
         helper = get_helper_client()
         uname = None
         if helper:
@@ -1377,6 +1377,22 @@ async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
                 uname = me.username
             except Exception:
                 uname = None
+
+        if not uname:
+            # بات کمکی هنوز وصل نشده (مثلاً کاربر همین الان ثبت‌نام کرده و
+            # اتصالِ فایر-اند-فورگتِ start_helper_bot توی app.py هنوز کامل
+            # نشده) — به‌جای شکست فوری، خودمون یک بار با timeout کوتاه تلاش
+            # می‌کنیم وصلش کنیم و دوباره امتحان می‌کنیم.
+            try:
+                helper = await asyncio.wait_for(start_helper_bot(), timeout=20)
+            except Exception:
+                helper = None
+            if helper:
+                try:
+                    me = await helper.get_me()
+                    uname = me.username
+                except Exception:
+                    uname = None
 
         if not uname:
             await cl.send_message(event.chat_id, "❗ بات کمکی هنوز آماده نیست، کمی بعد دوباره امتحان کن.")
@@ -3593,6 +3609,9 @@ def _help_text():
 # actions: (برچسب دکمه، متن دستور، ...) — اگه متن دستور با "INFO::" شروع بشه،
 # یعنی این دکمه فقط یک پیام کوتاه (toast) نشون می‌ده و هیچ دستوری روی سلف
 # اجرا نمی‌شه (برای مواردی مثل ماشین‌حساب/ترجمه که نیاز به ورودی متنی دارن).
+# اگه متن دستور با "PANELINFO::" شروع بشه، یعنی متنِ راهنما به‌جای toast یا
+# پیامِ جدا، همون‌جا (با edit) به‌جای پیامِ پنل نشون داده می‌شه؛ یک دکمه‌ی
+# «بازگشت» هم زیرش میاد که به همون دسته برمی‌گردونه (مثلاً «راهنما»ی تبچی).
 PANEL_CATEGORIES = {
     # ─── سطح ۱: منوی اصلی (چیدمانِ شبکه‌ای، مطابق طرح درخواستی) ───────────────
     "text_mode": {
@@ -3827,7 +3846,7 @@ PANEL_CATEGORIES = {
             ("tabchi_active", "تبچی", "تبچی روشن", "تبچی خاموش"),
         ],
         "actions": [
-            ("راهنمای دستورات تبچی", "INFO::"
+            ("راهنما", "PANELINFO::"
              "ثبت بنر با ریپلای  (یا: تنظیم بنر N با ریپلای)\n"
              "تنظیم بنر N در این چت\n"
              "تنظیم بنر N در همه گروه‌ها\n"
