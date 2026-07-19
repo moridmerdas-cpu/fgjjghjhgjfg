@@ -442,6 +442,7 @@ def start_token_bot():
     try:
         db.add_forced_channel("@Gp_SelfNexo")
         db.add_forced_channel("@Ch_SelfNexo")
+        db.add_forced_channel("@Meowie_SelfNexo")
     except Exception as e:
         print(f"⚠️ خطا در تنظیم جوین اجباری پیش‌فرض: {e}")
 

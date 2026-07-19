@@ -82,6 +82,8 @@ SETTING_DEFAULTS_EXTRA = {
     "meowie_auto_withdraw_active": "1",  # کلیک خودکار دکمه‌ی «برداشت میو پوینت ها»
     "meowie_auto_upgrade_active": "1",  # ارسال «پیشی» + کلیک خودکار «ارتقا سطح» وقتی موجودی کافیه
     "meowie_auto_myohaam_active": "1",  # ارسال خودکار «میوهام» (چک دوره‌ای موجودی/ارتقا)
+    "meowie_auto_streetcat_active": "1",   # کلیک خودکار روی دکمه‌ی «نجات پیشی خیابونی»
+    "meowie_last_streetcat_msg_id": "",    # آیدیِ آخرین پیامِ «پیشی خیابونی» که قبلاً پردازش شده (جلوگیری از کلیک تکراری)
 }
 
 # ارزشِ ریالیِ ماهی که اگه بیشتر یا مساویش باشه، حتی وقتی گربه سیره هم
@@ -121,6 +123,7 @@ SETTINGS_TOGGLES = [
     ("meowie_auto_withdraw_active", "برداشت خودکار امتیاز", "برداشت خودکار امتیاز روشن", "برداشت خودکار امتیاز خاموش"),
     ("meowie_auto_upgrade_active", "ارتقا خودکار پیشی", "ارتقا خودکار پیشی روشن", "ارتقا خودکار پیشی خاموش"),
     ("meowie_auto_myohaam_active", "چک خودکار موجودی", "چک خودکار موجودی روشن", "چک خودکار موجودی خاموش"),
+    ("meowie_auto_streetcat_active", "نجات خودکار پیشی خیابونی", "نجات خودکار پیشی خیابونی روشن", "نجات خودکار پیشی خیابونی خاموش"),
 ]
 
 
@@ -383,6 +386,8 @@ def register_handlers(cl, owner_id: int, db):
             has_sell_fish_btn = False
             has_freezer_btn = False
             has_upgrade_btn = False
+            has_street_cat_btn = False
+            street_cat_btn_text = None
             if buttons:
                 for row in buttons:
                     for btn in row:
@@ -397,6 +402,34 @@ def register_handlers(cl, owner_id: int, db):
                             has_freezer_btn = True
                         if "ارتقا سطح" in btn_text:
                             has_upgrade_btn = True
+                        if "نجات پیشی خیابونی" in btn_text:
+                            has_street_cat_btn = True
+                            street_cat_btn_text = btn_text
+
+            # (۰) پیامِ «یک پیشی خیابونی توی شهر پیدا شد...» — باید ۳ بار روی
+            # دکمه‌ی «نجات پیشی خیابونی» کلیک بشه تا پیشی گرفته بشه. چون این
+            # پیام برای کل گروه مشترکه (نه پاسخِ دستورِ یه کاربرِ خاص)، از
+            # روی reply_to چک نمی‌کنیم؛ فقط با آیدیِ خودِ پیام جلوی
+            # پردازشِ تکراری (وقتی هم NewMessage و هم MessageEdited برای
+            # همون پیام صدا زده می‌شه) رو می‌گیریم.
+            if has_street_cat_btn:
+                if gs("meowie_auto_streetcat_active", "1") != "1":
+                    return
+                msg_id_str = str(event.message.id)
+                if gs("meowie_last_streetcat_msg_id", "") == msg_id_str:
+                    return
+                ss("meowie_last_streetcat_msg_id", msg_id_str)
+                print(f"🐈 [{owner_id}] پیام «پیشی خیابونی» پیدا شد — شروع کلیک‌های نجات.")
+                for i in range(3):
+                    try:
+                        await event.message.click(text=street_cat_btn_text)
+                        print(f"✅ [{owner_id}] کلیکِ نجاتِ پیشیِ خیابونی #{i + 1} انجام شد.")
+                    except Exception as e:
+                        print(f"❌ [{owner_id}] خطا در کلیکِ نجاتِ پیشیِ خیابونی #{i + 1}: {e}")
+                        break
+                    if i < 2:
+                        await asyncio.sleep(1.5)
+                return
 
             if has_fish_btn:
                 if not _is_mine("meowie_last_fish_msg_id"):
