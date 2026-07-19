@@ -420,20 +420,75 @@ def register_handlers(cl, owner_id: int, db):
                     return
                 ss("meowie_last_streetcat_msg_id", msg_id_str)
                 print(f"🐈 [{owner_id}] پیام «پیشی خیابونی» پیدا شد — شروع کلیک‌های نجات.")
-                for i in range(3):
+                max_attempts = 15
+                for i in range(max_attempts):
                     try:
                         await event.message.click(text=street_cat_btn_text)
                         print(f"✅ [{owner_id}] کلیکِ نجاتِ پیشیِ خیابونی #{i + 1} انجام شد.")
                     except Exception as e:
                         print(f"❌ [{owner_id}] خطا در کلیکِ نجاتِ پیشیِ خیابونی #{i + 1}: {e}")
+
+                    await asyncio.sleep(1.2)
+
+                    # بعد از هر کلیک، خودِ پیام رو تازه می‌خونیم تا ببینیم
+                    # دکمه هنوز هست یا نه (یعنی هنوز شانس مونده یا نه). اگه
+                    # دیگه دکمه نبود، یعنی یا پیشی نجات پیدا کرده یا شانس‌ها
+                    # تموم شده و رفته — پس ادامه نمی‌دیم.
+                    try:
+                        fresh_msg = await cl.get_messages(event.chat_id, ids=event.message.id)
+                    except Exception:
+                        fresh_msg = None
+
+                    still_has_btn = False
+                    if fresh_msg and getattr(fresh_msg, "buttons", None):
+                        for row in fresh_msg.buttons:
+                            for btn in row:
+                                if "نجات پیشی خیابونی" in (getattr(btn, "text", "") or ""):
+                                    still_has_btn = True
+
+                    if not still_has_btn:
+                        print(f"🐈 [{owner_id}] دیگه دکمه‌ی «نجات پیشی خیابونی» نیست — تمام شد (نجات پیدا کرد یا شانس‌ها تموم شد).")
                         break
-                    if i < 2:
-                        await asyncio.sleep(1.5)
                 return
 
             if has_fish_btn:
                 if not _is_mine("meowie_last_fish_msg_id"):
                     print(f"⏭️ [{owner_id}] پیام صید ماهی مالِ یه کاربر دیگه‌ست (ریپلای مچ نشد) — نادیده گرفته شد.")
+                    return
+
+                # سطح/رتبه‌ی ماهی رو از خطِ «سطح : ...» پیامِ صید می‌خونیم.
+                # ماهی‌های افسانه‌ای همیشه باید تو یخچال انداخته بشن (نه به
+                # پیشی داده بشن، نه فروخته بشن)، مگر اینکه یخچال پر باشه که
+                # اون‌وقت فروخته می‌شن.
+                level_m = re.search(r"سطح\s*:\s*([^\n]+)", clean_text)
+                fish_level = level_m.group(1).strip() if level_m else ""
+                is_legendary = "افسانه" in fish_level or "افسانه" in clean_text
+
+                if is_legendary:
+                    if has_freezer_btn:
+                        print(f"🐟🧊 [{owner_id}] ماهیِ افسانه‌ای پیدا شد — در حال انداختن تو یخچال...")
+                        try:
+                            result = await event.message.click(text="بندازش تو یخچال")
+                            result_text = _clean(getattr(result, "message", "") or "")
+                        except Exception as e:
+                            print(f"❌ [{owner_id}] خطا در انداختنِ ماهیِ افسانه‌ای تو یخچال: {e}")
+                            return
+                        # اگه ربات گفت یخچال پره، به‌جاش بفروشش.
+                        if "یخچال" in result_text and ("پر" in result_text or "ظرفیت" in result_text):
+                            print(f"🧊 [{owner_id}] یخچال پره — به‌جاش ماهیِ افسانه‌ای فروخته می‌شه.")
+                            try:
+                                await event.message.click(text="فروش ماهی")
+                                print(f"✅ [{owner_id}] ماهیِ افسانه‌ای (چون یخچال پر بود) فروخته شد.")
+                            except Exception as e:
+                                print(f"❌ [{owner_id}] خطا در فروشِ ماهیِ افسانه‌ای (یخچال پر بود): {e}")
+                        else:
+                            print(f"✅ [{owner_id}] ماهیِ افسانه‌ای با موفقیت تو یخچال انداخته شد.")
+                    else:
+                        print(f"🐟💰 [{owner_id}] ماهیِ افسانه‌ای پیدا شد ولی یخچال نداریم — فروخته می‌شه.")
+                        try:
+                            await event.message.click(text="فروش ماهی")
+                        except Exception as e:
+                            print(f"❌ [{owner_id}] خطا در فروشِ ماهیِ افسانه‌ای: {e}")
                     return
 
                 # گربه سیره یا نه؟ از آخرین آماری که از پیامِ «پیشی» خونده و
