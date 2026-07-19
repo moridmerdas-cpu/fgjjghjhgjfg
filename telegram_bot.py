@@ -7096,6 +7096,386 @@ def start_token_bot():
             print(f"❌ _rps_finish: {e}")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # ❌⭕ بازی دوز (سه در سه) گروهی — شرط‌بندی الماسی، فقط یک پیام (ادیت می‌شود)
+    # ══════════════════════════════════════════════════════════════════════════
+    # فرمت دستور: "دوز 100" → شرط 100 الماس
+    _doz_games = {}
+    _doz_lock = threading.Lock()
+    _DOZ_TAX = 0.10
+    _DOZ_WIN_LINES = [
+        (0, 1, 2), (3, 4, 5), (6, 7, 8),
+        (0, 3, 6), (1, 4, 7), (2, 5, 8),
+        (0, 4, 8), (2, 4, 6),
+    ]
+
+    def _doz_new_id():
+        import uuid
+        return str(uuid.uuid4())[:8]
+
+    def _doz_check_winner(board):
+        """برگرداندنِ 'X'، 'O' یا None اگر برنده‌ای نباشه"""
+        for a, b, c in _DOZ_WIN_LINES:
+            if board[a] and board[a] == board[b] == board[c]:
+                return board[a]
+        return None
+
+    def _doz_status_text(game):
+        p1 = game["player1_name"]
+        p2 = game.get("player2_name") or "منتظر بازیکن..."
+        bet = game["bet"]
+        total = bet * 2
+        tax = int(total * _DOZ_TAX)
+        payout = total - tax
+        state = game["state"]
+
+        if state == "waiting":
+            return (
+                "❌⭕ <b>بازی دوز!</b>\n\n"
+                f"👤 نفر اول: <b>{p1}</b> (❌)\n"
+                f"👤 نفر دوم: در انتظار...\n\n"
+                f"💰 شرط هر نفر: <b>{bet} 💎 الماس</b>\n"
+                f"🏆 جایزه برنده: <b>{payout} 💎 الماس</b> (مالیات ۱۰٪)\n\n"
+                "⬇️ برای ورود به بازی دکمه زیر را بزنید"
+            )
+
+        turn_name = p1 if game["turn"] == 1 else p2
+        lines = []
+        if state == "finished":
+            lines.append("🏁 <b>نتیجه نهایی — دوز</b>")
+        else:
+            lines.append("❌⭕ <b>بازی دوز</b>")
+            lines.append(f"👤 {p1} (❌)   —   👤 {p2} (⭕)")
+            lines.append(f"⏳ نوبت: <b>{turn_name}</b>")
+
+        if state == "playing":
+            lines.append("")
+            lines.append(f"💰 شرط: <b>{bet} 💎</b> هر نفر")
+
+        return "\n".join(lines)
+
+    def _doz_board_markup(game_id, board, active=True):
+        markup = types.InlineKeyboardMarkup(row_width=3)
+        buttons = []
+        for i, cell in enumerate(board):
+            if cell == "X":
+                label = "❌"
+            elif cell == "O":
+                label = "⭕"
+            else:
+                label = "・"
+            cb = f"doz_move_{game_id}_{i}" if active else f"doz_noop_{game_id}"
+            buttons.append(types.InlineKeyboardButton(label, callback_data=cb))
+        for r in range(0, 9, 3):
+            markup.row(*buttons[r:r + 3])
+        return markup
+
+    def _doz_join_markup(game_id, bet):
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton(
+            f"⚔️ ورود به بازی — {bet} 💎 الماس",
+            callback_data=f"doz_join_{game_id}",
+            style="success"  # 🟢 سبز
+        ))
+        return markup
+
+    def _doz_render(game_id):
+        """فقط همان یک پیام بازی را ادیت می‌کند — هیچ پیام جدیدی ارسال نمی‌شود"""
+        game = _doz_games.get(game_id)
+        if not game or not game.get("msg_id"):
+            return
+        try:
+            if game["state"] == "waiting":
+                markup = _doz_join_markup(game_id, game["bet"])
+            elif game["state"] == "playing":
+                markup = _doz_board_markup(game_id, game["board"])
+            else:
+                markup = types.InlineKeyboardMarkup()
+
+            _bot.edit_message_text(
+                _doz_status_text(game),
+                game["chat_id"], game["msg_id"],
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+        except Exception as e:
+            print(f"❌ _doz_render: {e}")
+
+    # ── دستور شروع بازی: "دوز 100" ────────────────────────────────────────────
+    @_bot.message_handler(func=lambda m: (
+        m.chat.type in ("group", "supergroup") and
+        m.text and
+        re.match(r'^دوز\s+(\d+)$', m.text.strip())
+    ))
+    def cmd_doz_start(message):
+        try:
+            if not _is_self_group(message.chat):
+                return
+
+            user = message.from_user
+            match = re.match(r'^دوز\s+(\d+)$', message.text.strip())
+            bet = int(match.group(1))
+
+            if bet <= 0:
+                return _bot.reply_to(message, "❌ مقدار شرط باید بیشتر از صفر باشد.")
+
+            account = _get_account_cached(user.id)
+            if not account:
+                return _bot.reply_to(message, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.")
+
+            balance = db.get_token_balance(account["id"])
+            if balance < bet:
+                return _bot.reply_to(
+                    message,
+                    f"❌ موجودی کافی نیست!\n{EM.EMOJI_BALANCE} موجودی شما: {balance} الماس\n💰 شرط: {bet} الماس"
+                )
+
+            with _doz_lock:
+                for g in _doz_games.values():
+                    if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
+                        return _bot.reply_to(message, "❌ شما هم‌اکنون در یک بازی فعال هستید.")
+
+            # کسر الماس از نفر اول
+            if not db.deduct_tokens(account["id"], bet):
+                return _bot.reply_to(message, "❌ خطا در کسر موجودی. دوباره امتحان کنید.")
+            cache.invalidate(f"account_{user.id}")
+
+            display = f"@{user.username}" if user.username else user.first_name
+            game_id = _doz_new_id()
+            game = {
+                "chat_id": message.chat.id,
+                "player1": user.id,
+                "player1_name": display,
+                "player2": None,
+                "player2_name": None,
+                "account1": account["id"],
+                "account2": None,
+                "board": [None] * 9,
+                "turn": 1,
+                "msg_id": None,
+                "bet": bet,
+                "state": "waiting",
+            }
+
+            with _doz_lock:
+                _doz_games[game_id] = game
+
+            sent = _bot.send_message(
+                message.chat.id,
+                _doz_status_text(game),
+                parse_mode="HTML",
+                reply_markup=_doz_join_markup(game_id, bet)
+            )
+            game["msg_id"] = sent.message_id
+
+            # تایمر ۵ دقیقه — لغو خودکار اگر نفر دوم نیاید
+            def _doz_timeout(gid):
+                with _doz_lock:
+                    g = _doz_games.get(gid)
+                    if not g or g["state"] != "waiting":
+                        return
+                    g["state"] = "finished"
+                    _doz_games.pop(gid, None)
+                db.add_tokens(g["account1"], g["bet"])
+                cache.invalidate(f"account_{g['player1']}")
+                try:
+                    _bot.edit_message_text(
+                        f"⏰ <b>بازی لغو شد!</b>\n\n{g['player1_name']} منتظر حریف ماند ولی کسی نیامد.\n"
+                        f"💎 {g['bet']} الماس به حساب برگشت.",
+                        g["chat_id"], g["msg_id"],
+                        parse_mode="HTML",
+                        reply_markup=types.InlineKeyboardMarkup()
+                    )
+                except Exception:
+                    pass
+            threading.Timer(300, _doz_timeout, args=[game_id]).start()
+
+        except Exception as e:
+            print(f"❌ cmd_doz_start: {e}")
+
+    # ── ورود نفر دوم (روی همان پیام) ─────────────────────────────────────────
+    @_bot.callback_query_handler(func=lambda c: c.data.startswith("doz_join_"))
+    def callback_doz_join(call):
+        try:
+            game_id = call.data.split("_", 2)[2]
+            user = call.from_user
+
+            with _doz_lock:
+                game = _doz_games.get(game_id)
+                if not game:
+                    return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
+                if game["state"] != "waiting":
+                    return _bot.answer_callback_query(call.id, "❌ بازی قبلاً شروع شده.", show_alert=True)
+                if user.id == game["player1"]:
+                    return _bot.answer_callback_query(call.id, "❌ شما سازنده این بازی هستید!", show_alert=True)
+
+                account = _get_account_cached(user.id)
+                if not account:
+                    return _bot.answer_callback_query(call.id, "⚠️ ابتدا در پنل وب ثبت‌نام کنید.", show_alert=True)
+
+                bet = game["bet"]
+                balance = db.get_token_balance(account["id"])
+                if balance < bet:
+                    return _bot.answer_callback_query(
+                        call.id,
+                        f"❌ موجودی کافی نیست!\n{EM.EMOJI_BALANCE} موجودی: {balance}\n💰 شرط: {bet}",
+                        show_alert=True
+                    )
+
+                for gid, g in _doz_games.items():
+                    if gid == game_id:
+                        continue
+                    if user.id in (g["player1"], g.get("player2")) and g["state"] != "finished":
+                        return _bot.answer_callback_query(call.id, "❌ شما در یک بازی دیگر هستید.", show_alert=True)
+
+                # کسر الماس از نفر دوم
+                if not db.deduct_tokens(account["id"], bet):
+                    return _bot.answer_callback_query(call.id, "❌ خطا در کسر موجودی.", show_alert=True)
+                cache.invalidate(f"account_{user.id}")
+
+                display = f"@{user.username}" if user.username else user.first_name
+                game["player2"] = user.id
+                game["player2_name"] = display
+                game["account2"] = account["id"]
+                game["state"] = "playing"
+                game["board"] = [None] * 9
+                game["turn"] = 1
+
+            _bot.answer_callback_query(call.id, f"✅ وارد بازی شدید! {bet} الماس کسر شد.")
+            _doz_render(game_id)
+
+        except Exception as e:
+            print(f"❌ callback_doz_join: {e}")
+
+    # ── حرکت روی خانه‌ی جدول (نوبتی) ────────────────────────────────────────
+    @_bot.callback_query_handler(func=lambda c: c.data.startswith("doz_move_"))
+    def callback_doz_move(call):
+        try:
+            parts = call.data.split("_")  # doz_move_GAMEID_CELLINDEX
+            game_id = parts[2]
+            cell = int(parts[3])
+            user = call.from_user
+
+            finished = False
+            with _doz_lock:
+                game = _doz_games.get(game_id)
+                if not game:
+                    return _bot.answer_callback_query(call.id, "❌ بازی یافت نشد.")
+                if game["state"] != "playing":
+                    return _bot.answer_callback_query(call.id, "❌ بازی در جریان نیست.")
+
+                is_p1 = user.id == game["player1"]
+                is_p2 = user.id == game["player2"]
+                if not (is_p1 or is_p2):
+                    return _bot.answer_callback_query(call.id, "❌ شما در این بازی نیستید.", show_alert=True)
+
+                my_turn_num = 1 if is_p1 else 2
+                if game["turn"] != my_turn_num:
+                    return _bot.answer_callback_query(call.id, "⏳ الان نوبت شما نیست.", show_alert=True)
+
+                if game["board"][cell] is not None:
+                    return _bot.answer_callback_query(call.id, "❌ این خانه پر است.", show_alert=True)
+
+                mark = "X" if my_turn_num == 1 else "O"
+                game["board"][cell] = mark
+
+                winner_mark = _doz_check_winner(game["board"])
+                is_draw = (winner_mark is None) and all(c is not None for c in game["board"])
+
+                if winner_mark or is_draw:
+                    game["state"] = "finished"
+                    finished = True
+                    game["winner_mark"] = winner_mark
+                else:
+                    game["turn"] = 2 if game["turn"] == 1 else 1
+
+            _bot.answer_callback_query(call.id, "✅ ثبت شد.")
+
+            if finished:
+                _doz_finish(game_id)
+            else:
+                _doz_render(game_id)
+
+        except Exception as e:
+            print(f"❌ callback_doz_move: {e}")
+
+    @_bot.callback_query_handler(func=lambda c: c.data.startswith("doz_noop_"))
+    def callback_doz_noop(call):
+        try:
+            _bot.answer_callback_query(call.id, "⏳ صبر کن نوبتت بشه.")
+        except Exception:
+            pass
+
+    def _doz_finish(game_id):
+        """پایان بازی — تعیین برنده، واریز جایزه/برگشتِ شرط، ادیتِ همان پیام واحد"""
+        try:
+            with _doz_lock:
+                game = _doz_games.get(game_id)
+                if not game:
+                    return
+                game = dict(game)  # snapshot برای استفاده خارج از قفل
+                _doz_games.pop(game_id, None)
+
+            p1_name = game["player1_name"]
+            p2_name = game["player2_name"]
+            bet = game["bet"]
+            total = bet * 2
+            tax = int(total * _DOZ_TAX)
+            payout = total - tax
+            winner_mark = game.get("winner_mark")
+
+            board_view = _doz_board_markup(game_id, game["board"], active=False)
+
+            if winner_mark == "X":
+                db.add_tokens(game["account1"], payout)
+                cache.invalidate(f"account_{game['player1']}")
+                result_line = f"🏆 <b>{p1_name}</b> (❌) برنده شد!"
+                payout_line = (
+                    f"💰 مجموع شرط: {total} 💎\n"
+                    f"🏛 مالیات ۱۰٪: {tax} 💎\n"
+                    f"💎 جایزه: <b>{payout} الماس</b> به {p1_name}"
+                )
+            elif winner_mark == "O":
+                db.add_tokens(game["account2"], payout)
+                cache.invalidate(f"account_{game['player2']}")
+                result_line = f"🏆 <b>{p2_name}</b> (⭕) برنده شد!"
+                payout_line = (
+                    f"💰 مجموع شرط: {total} 💎\n"
+                    f"🏛 مالیات ۱۰٪: {tax} 💎\n"
+                    f"💎 جایزه: <b>{payout} الماس</b> به {p2_name}"
+                )
+            else:
+                # مساوی: برگشت شرط بدون مالیات
+                db.add_tokens(game["account1"], bet)
+                db.add_tokens(game["account2"], bet)
+                cache.invalidate(f"account_{game['player1']}")
+                cache.invalidate(f"account_{game['player2']}")
+                result_line = "🤝 <b>مساوی!</b>"
+                payout_line = f"↩️ هر نفر {bet} 💎 الماس دریافت کرد."
+
+            final_text = (
+                "🏁 <b>نتیجه نهایی — دوز</b>\n\n"
+                f"👤 {p1_name} (❌)   —   👤 {p2_name} (⭕)\n\n"
+                f"{result_line}\n\n"
+                f"{payout_line}"
+            )
+
+            try:
+                _bot.edit_message_text(
+                    final_text,
+                    game["chat_id"], game["msg_id"],
+                    parse_mode="HTML",
+                    reply_markup=board_view
+                )
+            except Exception:
+                try:
+                    _bot.send_message(game["chat_id"], final_text, parse_mode="HTML")
+                except Exception:
+                    pass
+
+        except Exception as e:
+            print(f"❌ _doz_finish: {e}")
+
+    # ══════════════════════════════════════════════════════════════════════════
     # 🎰 قرعه‌کشی — Scheduler
     # ══════════════════════════════════════════════════════════════════════════
     def _lottery_scheduler():
@@ -7155,25 +7535,49 @@ def start_token_bot():
                                 medal = medals[i] if i < len(medals) else "🎁"
                                 prize_lines += f"\n{medal} نفر {ord_name}: <b>{p}</b>"
 
+                            # ── شرکت‌کنندگان به‌صورت خودکار: همه‌ی کاربرهایی
+                            # که تو دیتابیس اکانتِ سلف دارن (نیازی به ثبت‌نامِ
+                            # دستی نیست) ─────────────────────────────────────
+                            try:
+                                accounts = db.get_all_accounts()
+                            except Exception as e:
+                                accounts = []
+                                print(f"❌ خطا در خوندنِ لیستِ اکانت‌ها برای قرعه‌کشی: {e}")
+
+                            participants = []
+                            for acc in accounts:
+                                tg_id = acc.get("telegram_user_id")
+                                if not tg_id:
+                                    continue
+                                name = None
+                                username = acc.get("username")
+                                try:
+                                    chat = _bot.get_chat(tg_id)
+                                    name = (f"{chat.first_name or ''} {chat.last_name or ''}").strip() or None
+                                    if getattr(chat, "username", None):
+                                        username = chat.username
+                                except Exception:
+                                    pass
+                                participants.append({
+                                    "user_id": tg_id,
+                                    "name": name or "کاربر",
+                                    "username": username,
+                                })
+                            lot["participants"] = participants
+
                             msg_text = (
                                 "🎰 <b>قرعه‌کشی شروع شد!</b>\n\n"
-                                f"⏰ مهلت شرکت: تا ساعت <b>{lot['end_time']}</b>\n"
+                                f"⏰ اعلامِ نتیجه: ساعت <b>{lot['end_time']}</b>\n"
                                 f"🏆 تعداد برنده: <b>{lot['winners_count']} نفر</b>\n"
                                 f"🎁 جوایز:{prize_lines}\n\n"
-                                "👇 برای شرکت روی دکمه کلیک کنید:"
+                                f"👥 <b>{len(participants)} نفر</b> از ممبرهای سلف به‌صورت خودکار در این قرعه‌کشی شرکت داده شدند."
                             )
-                            markup = types.InlineKeyboardMarkup()
-                            markup.add(types.InlineKeyboardButton(
-                                "🎰 شرکت در قرعه‌کشی",
-                                callback_data=f"join_lottery_{lot['id']}"
-                            ))
-                            sent_msg = _bot.send_message(channel, msg_text,
-                                parse_mode="HTML", reply_markup=markup)
+                            sent_msg = _bot.send_message(channel, msg_text, parse_mode="HTML")
                             lot["announced"] = True
                             lot["announce_msg_id"] = sent_msg.message_id
                             lot["announce_chat_id"] = sent_msg.chat.id
                             changed = True
-                            print(f"✅ قرعه‌کشی {lot['id']} اعلام شد")
+                            print(f"✅ قرعه‌کشی {lot['id']} اعلام شد ({len(participants)} شرکت‌کننده‌ی خودکار)")
                         except Exception as e:
                             print(f"❌ خطا در اعلام قرعه‌کشی: {e}")
 
