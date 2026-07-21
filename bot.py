@@ -1100,13 +1100,18 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
     # ─── تاس (send_dice) ─────────────────────────────────────────────────────────
     async def send_dice(ev, dice_type, target=None, max_tries=80):
+        # نکته‌ی مهم: ev.reply(...) توی Telethon یعنی «ریپلای به خودِ پیامِ
+        # دستور» (چون معادلِ respond(reply_to=ev.id)ه)، نه ریپلای به پیامی
+        # که خودِ کاربر رویش ریپلای زده بود! برای اینکه همه‌ی تلاش‌ها دقیقاً
+        # روی همون پیامِ اصلی (reply_to_msg_id) بشینن، باید صریح reply_to رو
+        # بدیم، نه از ev.reply() استفاده کنیم.
         reply_to = ev.reply_to_msg_id
         tries = 0
         while True:
             tries += 1
             try:
                 if reply_to:
-                    msg = await ev.reply(file=InputMediaDice(dice_type))
+                    msg = await ev.client.send_file(ev.chat_id, InputMediaDice(dice_type), reply_to=reply_to)
                 else:
                     msg = await ev.respond(file=InputMediaDice(dice_type))
             except FloodWaitError as e:
@@ -1117,10 +1122,25 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
                 break
 
             await asyncio.sleep(0.5)
-            try:
-                await msg.delete()
-            except Exception:
-                pass
+            # پیامِ نتیجه‌ی غلط رو حذف می‌کنیم — با revoke=True صریح تا هم
+            # توی پیوی و هم گروه، برای طرفِ مقابل هم پاک بشه (نه فقط خودمون).
+            # اگه بار اول به هر دلیلی (مثلاً یه ریت‌لیمیتِ لحظه‌ای) شکست خورد،
+            # یه بار دیگه هم امتحان می‌کنیم تا پیام‌ها پشتِ‌سرِهم تلنبار نشن.
+            deleted = False
+            for attempt in range(2):
+                try:
+                    await msg.delete(revoke=True)
+                    deleted = True
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        await asyncio.sleep(0.7)
+                    else:
+                        print(f"⚠️ حذف پیامِ تقلبِ ناموفق (تلاش نافرجام): {e}")
+            if not deleted:
+                # اگه واقعاً نشد پاکش کنیم، حداقل لاگ می‌کنیم که بی‌سروصدا
+                # روی هم تلنبار نشه و بشه بعداً بررسیش کرد.
+                print(f"⚠️ نتونستیم پیامِ نتیجه‌ی نادرست (msg_id={msg.id}) رو حذف کنیم.")
 
     @cl.on(events.MessageEdited(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
     @cl.on(events.NewMessage(outgoing=True, pattern=r"(?i)^\.(?:تاس|roll)(?:\s+(\d))?$"))
