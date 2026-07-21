@@ -298,23 +298,28 @@ async def start_helper_bot():
 
         if self_client is not None:
             try:
-                me = await self_client.get_me()
-                full_name = " ".join(p for p in [me.first_name, me.last_name] if p)
-                display_name = full_name or "بدون نام"
-                if me.username:
-                    username_line = f"یوزرنیم: @{me.username}\n"
-                try:
-                    raw_buf = io.BytesIO()
-                    photo = await self_client.download_profile_photo(me, file=raw_buf)
-                    if photo:
-                        raw_buf.seek(0)
-                        from banner import generate_banner
-                        banner_bytes = generate_banner(raw_buf.read(), bottom_text="self panel", bottom_sub=f"@{me.username}" if me.username else "")
-                        buf = io.BytesIO(banner_bytes)
-                        buf.name = "panel.png"
-                        photo_bytes = buf
-                except Exception:
-                    photo_bytes = None
+                async def _fetch_profile():
+                    me = await self_client.get_me()
+                    full_name = " ".join(p for p in [me.first_name, me.last_name] if p)
+                    name = full_name or "بدون نام"
+                    uname_line = f"یوزرنیم: @{me.username}\n" if me.username else ""
+                    photo_buf = None
+                    try:
+                        raw_buf = io.BytesIO()
+                        photo = await self_client.download_profile_photo(me, file=raw_buf)
+                        if photo:
+                            raw_buf.seek(0)
+                            raw_buf.name = "panel.jpg"
+                            photo_buf = raw_buf
+                    except Exception:
+                        photo_buf = None
+                    return name, uname_line, photo_buf
+
+                # سقفِ ۵ ثانیه برای کلِ گرفتنِ مشخصات+عکسِ پروفایل — چون
+                # پاسخِ inline query باید توی چند ثانیه به تلگرام برسه، وگرنه
+                # با خطای «did not answer to the callback query in time» مواجه
+                # می‌شیم (که قبلاً به‌خاطرِ کندیِ تولیدِ بنر رخ می‌داد).
+                display_name, username_line, photo_bytes = await asyncio.wait_for(_fetch_profile(), timeout=5)
             except Exception:
                 pass
 
