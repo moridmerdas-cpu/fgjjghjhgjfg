@@ -4116,7 +4116,11 @@ async def _typing_loop(cl, owner_id):
             if active_actions:
                 try:
                     async for dialog in cl.iter_dialogs(limit=30):
-                        if not dialog.is_user:
+                        # قبلاً اینجا فقط پیوی‌ها (dialog.is_user) در نظر گرفته
+                        # می‌شدن و گپ‌ها/گروه‌ها رد می‌شدن — طبق درخواست، الان
+                        # هم گروه‌ها و هم پیوی‌ها رو پوشش می‌ده (فقط کانال‌های
+                        # صرفاً پخشی که پیام‌فرستادن توشون بسته‌ست رد می‌شن).
+                        if dialog.is_channel and not dialog.is_group:
                             continue
                         for key, action in ACTIONS:
                             if db.get_setting(owner_id, key) != "1":
