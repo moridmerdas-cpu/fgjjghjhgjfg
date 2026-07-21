@@ -1418,20 +1418,30 @@ async def _handle_command(cl, event, text, owner_id, entry, had_dot=True):
             await cl.send_message(event.chat_id, "❗ بات کمکی هنوز آماده نیست، کمی بعد دوباره امتحان کن.")
             return
 
-        try:
-            results = await cl.inline_query(uname, "پنل")
-            if results:
-                sent = await results[0].click(event.chat_id)
-                if sent is not None:
-                    try:
-                        from helper_bot import schedule_panel_timeout
-                        schedule_panel_timeout(sent.chat_id, sent.id)
-                    except Exception:
-                        pass
-            else:
-                await cl.send_message(event.chat_id, "❗ نتیجه‌ای از بات کمکی دریافت نشد.")
-        except Exception as e:
-            await cl.send_message(event.chat_id, f"❗ خطا در باز کردن پنل: {e}")
+        last_err = None
+        for attempt in range(3):
+            try:
+                results = await cl.inline_query(uname, "پنل")
+                if results:
+                    sent = await results[0].click(event.chat_id)
+                    if sent is not None:
+                        try:
+                            from helper_bot import schedule_panel_timeout
+                            schedule_panel_timeout(sent.chat_id, sent.id)
+                        except Exception:
+                            pass
+                    last_err = None
+                    break
+                else:
+                    last_err = "نتیجه‌ای از بات کمکی دریافت نشد."
+            except Exception as e:
+                last_err = str(e)
+
+            if attempt < 2:
+                await asyncio.sleep(1.5)
+
+        if last_err:
+            await cl.send_message(event.chat_id, f"❗ خطا در باز کردن پنل: {last_err}")
 
     # ─── دستورهای روشن/خاموش جدید پنل (قفل‌ها، ساعت پرمیوم، حالت‌های متن) ─────
     elif text in _EXTRA_TOGGLE_COMMANDS:

@@ -290,59 +290,21 @@ async def start_helper_bot():
 
         buttons = _menu_buttons(owner_tg_id)
 
-        # ─── ساخت متن مشخصات (اسم + آیدی عددی + یوزرنیم) از روی خودِ سلف ───
-        self_client = entry.get("client") if entry else None
-        display_name = "کاربر"
-        username_line = ""
-        photo_bytes = None
+        # نکته: قبلاً اینجا عکسِ پروفایلِ سلف دانلود و دوباره آپلود می‌شد که
+        # خودش دو تا رفت‌وبرگشتِ شبکه‌ایِ اضافه بود و می‌تونست باعثِ رد شدن
+        # از سقفِ زمانیِ پاسخ‌گوییِ اینلاین‌کوئریِ تلگرام بشه (و همون خطای
+        # «did not answer to the callback query in time» رو رقم بزنه).
+        # برای اطمینان از باز شدنِ همیشگیِ پنل، این مرحله کلاً حذف شده و
+        # پنل به‌صورتِ متنیِ ساده (بدون عکس) و در سریع‌ترین حالتِ ممکن باز
+        # می‌شه.
+        caption = f"آیدی عددی: {owner_tg_id}\n\n{MAIN_TEXT}"
 
-        if self_client is not None:
-            try:
-                async def _fetch_profile():
-                    me = await self_client.get_me()
-                    full_name = " ".join(p for p in [me.first_name, me.last_name] if p)
-                    name = full_name or "بدون نام"
-                    uname_line = f"یوزرنیم: @{me.username}\n" if me.username else ""
-                    photo_buf = None
-                    try:
-                        raw_buf = io.BytesIO()
-                        photo = await self_client.download_profile_photo(me, file=raw_buf)
-                        if photo:
-                            raw_buf.seek(0)
-                            raw_buf.name = "panel.jpg"
-                            photo_buf = raw_buf
-                    except Exception:
-                        photo_buf = None
-                    return name, uname_line, photo_buf
-
-                # سقفِ ۵ ثانیه برای کلِ گرفتنِ مشخصات+عکسِ پروفایل — چون
-                # پاسخِ inline query باید توی چند ثانیه به تلگرام برسه، وگرنه
-                # با خطای «did not answer to the callback query in time» مواجه
-                # می‌شیم (که قبلاً به‌خاطرِ کندیِ تولیدِ بنر رخ می‌داد).
-                display_name, username_line, photo_bytes = await asyncio.wait_for(_fetch_profile(), timeout=5)
-            except Exception:
-                pass
-
-        caption = (
-            f"نام: {display_name}\n"
-            f"آیدی عددی: {owner_tg_id}\n"
-            f"{username_line}"
-            f"\n{MAIN_TEXT}"
+        result = event.builder.article(
+            title="پنل مدیریت سلف",
+            description="برای نمایش پنل دکمه‌ای لمس کن",
+            text=caption,
+            buttons=buttons,
         )
-
-        if photo_bytes is not None:
-            result = await event.builder.photo(
-                file=photo_bytes,
-                text=caption,
-                buttons=buttons,
-            )
-        else:
-            result = event.builder.article(
-                title="پنل مدیریت سلف",
-                description="برای نمایش پنل دکمه‌ای لمس کن",
-                text=caption,
-                buttons=buttons,
-            )
         # cache_time=0 تا این پنل هیچ‌وقت به‌جای کاربر دیگه از کش تلگرام serve نشه
         await event.answer([result], cache_time=0)
 
