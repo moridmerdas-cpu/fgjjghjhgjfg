@@ -419,35 +419,3 @@ def update_sub_admin_permissions(telegram_id: int, permissions: str) -> bool:
 
 def sub_admin_has_permission(telegram_id: int, perm: str) -> bool:
     return supa_sub_admin_has_permission(telegram_id, perm)
-
-# ─── فعالیت/پاک‌سازیِ خودکارِ اکانت‌های بی‌فعالیت ──────────────────────────────
-from database_supabase import (
-    touch_activity as supa_touch_activity,
-    get_last_activity_ts as supa_get_last_activity_ts,
-    get_last_token_tx_ts as supa_get_last_token_tx_ts,
-    record_deleted_account as supa_record_deleted_account,
-    is_deleted_account as supa_is_deleted_account,
-    get_deleted_accounts as supa_get_deleted_accounts,
-    delete_account_completely as supa_delete_account_completely,
-)
-
-def touch_activity(owner_id: int):
-    supa_touch_activity(owner_id)
-
-def get_last_activity_ts(owner_id: int) -> int:
-    return supa_get_last_activity_ts(owner_id)
-
-def get_last_token_tx_ts(owner_id: int) -> int:
-    return supa_get_last_token_tx_ts(owner_id)
-
-def record_deleted_account(tg_id: int, reason: str = "inactive_3d_no_tokens"):
-    supa_record_deleted_account(tg_id, reason)
-
-def is_deleted_account(tg_id: int) -> bool:
-    return supa_is_deleted_account(tg_id)
-
-def get_deleted_accounts() -> list:
-    return supa_get_deleted_accounts()
-
-def delete_account_completely(owner_id: int, tg_id: int = None, reason: str = "inactive_3d_no_tokens") -> bool:
-    return supa_delete_account_completely(owner_id, tg_id, reason)

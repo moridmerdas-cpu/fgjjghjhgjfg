@@ -84,15 +84,6 @@ CREATE TABLE IF NOT EXISTS amel_forced_channels (
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ─── آیدیِ عددیِ اکانت‌هایی که به‌خاطرِ ۳ روز بی‌فعالیتی + نداشتنِ گردشِ
--- مالیِ الماس، کاملاً از سیستم پاک شدن (فقط برای یادآوریِ سیستم — این‌ها
--- دیگه اشتراک/دارایی/سشن ندارن) ─────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS amel_deleted_accounts (
-    telegram_user_id BIGINT PRIMARY KEY,
-    deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    reason TEXT DEFAULT 'inactive_3d_no_tokens'
-);
-
 -- ─── چالش‌های جام جهانی ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS worldcup_challenges (
     id SERIAL PRIMARY KEY,
