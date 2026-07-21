@@ -70,6 +70,22 @@ FRIEND_COOLDOWN = 3600      # 1 ساعت
 # ─── دستیار هوش مصنوعی (دیپ‌سیک) ──────────────────────────────────────────────
 _last_ai_reply = {}  # {chat_id: timestamp} — کول‌داون پاسخ هوش مصنوعی
 _last_outgoing_activity = {}  # {owner_id: timestamp} — آخرین باری که خودِ کاربر پیام فرستاده
+_last_db_activity_touch = {}  # {owner_id: timestamp} — آخرین باری که فعالیت تو دیتابیس ثبت شد (throttle)
+
+
+def _maybe_touch_activity(owner_id: int):
+    """ثبتِ «آخرین فعالیت» تو دیتابیس، ولی نه به‌ازای هر پیام — چون این یعنی
+    یه کوئریِ نوشتنیِ اضافه روی هر پیام که می‌تونه event loopِ مشترک رو
+    شلوغ‌تر کنه. حداکثر هر ۱ ساعت یه‌بار برای هر اکانت ثبت می‌شه که هم برای
+    تشخیصِ «۳ روز بی‌فعالیتی» کاملاً کافیه، هم سبکه."""
+    now = time.time()
+    last = _last_db_activity_touch.get(owner_id, 0)
+    if now - last >= 3600:
+        _last_db_activity_touch[owner_id] = now
+        try:
+            db.touch_activity(owner_id)
+        except Exception:
+            pass
 AI_AWAY_SECONDS = 300  # اگه ۵ دقیقه از آخرین پیامِ خودِ کاربر گذشته باشه، "غایب" در نظر گرفته می‌شه
 AI_REPLY_COOLDOWN = 60  # حداقل فاصله بین دو پاسخ هوش مصنوعی در یک چت
 
@@ -508,6 +524,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
         # اگه پلن منقضی شده، هیچ کاری نکن (اتصال زنده‌ست)
         if entry.get("paused"):
             return
+        _maybe_touch_activity(owner_id)
         msg = event.message
         sender = await event.get_sender()
         chat = await event.get_chat()
@@ -1041,6 +1058,7 @@ def _register_handlers(cl: TelegramClient, owner_id: int, entry: dict):
 
         # ثبت آخرین فعالیتِ خودِ کاربر — برای تشخیص «غایب/آفلاین» دستیار هوش مصنوعی
         _last_outgoing_activity[owner_id] = time.time()
+        _maybe_touch_activity(owner_id)
 
         # دستورات همیشه فعال
         if text == "سلف روشن":

@@ -3,6 +3,7 @@ import os
 import json
 import hashlib
 import datetime
+import time
 import psycopg2
 import psycopg2.extras
 from typing import Optional, Dict, List, Any
@@ -147,6 +148,17 @@ def init_tables():
             username TEXT UNIQUE NOT NULL,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+        """,
+        # جدول آیدیِ عددیِ اکانت‌هایی که به‌خاطرِ ۳ روز عدم فعالیت + نداشتنِ
+        # گردشِ مالیِ الماس، کاملاً از سیستم پاک شدن. فقط برای این نگه‌داشته
+        # می‌شه که سیستم یادش بمونه اینا قبلاً حذف شدن و اشتراک/فعالیتی ندارن
+        # (مثلاً برای گزارش‌گیری یا جلوگیری از سردرگمی بعداً).
+        """
+        CREATE TABLE IF NOT EXISTS amel_deleted_accounts (
+            telegram_user_id BIGINT PRIMARY KEY,
+            deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reason TEXT DEFAULT 'inactive_3d_no_tokens'
+        )
         """
     ]
     
@@ -226,6 +238,94 @@ def get_all_accounts() -> List[Dict]:
     except Exception as e:
         print(f"❌ get_all_accounts error: {e}")
         return []
+
+# ─── فعالیتِ اکانت (برای تشخیصِ اکانت‌های بی‌فعالیت) ────────────────────────────
+def touch_activity(owner_id: int):
+    """هر بار سلفِ یه کاربر یه پیام/دستور پردازش کرد، این زمان رو به‌عنوانِ
+    «آخرین فعالیت» ثبت می‌کنیم — پاک‌سازیِ خودکارِ اکانت‌های بی‌فعالیت از
+    همین استفاده می‌کنه."""
+    try:
+        set_setting(owner_id, "last_activity_ts", str(int(time.time())))
+    except Exception:
+        pass
+
+def get_last_activity_ts(owner_id: int) -> int:
+    try:
+        v = get_setting(owner_id, "last_activity_ts", "")
+        return int(v) if v else 0
+    except Exception:
+        return 0
+
+def get_last_token_tx_ts(owner_id: int) -> int:
+    try:
+        v = get_setting(owner_id, "last_token_tx_ts", "")
+        return int(v) if v else 0
+    except Exception:
+        return 0
+
+# ─── ثبتِ اکانت‌هایی که به‌خاطرِ بی‌فعالیتی پاک شدن ─────────────────────────────
+def record_deleted_account(tg_id: int, reason: str = "inactive_3d_no_tokens"):
+    try:
+        query = (
+            "INSERT INTO amel_deleted_accounts (telegram_user_id, reason) VALUES (%s, %s) "
+            "ON CONFLICT (telegram_user_id) DO UPDATE SET deleted_at = CURRENT_TIMESTAMP, reason = %s"
+        )
+        execute_query(query, (tg_id, reason, reason))
+    except Exception as e:
+        print(f"❌ record_deleted_account error: {e}")
+
+def is_deleted_account(tg_id: int) -> bool:
+    try:
+        query = "SELECT 1 FROM amel_deleted_accounts WHERE telegram_user_id = %s"
+        result = execute_query(query, (tg_id,), fetch_one=True)
+        return bool(result)
+    except Exception as e:
+        print(f"❌ is_deleted_account error: {e}")
+        return False
+
+def get_deleted_accounts() -> List[Dict]:
+    try:
+        query = "SELECT telegram_user_id, deleted_at, reason FROM amel_deleted_accounts ORDER BY deleted_at DESC"
+        result = execute_query(query, fetch_all=True)
+        return [dict(r) for r in result] if result else []
+    except Exception as e:
+        print(f"❌ get_deleted_accounts error: {e}")
+        return []
+
+# ─── حذفِ کاملِ یک اکانت (سشن، دارایی، تنظیمات، همه‌چی) ─────────────────────────
+def delete_account_completely(owner_id: int, tg_id: int = None, reason: str = "inactive_3d_no_tokens"):
+    """اکانتِ owner_id رو کاملاً از دیتابیس پاک می‌کنه: تنظیمات (شاملِ
+    session_data)، توکن/الماس، پیام‌های ذخیره‌شده/زمان‌بندی‌شده، و خودِ ردیفِ
+    اکانت. اگه tg_id داده بشه، آیدیِ عددیش تو amel_deleted_accounts هم ثبت
+    می‌شه تا سیستم یادش بمونه این کاربر قبلاً حذف شده و اشتراک/فعالیتی نداره."""
+    try:
+        for q, params in [
+            ("DELETE FROM amel_settings WHERE owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_tokens WHERE owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_saved_messages WHERE owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_scheduled_messages WHERE owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_deleted_messages WHERE owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_referrals WHERE referrer_owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_subscriptions WHERE owner_id = %s", (owner_id,)),
+            ("DELETE FROM amel_accounts WHERE id = %s", (owner_id,)),
+        ]:
+            try:
+                execute_query(q, params)
+            except Exception as e:
+                print(f"⚠️ delete_account_completely: خطا در «{q}»: {e}")
+
+        try:
+            rc.invalidate_token(owner_id)
+        except Exception:
+            pass
+
+        if tg_id:
+            record_deleted_account(tg_id, reason)
+
+        return True
+    except Exception as e:
+        print(f"❌ delete_account_completely error: {e}")
+        return False
 
 def account_exists() -> bool:
     try:
@@ -440,12 +540,22 @@ def get_token_balance(owner_id: int) -> int:
         print(f"❌ get_token_balance error: {e}")
         return 0
 
+def _touch_token_activity(owner_id: int):
+    """هر بار الماس/توکنِ یه اکانت جابه‌جا شد (اضافه یا کسر)، این زمان رو
+    به‌عنوان «آخرین گردشِ مالی» ثبت می‌کنیم — پاک‌سازیِ خودکارِ اکانت‌های
+    بی‌فعالیت از همین استفاده می‌کنه."""
+    try:
+        set_setting(owner_id, "last_token_tx_ts", str(int(time.time())))
+    except Exception:
+        pass
+
 def add_tokens(owner_id: int, amount: int):
     try:
         _init_tokens(owner_id)
         query = "UPDATE amel_tokens SET balance = balance + %s, total_earned = total_earned + %s WHERE owner_id = %s"
         execute_query(query, (amount, amount, owner_id))
         rc.invalidate_token(owner_id)  # کش رو expire کن
+        _touch_token_activity(owner_id)
     except Exception as e:
         print(f"❌ add_tokens error: {e}")
 
@@ -459,6 +569,7 @@ def deduct_tokens(owner_id: int, amount: int) -> bool:
         query = "UPDATE amel_tokens SET balance = balance - %s WHERE owner_id = %s"
         execute_query(query, (amount, owner_id))
         rc.invalidate_token(owner_id)  # کش رو expire کن
+        _touch_token_activity(owner_id)
         return True
     except Exception as e:
         print(f"❌ deduct_tokens error: {e}")

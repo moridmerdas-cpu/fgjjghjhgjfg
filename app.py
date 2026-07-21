@@ -543,6 +543,14 @@ if __name__ == "__main__":
     # ۱. ایجاد جداول (اگر موجود نیستند)
     db.init_tables()
     print("✅ جداول Supabase بررسی/ایجاد شدند")
+
+    # ۱.۵ پاک‌سازیِ اکانت‌های بی‌فعالیت (۳ روز بدون فعالیت + بدون گردشِ
+    # الماس) — دقیقاً یک‌بار، همینجا بعد از هر بار بالا اومدنِ پروژه.
+    try:
+        from cleanup import purge_inactive_accounts
+        purge_inactive_accounts(bot_manager)
+    except Exception as e:
+        print(f"⚠️ خطا در پاک‌سازیِ اکانت‌های بی‌فعالیت: {e}")
     
     # ۲. استارت Heartbeat Manager
     from heartbeat import get_heartbeat_manager
